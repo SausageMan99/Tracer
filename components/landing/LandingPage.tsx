@@ -3,8 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { gsap, ScrollTrigger } from "@/lib/gsap-setup";
 import GrainOverlay from "@/components/ui/GrainOverlay";
 import NumberTicker from "@/components/ui/NumberTicker";
 import { useRevealOnScroll, useStaggerReveal } from "@/hooks/useScrollAnimation";
@@ -15,8 +14,6 @@ const TerrainCanvas = dynamic(
   () => import("@/components/landing/TerrainCanvas"),
   { ssr: false, loading: () => null }
 );
-
-gsap.registerPlugin(ScrollTrigger);
 
 // ── Icon components ───────────────────────────────────────────────────────────
 
