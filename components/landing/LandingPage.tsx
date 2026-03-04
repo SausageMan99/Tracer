@@ -11,6 +11,7 @@ import MagneticButton from "@/components/ui/MagneticButton";
 import ScrambleNumber from "@/components/ui/ScrambleNumber";
 import { useRevealOnScroll, useStaggerReveal } from "@/hooks/useScrollAnimation";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
+import StackingFeatureCards from "@/components/landing/StackingFeatureCards";
 
 // ── Dynamic import for WebGL (no SSR) ─────────────────────────────────────────
 
@@ -714,6 +715,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         {/* Nav */}
         <nav
           ref={heroNavRef}
+          className="py-6 md:py-7 px-6 md:px-10"
           style={{
             position: "absolute",
             top: 0,
@@ -723,7 +725,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
-            padding: "28px 40px",
           }}
         >
           <span
@@ -767,6 +768,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
 
         {/* Hero content */}
         <div
+          className="px-6 md:px-16 lg:px-32"
           style={{
             position: "relative",
             zIndex: 5,
@@ -776,7 +778,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             alignItems: "center",
             justifyContent: "center",
             textAlign: "center",
-            padding: "0 clamp(24px, 8vw, 120px)",
           }}
         >
           <SectionLabel>Générateur de parcours GPS</SectionLabel>
@@ -814,23 +815,59 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             )}
           </h1>
 
-          <p
-            ref={heroSubRef}
-            style={{
+          <div ref={heroSubRef} style={{ marginBottom: "40px", textAlign: "center" }}>
+            <p style={{
               fontFamily: "var(--font-inter), sans-serif",
-              fontSize: "clamp(15px, 2vw, 18px)",
+              fontSize: "clamp(17px, 2.2vw, 22px)",
               color: "var(--text-muted)",
-              maxWidth: "480px",
+              maxWidth: "520px",
               lineHeight: 1.7,
-              marginBottom: "40px",
-            }}
-          >
-            Génère un parcours adapté à ta séance en 10 secondes.
-            D+, distance, surface — zéro compromis.
-          </p>
+              margin: "0 auto",
+            }}>
+              Génère un parcours adapté à ta séance{" "}
+              <span style={{ color: "var(--accent-lime)", fontWeight: 600 }}>en 10 secondes</span>.
+              <br />
+              D+, distance, surface — zéro compromis.
+            </p>
+          </div>
 
-          <div ref={heroCtaRef}>
+          <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
             <MagneticButton href="/app">Générer mon parcours</MagneticButton>
+            <p style={{
+              fontFamily: "var(--font-inter), sans-serif",
+              fontSize: "13px",
+              color: "var(--text-muted)",
+              marginTop: "12px",
+              opacity: 0.7,
+            }}>
+              Gratuit, sans inscription
+            </p>
+            <div style={{
+              marginTop: "48px",
+              opacity: 0.5,
+              maxWidth: "320px",
+              width: "100%",
+            }}>
+              <svg viewBox="0 0 320 80" style={{ width: "100%" }}>
+                {/* Simplified route line */}
+                <path
+                  d="M20 60 C60 60 80 20 120 25 C160 30 180 55 220 40 C260 25 280 35 300 30"
+                  fill="none"
+                  stroke="var(--accent-lime)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  opacity="0.6"
+                />
+                {/* Start point */}
+                <circle cx="20" cy="60" r="4" fill="var(--accent-lime)" opacity="0.8" />
+                {/* End point */}
+                <circle cx="300" cy="30" r="4" fill="var(--accent-lime)" opacity="0.8" />
+                {/* Distance label */}
+                <text x="160" y="75" textAnchor="middle" fontSize="10" fontFamily="var(--font-jetbrains)" fill="var(--text-muted)" opacity="0.6">
+                  14.2 km · D+ 312m
+                </text>
+              </svg>
+            </div>
           </div>
         </div>
 
@@ -865,25 +902,20 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           SECTION 2 — PROBLEM STATEMENT
       ══════════════════════════════════════════════════════════════════════ */}
       <section
+        className="grid grid-cols-1 md:grid-cols-2"
         style={{
           minHeight: "100vh",
           background: "var(--bg-deep)",
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
           gap: 0,
         }}
       >
         {/* Left sticky column */}
         <div
+          className="md:sticky md:top-0 md:h-screen py-16 md:py-20 px-6 md:px-12 lg:px-20 md:border-r border-border"
           style={{
-            position: "sticky",
-            top: 0,
-            height: "100vh",
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
-            padding: "80px clamp(24px, 6vw, 80px)",
-            borderRight: "1px solid var(--border)",
           }}
         >
           <div ref={problemHeadingRef} className="reveal-up">
@@ -921,12 +953,12 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         {/* Right scrolling column — pain point cards */}
         <div
           ref={painCardsRef as React.RefObject<HTMLDivElement>}
+          className="py-16 md:py-20 px-6 md:px-12 lg:px-20"
           style={{
             display: "flex",
             flexDirection: "column",
             justifyContent: "center",
             gap: "24px",
-            padding: "120px clamp(24px, 6vw, 80px)",
           }}
         >
           <PainCard
@@ -951,9 +983,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           SECTION 3 — HOW IT WORKS
       ══════════════════════════════════════════════════════════════════════ */}
       <section
+        className="py-20 md:py-28 lg:py-32 px-6 md:px-16 lg:px-32"
         style={{
           background: "linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 100%)",
-          padding: "120px clamp(24px, 8vw, 120px)",
           borderTop: "1px solid var(--border)",
         }}
       >
@@ -976,15 +1008,15 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
 
         {/* Timeline */}
         <div
+          className="grid grid-cols-1 md:grid-cols-3"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
             gap: "clamp(24px, 4vw, 60px)",
             position: "relative",
           }}
         >
           {/* Connecting line (decorative) */}
           <div
+            className="hidden md:block"
             aria-hidden="true"
             style={{
               position: "absolute",
@@ -1022,7 +1054,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           SECTION 4 — FEATURE SHOWCASE
       ══════════════════════════════════════════════════════════════════════ */}
       <section style={{ background: "var(--bg-surface)", borderTop: "1px solid var(--border)" }}>
-        <div style={{ textAlign: "center", padding: "80px clamp(24px, 8vw, 120px) 0" }}>
+        <div className="py-16 md:py-20 px-6 md:px-16 lg:px-32 pb-10" style={{ textAlign: "center" }}>
           <h2
             style={{
               fontFamily: "var(--font-playfair), serif",
@@ -1037,41 +1069,39 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           </h2>
         </div>
 
-        <FeatureRow
-          badge="Profil altimétrique"
-          title="D+ calculé au mètre près."
-          desc="Données Open-Meteo à 30m de résolution. Gradient max, régularité, dénivelé positif et négatif. Tout est là, précis."
-          visual={<ElevationVisual />}
-        />
-
-        <FeatureRow
-          reverse
-          badge="14 profils de séance"
-          title="Chaque séance, son parcours."
-          desc="Fractionné 30/30, seuil lactique, gran fondo, trail — chaque profil a ses propres critères de scoring. Zéro compromis."
-          visual={<SessionChipsVisual />}
-        />
-
-        <FeatureRow
-          badge="Export GPX universel"
-          title="Prêt pour ta montre."
-          desc="Transfert direct vers Garmin, Wahoo ou Suunto. Format GPX 1.1 avec élévation sur chaque point. Prêt à partir en 10 secondes."
-          visual={<RouteMapVisual />}
-        />
-
-        <FeatureRow
-          reverse
-          badge="Compatibilité matériel"
-          title="Toutes les marques supportées."
-          desc="GPX 1.1, timestamps synthétiques pour Wahoo, élévation sur chaque trackpoint pour Garmin. Aucune configuration requise."
-          visual={<GpsDevicesVisual />}
-        />
-
-        <FeatureRow
-          badge="Mode Scenic"
-          title="Vois où les autres s'entraînent."
-          desc="Superpose les données d'activité Strava sur ta carte. Identifie les zones les plus empruntées, découvre des itinéraires locaux populaires et optimise ton parcours selon les préférences de la communauté."
-          visual={<StravaHeatmapVisual />}
+        <StackingFeatureCards
+          cards={[
+            {
+              badge: "Profil altimétrique",
+              title: "D+ calculé au mètre près.",
+              desc: "Données Open-Meteo à 30m de résolution. Gradient max, régularité, dénivelé positif et négatif. Tout est là, précis.",
+              visual: <ElevationVisual />,
+            },
+            {
+              badge: "14 profils de séance",
+              title: "Chaque séance, son parcours.",
+              desc: "Fractionné 30/30, seuil lactique, gran fondo, trail — chaque profil a ses propres critères de scoring. Zéro compromis.",
+              visual: <SessionChipsVisual />,
+            },
+            {
+              badge: "Export GPX universel",
+              title: "Prêt pour ta montre.",
+              desc: "Transfert direct vers Garmin, Wahoo ou Suunto. Format GPX 1.1 avec élévation sur chaque point. Prêt à partir en 10 secondes.",
+              visual: <RouteMapVisual />,
+            },
+            {
+              badge: "Compatibilité matériel",
+              title: "Toutes les marques supportées.",
+              desc: "GPX 1.1, timestamps synthétiques pour Wahoo, élévation sur chaque trackpoint pour Garmin. Aucune configuration requise.",
+              visual: <GpsDevicesVisual />,
+            },
+            {
+              badge: "Mode Scenic",
+              title: "Vois où les autres s'entraînent.",
+              desc: "Superpose les données d'activité Strava sur ta carte. Identifie les zones les plus empruntées, découvre des itinéraires locaux populaires et optimise ton parcours selon les préférences de la communauté.",
+              visual: <StravaHeatmapVisual />,
+            },
+          ]}
         />
       </section>
 
@@ -1091,10 +1121,8 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
       >
         <div
           ref={statsSectionRef}
-          className="reveal-fade"
+          className="reveal-fade grid grid-cols-1 sm:grid-cols-3"
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
             gap: "clamp(32px, 6vw, 80px)",
             width: "100%",
             maxWidth: "900px",
@@ -1111,9 +1139,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           SECTION 6 — CTA FINAL
       ══════════════════════════════════════════════════════════════════════ */}
       <section
+        className="min-h-screen"
         style={{
           position: "relative",
-          height: "100vh",
           overflow: "hidden",
           background: "var(--bg-deep)",
           display: "flex",
@@ -1129,6 +1157,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         <GrainOverlay opacity={0.03} />
 
         <div
+          className="px-6 md:px-16 lg:px-32"
           style={{
             position: "relative",
             zIndex: 5,
@@ -1136,7 +1165,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             flexDirection: "column",
             alignItems: "center",
             gap: "32px",
-            padding: "0 clamp(24px, 8vw, 120px)",
           }}
         >
           <h2
@@ -1165,9 +1193,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       <footer
+        className="py-8 px-6 md:px-16 lg:px-32"
         style={{
           borderTop: "1px solid var(--border)",
-          padding: "32px clamp(24px, 8vw, 120px)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
