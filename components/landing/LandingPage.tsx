@@ -1031,7 +1031,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               color: "var(--text-primary)",
             }}
           >
-            Tout ce dont tu as besoin.
+            <TextReveal trigger="scroll" splitType="words">
+              Tout ce dont tu as besoin.
+            </TextReveal>
           </h2>
         </div>
 
@@ -1147,7 +1149,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               maxWidth: "700px",
             }}
           >
-            Prêt à forger ton premier parcours ?
+            <TextReveal trigger="scroll" splitType="words">
+              Prêt à forger ton premier parcours ?
+            </TextReveal>
           </h2>
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
