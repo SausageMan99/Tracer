@@ -5,8 +5,11 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { gsap, ScrollTrigger } from "@/lib/gsap-setup";
 import GrainOverlay from "@/components/ui/GrainOverlay";
+import CustomCursor from "@/components/ui/CustomCursor";
+import TextReveal from "@/components/ui/TextReveal";
 import NumberTicker from "@/components/ui/NumberTicker";
 import { useRevealOnScroll, useStaggerReveal } from "@/hooks/useScrollAnimation";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 // ── Dynamic import for WebGL (no SSR) ─────────────────────────────────────────
 
@@ -709,6 +712,8 @@ function CtaButton({
 // ── Main landing page component ───────────────────────────────────────────────
 
 export default function LandingPage({ showNewHero = false }: { showNewHero?: boolean }) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+
   const painCardsRef = useStaggerReveal<HTMLDivElement>(".reveal-up", {
     staggerMs: 150,
     threshold: 0.1,
@@ -729,6 +734,8 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
 
   // ── Hero entry animations ────────────────────────────────────────────────────
   useEffect(() => {
+    if (prefersReducedMotion) return;
+
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
 
@@ -767,10 +774,11 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
     });
 
     return () => ctx.revert();
-  }, []);
+  }, [prefersReducedMotion]);
 
   return (
-    <main style={{ background: "var(--bg-deep)", color: "var(--text-primary)", overflowX: "hidden" }}>
+    <main className="custom-cursor" style={{ background: "var(--bg-deep)", color: "var(--text-primary)", overflowX: "hidden" }}>
+      <CustomCursor />
 
       {/* ═══════════════════════════════════════════════════════════════════════
           SECTION 1 — HERO

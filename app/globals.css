@@ -229,3 +229,11 @@ input[type="range"].dark-slider::-moz-range-thumb {
 .map-radar-ring-delay {
   animation-delay: 1.2s;
 }
+
+/* ── Custom cursor — hide default on landing page ────────────────────────── */
+
+@media (hover: hover) {
+  .custom-cursor * {
+    cursor: none !important;
+  }
+}
