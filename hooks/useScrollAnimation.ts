@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, RefObject } from "react";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 interface RevealOptions {
   /** CSS class to add when visible. Default: "is-visible" */
@@ -35,10 +36,17 @@ export function useRevealOnScroll<T extends Element = HTMLDivElement>(
   } = options;
 
   const ref = useRef<T>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+
+    // Skip scroll-based reveal — show immediately
+    if (prefersReducedMotion) {
+      el.classList.add(visibleClass);
+      return;
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -58,7 +66,7 @@ export function useRevealOnScroll<T extends Element = HTMLDivElement>(
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [visibleClass, threshold, rootMargin, once, delay]);
+  }, [visibleClass, threshold, rootMargin, once, delay, prefersReducedMotion]);
 
   return ref as RefObject<T>;
 }
@@ -77,19 +85,27 @@ export function useStaggerReveal<T extends Element = HTMLDivElement>(
 ): RefObject<T> {
   const { staggerMs = 100, ...rest } = options;
   const ref = useRef<T>(null);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   useEffect(() => {
     const container = ref.current;
     if (!container) return;
 
     const children = Array.from(container.querySelectorAll(childSelector));
+    const visibleClass = rest.visibleClass ?? "is-visible";
+
+    // Skip staggered reveal — show all immediately
+    if (prefersReducedMotion) {
+      children.forEach((child) => child.classList.add(visibleClass));
+      return;
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
           children.forEach((child, i) => {
             setTimeout(() => {
-              child.classList.add(rest.visibleClass ?? "is-visible");
+              child.classList.add(visibleClass);
             }, i * staggerMs + (rest.delay ?? 0));
           });
           if (rest.once !== false) observer.unobserve(container);
@@ -103,7 +119,7 @@ export function useStaggerReveal<T extends Element = HTMLDivElement>(
 
     observer.observe(container);
     return () => observer.disconnect();
-  }, [childSelector, staggerMs, rest.delay, rest.once, rest.rootMargin, rest.threshold, rest.visibleClass]);
+  }, [childSelector, staggerMs, rest.delay, rest.once, rest.rootMargin, rest.threshold, rest.visibleClass, prefersReducedMotion]);
 
   return ref as RefObject<T>;
 }
