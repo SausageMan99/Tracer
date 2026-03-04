@@ -864,24 +864,45 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         >
           <SectionLabel>Générateur de parcours GPS</SectionLabel>
 
-          <h1
-            ref={heroTitleRef}
-            style={{
-              fontFamily: "var(--font-playfair), serif",
-              fontSize: "clamp(52px, 9vw, 96px)",
-              fontStyle: "italic",
-              fontWeight: 700,
-              lineHeight: 1.05,
-              marginTop: "24px",
-              marginBottom: "28px",
-              color: "var(--text-primary)",
-            }}
-          >
-            <span className="hero-line">Forge ton</span>
-            <span className="hero-line" style={{ color: "var(--accent-lime)" }}>
-              parcours.
-            </span>
-          </h1>
+          {showNewHero ? (
+            <h1
+              ref={heroTitleRef}
+              style={{
+                fontFamily: "var(--font-playfair), serif",
+                fontSize: "clamp(52px, 9vw, 96px)",
+                fontStyle: "italic",
+                fontWeight: 700,
+                lineHeight: 1.05,
+                marginTop: "24px",
+                marginBottom: "28px",
+                color: "var(--text-primary)",
+              }}
+            >
+              <span className="hero-line">Ton terrain,</span>
+              <span className="hero-line" style={{ color: "var(--accent-lime)" }}>
+                ton parcours.
+              </span>
+            </h1>
+          ) : (
+            <h1
+              ref={heroTitleRef}
+              style={{
+                fontFamily: "var(--font-playfair), serif",
+                fontSize: "clamp(52px, 9vw, 96px)",
+                fontStyle: "italic",
+                fontWeight: 700,
+                lineHeight: 1.05,
+                marginTop: "24px",
+                marginBottom: "28px",
+                color: "var(--text-primary)",
+              }}
+            >
+              <span className="hero-line">Forge ton</span>
+              <span className="hero-line" style={{ color: "var(--accent-lime)" }}>
+                parcours.
+              </span>
+            </h1>
+          )}
 
           <p
             ref={heroSubRef}
