@@ -4,10 +4,16 @@ import { useRef, useMemo, Suspense } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { createNoise2D } from "simplex-noise";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
 // ── Terrain mesh ──────────────────────────────────────────────────────────────
 
-function TerrainMesh() {
+interface TerrainMeshProps {
+  readonly reducedMotion: boolean;
+  readonly mouseRef: React.RefObject<{ x: number; y: number }>;
+}
+
+function TerrainMesh({ reducedMotion, mouseRef }: TerrainMeshProps) {
   const meshRef = useRef<THREE.Mesh>(null);
   const noise2D = useMemo(() => createNoise2D(), []);
 
@@ -38,7 +44,7 @@ function TerrainMesh() {
 
   // Animate: slow rotation + subtle height pulse
   useFrame((state) => {
-    if (!meshRef.current) return;
+    if (!meshRef.current || reducedMotion) return;
 
     // Slow Y-axis rotation
     meshRef.current.rotation.y += 0.0003;
@@ -51,7 +57,17 @@ function TerrainMesh() {
       const z = pos[i + 2];
       const base = baseHeights[i / 3];
       const wave = Math.sin(t * (Math.PI * 2 / 8) + x * 0.08 + z * 0.06) * 0.6;
-      pos[i + 1] = base + wave;
+
+      // Cursor ripple displacement
+      const mouse = mouseRef.current;
+      const mouseWorldX = mouse.x * 70;  // Half of 140 (geometry width)
+      const mouseWorldZ = mouse.y * 70;  // Half of 140 (geometry height)
+      const distSq = (x - mouseWorldX) ** 2 + (z - mouseWorldZ) ** 2;
+      const cursorRadius = 400;     // squared radius
+      const cursorAmplitude = 4;
+      const cursorEffect = cursorAmplitude * Math.exp(-distSq / cursorRadius);
+
+      pos[i + 1] = base + wave + cursorEffect;
     }
     meshRef.current.geometry.attributes.position.needsUpdate = true;
   });
@@ -70,12 +86,17 @@ function TerrainMesh() {
 
 // ── Scene setup ───────────────────────────────────────────────────────────────
 
-function Scene() {
+interface SceneProps {
+  readonly reducedMotion: boolean;
+  readonly mouseRef: React.RefObject<{ x: number; y: number }>;
+}
+
+function Scene({ reducedMotion, mouseRef }: SceneProps) {
   return (
     <>
       {/* Atmospheric fog */}
       <fogExp2 attach="fog" args={[new THREE.Color(0x080c0a), 0.009]} />
-      <TerrainMesh />
+      <TerrainMesh reducedMotion={reducedMotion} mouseRef={mouseRef} />
     </>
   );
 }
@@ -113,11 +134,23 @@ export default function TerrainCanvas({
   cameraZ = 60,
   opacity = 0.7,
 }: TerrainCanvasProps) {
+  const prefersReducedMotion = usePrefersReducedMotion();
+  const mouseRef = useRef({ x: 0, y: 0 });
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    mouseRef.current = {
+      x: ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      y: -(((e.clientY - rect.top) / rect.height) * 2 - 1),
+    };
+  };
+
   return (
     <div
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0"
       style={{ opacity, zIndex: 0 }}
       aria-hidden="true"
+      onPointerMove={handlePointerMove}
     >
       <Suspense fallback={<TerrainFallback />}>
         <Canvas
@@ -136,7 +169,7 @@ export default function TerrainCanvas({
             gl.setClearColor(new THREE.Color(0x080c0a), 0);
           }}
         >
-          <Scene />
+          <Scene reducedMotion={prefersReducedMotion} mouseRef={mouseRef} />
         </Canvas>
       </Suspense>
     </div>
