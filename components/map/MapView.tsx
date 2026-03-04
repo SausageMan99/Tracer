@@ -508,7 +508,7 @@ export default function MapView() {
 
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/outdoors-v12",
+      style: "mapbox://styles/mapbox/dark-v11",
       center: [2.3522, 48.8566],
       zoom: 12,
     });
