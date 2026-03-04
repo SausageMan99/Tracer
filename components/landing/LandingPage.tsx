@@ -637,73 +637,6 @@ function StatBlock({
   );
 }
 
-// ── CTA Button ────────────────────────────────────────────────────────────────
-
-function CtaButton({
-  href,
-  children,
-  primary = true,
-}: {
-  href: string;
-  children: React.ReactNode;
-  primary?: boolean;
-}) {
-  const base: React.CSSProperties = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "16px 36px",
-    borderRadius: "2px",
-    fontFamily: "var(--font-syne), sans-serif",
-    fontSize: "14px",
-    fontWeight: 600,
-    letterSpacing: "0.1em",
-    textTransform: "uppercase" as const,
-    textDecoration: "none",
-    transition: "all 0.4s cubic-bezier(0.16,1,0.3,1)",
-    cursor: "pointer",
-  };
-  const primaryStyle: React.CSSProperties = {
-    ...base,
-    background: "var(--accent-lime)",
-    color: "var(--bg-deep)",
-    border: "1px solid transparent",
-  };
-  const ghostStyle: React.CSSProperties = {
-    ...base,
-    background: "transparent",
-    color: "var(--text-muted)",
-    border: "1px solid var(--border)",
-  };
-  return (
-    <Link
-      href={href}
-      style={primary ? primaryStyle : ghostStyle}
-      onMouseEnter={(e) => {
-        const el = e.currentTarget;
-        if (primary) {
-          el.style.transform = "scale(1.02)";
-          el.style.boxShadow = "0 0 32px rgba(168,214,114,0.25)";
-        } else {
-          el.style.borderColor = "var(--accent-moss)";
-          el.style.color = "var(--text-primary)";
-        }
-      }}
-      onMouseLeave={(e) => {
-        const el = e.currentTarget;
-        el.style.transform = "";
-        el.style.boxShadow = "";
-        if (!primary) {
-          el.style.borderColor = "var(--border)";
-          el.style.color = "var(--text-muted)";
-        }
-      }}
-    >
-      {children}
-    </Link>
-  );
-}
-
 // ── Main landing page component ───────────────────────────────────────────────
 
 export default function LandingPage({ showNewHero = false }: { showNewHero?: boolean }) {
@@ -848,45 +781,38 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         >
           <SectionLabel>Générateur de parcours GPS</SectionLabel>
 
-          {showNewHero ? (
-            <h1
-              ref={heroTitleRef}
-              style={{
-                fontFamily: "var(--font-playfair), serif",
-                fontSize: "clamp(52px, 9vw, 96px)",
-                fontStyle: "italic",
-                fontWeight: 700,
-                lineHeight: 1.05,
-                marginTop: "24px",
-                marginBottom: "28px",
-                color: "var(--text-primary)",
-              }}
-            >
-              <span className="hero-line">Ton terrain,</span>
-              <span className="hero-line" style={{ color: "var(--accent-lime)" }}>
-                ton parcours.
-              </span>
-            </h1>
-          ) : (
-            <h1
-              ref={heroTitleRef}
-              style={{
-                fontFamily: "var(--font-playfair), serif",
-                fontSize: "clamp(52px, 9vw, 96px)",
-                fontStyle: "italic",
-                fontWeight: 700,
-                lineHeight: 1.05,
-                marginTop: "24px",
-                marginBottom: "28px",
-                color: "var(--text-primary)",
-              }}
-            >
-              <span className="hero-line">Forge ton</span>
-              <span className="hero-line" style={{ color: "var(--accent-lime)" }}>
-                parcours.
-              </span>
-            </h1>
-          )}
+          <h1
+            style={{
+              fontFamily: "var(--font-playfair), serif",
+              fontSize: "clamp(52px, 9vw, 96px)",
+              fontStyle: "italic",
+              fontWeight: 700,
+              lineHeight: 1.05,
+              marginTop: "24px",
+              marginBottom: "28px",
+              color: "var(--text-primary)",
+            }}
+          >
+            {showNewHero ? (
+              <>
+                <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
+                  Ton terrain,
+                </TextReveal>
+                <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
+                  ton parcours.
+                </TextReveal>
+              </>
+            ) : (
+              <>
+                <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
+                  Forge ton
+                </TextReveal>
+                <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
+                  parcours.
+                </TextReveal>
+              </>
+            )}
+          </h1>
 
           <p
             ref={heroSubRef}
@@ -973,7 +899,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
                 marginBottom: "24px",
               }}
             >
-              Aucun outil ne génère vraiment les parcours.
+              <TextReveal trigger="scroll" splitType="words">
+                Aucun outil ne génère vraiment les parcours.
+              </TextReveal>
             </h2>
             <p
               style={{
@@ -1040,7 +968,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               marginTop: "8px",
             }}
           >
-            TrailForge fait le travail.
+            <TextReveal trigger="scroll" splitType="words">
+              TrailForge fait le travail.
+            </TextReveal>
           </h2>
         </div>
 
@@ -1221,10 +1151,10 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           </h2>
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
-            <CtaButton href="/app">Ouvrir TrailForge</CtaButton>
-            <CtaButton href="https://github.com" primary={false}>
+            <MagneticButton href="/app">Ouvrir TrailForge</MagneticButton>
+            <MagneticButton href="https://github.com" primary={false}>
               Voir la doc
-            </CtaButton>
+            </MagneticButton>
           </div>
         </div>
       </section>
