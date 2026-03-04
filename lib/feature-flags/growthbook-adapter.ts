@@ -1,6 +1,6 @@
-import { createGrowthBookAdapter } from "@flags-sdk/growthbook";
+import { createGrowthbookAdapter } from "@flags-sdk/growthbook";
 
-export const growthBookAdapter = createGrowthBookAdapter({
+export const growthBookAdapter = createGrowthbookAdapter({
   apiHost: process.env.GROWTHBOOK_API_HOST!,
   clientKey: process.env.GROWTHBOOK_CLIENT_KEY!,
 });
