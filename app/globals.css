@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── TrailForge Design Tokens ─────────────────────────────────────────────── */
+
+:root {
+  --bg-deep:      #080C0A;
+  --bg-surface:   #0D1410;
+  --bg-elevated:  #141C17;
+  --border:       #1E2B22;
+  --text-primary: #E8EDE9;
+  --text-muted:   #5C7363;
+  --accent-moss:  #4A7C59;
+  --accent-sage:  #7FB08A;
+  --accent-lime:  #A8D672;
+  --accent-amber: #D4A843;
+  --accent-trail: #C17A3A;
+  --gradient-hero: linear-gradient(160deg, #080C0A 0%, #0F1F12 50%, #080C0A 100%);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Legacy compatibility */
+  --primary:       #A8D672;
+  --font-inter:    "Inter", sans-serif;
+  --font-syne:     "Syne", sans-serif;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────────────── */
+
+html {
+  background-color: var(--bg-deep);
+  color: var(--text-primary);
+}
+
+body {
+  font-family: var(--font-inter), sans-serif;
+}
+
+/* ── Scrollbar utilities ──────────────────────────────────────────────────── */
+
+.sidebar-scroll::-webkit-scrollbar { display: none; }
+.sidebar-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+.scrollbar-hide::-webkit-scrollbar { display: none; }
+.scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+.session-scroll::-webkit-scrollbar { display: none; }
+.session-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── TrailForge custom range slider ──────────────────────────────────────── */
+
+input[type="range"].trailforge-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 2px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"].trailforge-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--bg-elevated);
+  border-radius: 0;
+}
+
+input[type="range"].trailforge-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-lime);
+  margin-top: -6px;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out-expo);
+  box-shadow: 0 0 8px rgba(168, 214, 114, 0.4);
+}
+
+input[type="range"].trailforge-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+input[type="range"].trailforge-slider::-moz-range-track {
+  height: 2px;
+  background: var(--bg-elevated);
+  border-radius: 0;
+}
+
+input[type="range"].trailforge-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-lime);
+  border: none;
+  cursor: pointer;
+}
+
+input[type="range"].trailforge-slider:disabled::-webkit-slider-thumb {
+  background: var(--accent-moss);
+  opacity: 0.5;
+  box-shadow: none;
+}
+
+/* Legacy dark-slider ─────────────────────────────────────────────────────── */
+
+input[type="range"].dark-slider::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--bg-elevated);
+}
+input[type="range"].dark-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-lime);
+  margin-top: -6px;
+  cursor: pointer;
+}
+input[type="range"].dark-slider::-moz-range-track {
+  height: 2px;
+  background: var(--bg-elevated);
+}
+input[type="range"].dark-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-lime);
+  border: none;
+  cursor: pointer;
+}
+
+/* ── Scroll reveal ────────────────────────────────────────────────────────── */
+
+.reveal-up {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.7s var(--ease-out-expo), transform 0.7s var(--ease-out-expo);
+}
+.reveal-up.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.reveal-fade {
+  opacity: 0;
+  transition: opacity 0.7s var(--ease-out-expo);
+}
+.reveal-fade.is-visible { opacity: 1; }
+
+.clip-reveal {
+  clip-path: inset(100% 0 0 0);
+  transition: clip-path 1.2s var(--ease-out-expo);
+}
+.clip-reveal.is-visible { clip-path: inset(0% 0 0 0); }
+
+/* ── App viewport (no body scroll) ───────────────────────────────────────── */
+
+.app-viewport {
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Mapbox overrides ─────────────────────────────────────────────────────── */
+
+.mapboxgl-ctrl-attrib { font-size: 10px !important; }
+.mapboxgl-ctrl-top-right { top: 12px; right: 12px; }
+
+/* ── Pulse animation ──────────────────────────────────────────────────────── */
+
+@keyframes pulse-ring {
+  0%   { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.2); opacity: 0; }
+}
+.start-marker-pulse { animation: pulse-ring 2s var(--ease-out-expo) infinite; }
+
+/* ── Hero title clip reveal ───────────────────────────────────────────────── */
+
+@keyframes hero-line-in {
+  from { clip-path: inset(100% 0 0 0); }
+  to   { clip-path: inset(0% 0 0 0); }
+}
+.hero-line {
+  display: block;
+  animation: hero-line-in 1.2s var(--ease-out-expo) both;
+}
+.hero-line:nth-child(2) { animation-delay: 0.15s; }
+
+/* ── Fade up ──────────────────────────────────────────────────────────────── */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.7s var(--ease-out-expo) both; }
+
+/* ── Scale fade ───────────────────────────────────────────────────────────── */
+
+@keyframes scale-fade {
+  from { opacity: 0; transform: scale(0.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.scale-fade { animation: scale-fade 0.7s var(--ease-out-expo) both; }
+
+/* ── Loading progress bar ─────────────────────────────────────────────────── */
+
+@keyframes loading-progress {
+  0%   { width: 0%; }
+  25%  { width: 25%; }
+  60%  { width: 75%; }
+  100% { width: 100%; }
+}
+
+/* ── Map radar pulse (route generation) ─────────────────────────────────── */
+
+@keyframes map-radar-pulse {
+  0%   { transform: scale(0.3); opacity: 0.8; }
+  70%  { opacity: 0.2; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+.map-radar-ring {
+  animation: map-radar-pulse 2.4s var(--ease-out-expo) infinite;
+}
+
+.map-radar-ring-delay {
+  animation-delay: 1.2s;
+}

@@ -1,0 +1,242 @@
+import type {
+  Coordinate,
+  EnrichedEdge,
+  EnrichedGraph,
+  GraphNode,
+} from "../types";
+import { haversineKm } from "../route-generator-legacy";
+import * as fs from "fs";
+import * as path from "path";
+
+const CACHE_DIR = path.join(process.cwd(), ".cache", "graphs");
+const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const HIGHWAY_FILTER = [
+  "secondary",
+  "tertiary",
+  "unclassified",
+  "residential",
+  "service",
+  "track",
+  "path",
+  "cycleway",
+  "bridleway",
+  "footway",
+  "pedestrian",
+  "living_street",
+].join("|");
+
+interface OverpassGraphElement {
+  type: "node" | "way";
+  id: number;
+  lat?: number;
+  lon?: number;
+  nodes?: number[];
+  tags?: Record<string, string>;
+}
+
+interface CachedGraph {
+  nodes: [string, GraphNode][];
+  edges: [string, EnrichedEdge][];
+  center: Coordinate;
+  radiusKm: number;
+  scenicWayIds: string[];
+  cachedAt: number;
+}
+
+function computeRadius(targetDistanceKm: number): number {
+  return Math.max(2, Math.min(25, targetDistanceKm * 0.4));
+}
+
+function getCacheKey(center: Coordinate, radiusKm: number): string {
+  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}.json`;
+}
+
+function tryLoadCache(cacheKey: string): CachedGraph | null {
+  const filePath = path.join(CACHE_DIR, cacheKey);
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const raw = fs.readFileSync(filePath, "utf-8");
+    const cached: CachedGraph = JSON.parse(raw);
+    if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
+      fs.unlinkSync(filePath);
+      return null;
+    }
+    return cached;
+  } catch {
+    return null;
+  }
+}
+
+function saveCache(cacheKey: string, data: CachedGraph): void {
+  try {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+    fs.writeFileSync(
+      path.join(CACHE_DIR, cacheKey),
+      JSON.stringify(data),
+      "utf-8"
+    );
+  } catch {
+    // Cache write failure is non-critical
+  }
+}
+
+export async function buildGraph(
+  center: Coordinate,
+  targetDistanceKm: number
+): Promise<{ graph: EnrichedGraph; scenicWayIds: Set<string> }> {
+  const radiusKm = computeRadius(targetDistanceKm);
+  const radiusM = Math.round(radiusKm * 1000);
+  const cacheKey = getCacheKey(center, radiusKm);
+
+  const cached = tryLoadCache(cacheKey);
+  if (cached) {
+    return {
+      graph: {
+        nodes: new Map(cached.nodes),
+        edges: new Map(cached.edges),
+        center: cached.center,
+        radiusKm: cached.radiusKm,
+      },
+      scenicWayIds: new Set(cached.scenicWayIds),
+    };
+  }
+
+  // Fetch highway ways with geometry + scenic features
+  const query = `[out:json][timeout:30];(
+way["highway"~"^(${HIGHWAY_FILTER})$"](around:${radiusM},${center.lat},${center.lng});
+(._;>;);
+nwr["natural"~"^(water|wood|forest|grassland|heath)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["landuse"~"^(forest|wood)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
+);out body qt;`;
+
+  const res = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: `data=${encodeURIComponent(query)}`,
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+  });
+
+  if (!res.ok) {
+    throw new Error("NO_ROAD_NETWORK");
+  }
+
+  const data: { elements: OverpassGraphElement[] } = await res.json();
+
+  // Step 1: Collect nodes
+  const nodeCoords = new Map<number, { lat: number; lon: number }>();
+  for (const el of data.elements) {
+    if (el.type === "node" && el.lat != null && el.lon != null) {
+      nodeCoords.set(el.id, { lat: el.lat, lon: el.lon });
+    }
+  }
+
+  // Step 2: Identify scenic ways
+  const scenicWayIds = new Set<string>();
+  for (const el of data.elements) {
+    if (el.type !== "way") continue;
+    const tags = el.tags ?? {};
+    if (
+      tags.natural ||
+      tags.landuse === "forest" ||
+      tags.landuse === "wood" ||
+      tags.leisure === "nature_reserve"
+    ) {
+      scenicWayIds.add(String(el.id));
+    }
+  }
+
+  // Step 3: Build graph from highway ways
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, EnrichedEdge>();
+
+  for (const el of data.elements) {
+    if (el.type !== "way" || !el.nodes?.length || !el.tags?.highway) continue;
+
+    const highway = el.tags.highway;
+    const surface = el.tags.surface;
+    const wayId = el.id;
+
+    for (let i = 0; i < el.nodes.length - 1; i++) {
+      const fromOsm = el.nodes[i];
+      const toOsm = el.nodes[i + 1];
+      const fromCoord = nodeCoords.get(fromOsm);
+      const toCoord = nodeCoords.get(toOsm);
+      if (!fromCoord || !toCoord) continue;
+
+      const fromId = String(fromOsm);
+      const toId = String(toOsm);
+
+      // Ensure nodes exist
+      if (!nodes.has(fromId)) {
+        nodes.set(fromId, {
+          id: fromId,
+          lat: fromCoord.lat,
+          lng: fromCoord.lon,
+          edges: [],
+        });
+      }
+      if (!nodes.has(toId)) {
+        nodes.set(toId, {
+          id: toId,
+          lat: toCoord.lat,
+          lng: toCoord.lon,
+          edges: [],
+        });
+      }
+
+      const lengthKm = haversineKm(
+        { lat: fromCoord.lat, lng: fromCoord.lon },
+        { lat: toCoord.lat, lng: toCoord.lon }
+      );
+
+      // Bidirectional edges
+      const fwdId = `${fromId}-${toId}-${wayId}`;
+      const revId = `${toId}-${fromId}-${wayId}`;
+
+      if (!edges.has(fwdId)) {
+        const edge: EnrichedEdge = {
+          id: fwdId,
+          from: fromId,
+          to: toId,
+          lengthKm,
+          highway,
+          surface,
+          osmWayId: wayId,
+          score: 0,
+        };
+        edges.set(fwdId, edge);
+        nodes.get(fromId)!.edges.push(fwdId);
+      }
+
+      if (!edges.has(revId)) {
+        const edge: EnrichedEdge = {
+          id: revId,
+          from: toId,
+          to: fromId,
+          lengthKm,
+          highway,
+          surface,
+          osmWayId: wayId,
+          score: 0,
+        };
+        edges.set(revId, edge);
+        nodes.get(toId)!.edges.push(revId);
+      }
+    }
+  }
+
+  const graph: EnrichedGraph = { nodes, edges, center, radiusKm };
+
+  // Cache as serialized arrays
+  saveCache(cacheKey, {
+    nodes: Array.from(nodes.entries()),
+    edges: Array.from(edges.entries()),
+    center,
+    radiusKm,
+    scenicWayIds: Array.from(scenicWayIds),
+    cachedAt: Date.now(),
+  });
+
+  return { graph, scenicWayIds };
+}
