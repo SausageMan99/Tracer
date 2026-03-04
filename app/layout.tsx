@@ -7,6 +7,8 @@ import {
 } from "next/font/google";
 import "./globals.css";
 import SmoothScrollProvider from "@/components/providers/SmoothScrollProvider";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 
 const playfairDisplay = Playfair_Display({
   subsets: ["latin"],
@@ -62,6 +64,8 @@ export default function RootLayout({
     >
       <body className="antialiased">
         <SmoothScrollProvider>{children}</SmoothScrollProvider>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
