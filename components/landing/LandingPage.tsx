@@ -7,7 +7,8 @@ import { gsap, ScrollTrigger } from "@/lib/gsap-setup";
 import GrainOverlay from "@/components/ui/GrainOverlay";
 import CustomCursor from "@/components/ui/CustomCursor";
 import TextReveal from "@/components/ui/TextReveal";
-import NumberTicker from "@/components/ui/NumberTicker";
+import MagneticButton from "@/components/ui/MagneticButton";
+import ScrambleNumber from "@/components/ui/ScrambleNumber";
 import { useRevealOnScroll, useStaggerReveal } from "@/hooks/useScrollAnimation";
 import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 
@@ -600,32 +601,26 @@ function TimelineStep({
 
 function StatBlock({
   value,
-  from = 0,
   suffix = "",
   prefix = "",
   label,
 }: {
   value: number;
-  from?: number;
   suffix?: string;
   prefix?: string;
   label: string;
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px", alignItems: "center" }}>
-      <NumberTicker
-        from={from}
-        to={value}
-        suffix={suffix}
-        prefix={prefix}
-        duration={1.8}
+      <ScrambleNumber
+        text={`${prefix}${value}${suffix}`}
         style={{
           fontFamily: "var(--font-playfair), serif",
           fontSize: "clamp(56px, 8vw, 80px)",
           fontStyle: "italic",
           color: "var(--accent-lime)",
           lineHeight: 1,
-        } as React.CSSProperties}
+        }}
       />
       <span
         style={{
@@ -720,7 +715,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
   });
 
   // ── Section refs ────────────────────────────────────────────────────────────
-  const heroTitleRef = useRef<HTMLHeadingElement>(null);
   const heroSubRef   = useRef<HTMLParagraphElement>(null);
   const heroCtaRef   = useRef<HTMLDivElement>(null);
   const heroNavRef   = useRef<HTMLElement>(null);
@@ -738,21 +732,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
 
     const ctx = gsap.context(() => {
       const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-
-      // Title lines
-      const titleLines = heroTitleRef.current?.querySelectorAll(".hero-line");
-      if (titleLines?.length) {
-        gsap.set(titleLines, { clipPath: "inset(100% 0 0 0)" });
-        tl.to(
-          titleLines,
-          {
-            clipPath: "inset(0% 0 0 0)",
-            duration: 1.2,
-            stagger: 0.15,
-          },
-          0.3
-        );
-      }
 
       // Subtitle
       if (heroSubRef.current) {
@@ -925,7 +904,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           </p>
 
           <div ref={heroCtaRef}>
-            <CtaButton href="/app">Générer mon parcours</CtaButton>
+            <MagneticButton href="/app">Générer mon parcours</MagneticButton>
           </div>
         </div>
 
