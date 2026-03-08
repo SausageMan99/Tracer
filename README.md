@@ -7,14 +7,14 @@
 [![Mapbox GL JS](https://img.shields.io/badge/Mapbox_GL-3.9-000?logo=mapbox)](https://docs.mapbox.com/mapbox-gl-js/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-TrailForge generates tailored running and cycling routes from a start address, a target distance, and a target elevation gain. It combines the GraphHopper and OpenRouteService routing engines with OpenStreetMap terrain data, Open-Meteo elevation profiles, and Strava heatmap popularity — then scores each candidate route and returns the best match with a GPX export ready for your GPS device.
+TrailForge generates tailored running and cycling routes from a start address, a target distance, and a target elevation gain. It combines the GraphHopper and OpenRouteService routing engines with OpenStreetMap terrain data and Open-Meteo elevation profiles — then scores each candidate route on surface quality, elevation match, nature proximity, and quietness, returning the best match with a GPX export ready for your GPS device.
 
 ---
 
 ## Features
 
 - **14 session profiles** across 4 sports (running, road cycling, gravel, MTB), each with its own scoring weights and routing preferences
-- **Dual mode** — Performance (blue) favors road quality; Scenic (green) boosts trail popularity via the Strava heatmap
+- **Dual mode** — Performance (blue) favors road quality; Scenic (green) boosts nature proximity and quietness
 - **Round-trip and A→B routing** with optional via-waypoints
 - **Slope gradient visualization** on the map (green → yellow → orange → red for 0 → 10 %+)
 - **Interactive elevation profile** with hover crosshair synchronized to the map marker
@@ -32,7 +32,7 @@ TrailForge generates tailored running and cycling routes from a start address, a
 │                                                                  │
 │  ┌─────────────────┐          ┌──────────────────────────────┐  │
 │  │   Sidebar UI    │          │       Mapbox GL JS           │  │
-│  │  SessionForm    │◄─Zustand─►   (slope, arrows, heatmap)   │  │
+│  │  SessionForm    │◄─Zustand─►   (slope, arrows)            │  │
 │  │  RouteResult    │  store   │   ElevationProfile (SVG)     │  │
 │  └────────┬────────┘          └──────────────────────────────┘  │
 │           │ POST /api/generate-route                             │
@@ -41,13 +41,13 @@ TrailForge generates tailored running and cycling routes from a start address, a
 ┌───────────▼─────────────────────────────────────────────────────┐
 │                    Next.js API Routes                            │
 │                                                                  │
-│  /api/generate-route          /api/heatmap-tile                 │
-│  (route-generator.ts)         (CORS proxy → Go proxy :8080)     │
-└──────┬──────────┬─────────────────────┬────────────────────────┘
-       │          │                     │
-       ▼          ▼                     ▼
-  GraphHopper  OpenRouteService    Strava CloudFront
-  (running)    (cycling)           (via Go proxy)
+│  /api/generate-route                                            │
+│  (route-generator.ts)                                           │
+└──────┬──────────┬──────────────────────────────────────────────┘
+       │          │
+       ▼          ▼
+  GraphHopper  OpenRouteService
+  (running)    (cycling)
        │          │
        ▼          ▼
   Open-Meteo    Overpass OSM
@@ -60,8 +60,7 @@ TrailForge generates tailored running and cycling routes from a start address, a
 3. 6 round-trip candidates are fetched from GraphHopper (running) or ORS (cycling)
 4. Elevation is enriched via Open-Meteo (running) or taken from ORS response (cycling)
 5. Terrain quality is scored via Overpass (highway/surface tags), cached 1 h
-6. Scenic mode adds a Strava heatmap popularity boost (scored client-side via OffscreenCanvas)
-7. Candidates are ranked; the best is displayed with the full slope map, profile chart, and GPX export
+6. Candidates are ranked; the best is displayed with the full slope map, profile chart, and GPX export
 
 ---
 
@@ -71,7 +70,6 @@ TrailForge generates tailored running and cycling routes from a start address, a
 |------|---------|---------|
 | Node.js | ≥ 22 | JavaScript runtime |
 | npm | ≥ 10 | Package manager |
-| Go | ≥ 1.22 | Strava heatmap proxy |
 | Git | any | Source control |
 
 API keys required (free tiers available):
@@ -110,17 +108,7 @@ cp .env.example .env.local
 
 No other variables are required. Open-Meteo and Overpass are used without authentication.
 
-### 3. Start the Strava heatmap proxy
-
-The Go proxy handles Strava CloudFront cookie authentication. Without it, Scenic mode still works but the heatmap tiles return empty PNG.
-
-```bash
-# From the repo root (proxy source lives in cmd/proxy/)
-go run ./cmd/proxy
-# Listens on http://localhost:8080
-```
-
-### 4. Start the development server
+### 3. Start the development server
 
 ```bash
 npm run dev
@@ -135,8 +123,7 @@ npm run dev
 trailforge/
 ├── app/
 │   ├── api/
-│   │   ├── generate-route/route.ts   # POST handler — validates body, calls generateRoute()
-│   │   └── heatmap-tile/route.ts     # GET handler — CORS proxy to Go proxy on :8080
+│   │   └── generate-route/route.ts   # POST handler — validates body, calls generateRoute()
 │   ├── layout.tsx                    # Root layout (Syne font, viewport meta)
 │   └── page.tsx                      # Single-page app shell (sidebar + map)
 │
@@ -155,14 +142,10 @@ trailforge/
 ├── lib/
 │   ├── feedback-store.ts             # localStorage read/write for RouteFeedback[]
 │   ├── gpx-export.ts                 # GPX 1.1 generation and browser download
-│   ├── heatmap-scorer.ts             # Strava tile fetch + OffscreenCanvas pixel scoring
 │   ├── route-generator.ts            # Core pipeline — geocode → fetch → elevate → score → rank
 │   ├── session-profiles.ts           # 14 session profiles with weights and routing params
 │   ├── store.ts                      # Zustand AppStore — single flat store for all UI state
 │   └── types.ts                      # Shared TypeScript types for the entire codebase
-│
-├── cmd/
-│   └── proxy/                        # Go Strava CloudFront proxy (port 8080)
 │
 ├── public/                           # Static assets
 ├── .env.example                      # Environment variable template
@@ -212,24 +195,6 @@ Generates one or more route candidates from a start address.
 | `422` | `IMPOSSIBLE_ELEVATION` | Requested D+ exceeds terrain maximum |
 | `422` | `GEOCODING_FAILED` | Nominatim could not resolve the address |
 | `500` | `UNKNOWN` | Unexpected server-side error |
-
----
-
-### `GET /api/heatmap-tile`
-
-Same-origin proxy that forwards Strava heatmap tile requests to the local Go proxy, bypassing browser CORS restrictions.
-
-**Query parameters**:
-
-| Parameter | Values | Default | Description |
-|-----------|--------|---------|-------------|
-| `sport` | `all`, `running`, `ride` | `all` | Activity type filter |
-| `color` | `hot`, `blue`, `bluered` | `hot` | Heatmap colour scheme |
-| `z` | integer | — | Tile zoom level |
-| `x` | integer | — | Tile X coordinate |
-| `y` | integer | — | Tile Y coordinate |
-
-Returns a `image/png` tile cached for 1 hour (`stale-while-revalidate` 24 h).
 
 ---
 

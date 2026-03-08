@@ -9,7 +9,7 @@
  * first session profile (running endurance) pre-selected.
  */
 import { create } from "zustand";
-import type { AppState, AppStatus, Coordinate, GeneratedRoute, HeatmapSport } from "./types";
+import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
 import { SESSION_PROFILES } from "./session-profiles";
 
 /**
@@ -57,14 +57,6 @@ interface AppStore extends AppState {
    */
   hoveredRouteProgress: number | null;
   setHoveredRouteProgress: (v: number | null) => void;
-  /** Whether the Strava heatmap overlay is currently shown on the map */
-  heatmapVisible: boolean;
-  /** Which Strava activity type is shown in the heatmap overlay */
-  heatmapSport: HeatmapSport;
-  /** Toggles `heatmapVisible` between true and false */
-  toggleHeatmap: () => void;
-  /** Change the heatmap activity filter */
-  setHeatmapSport: (sport: HeatmapSport) => void;
   /** Whether the IGN France SCAN 25 raster overlay is shown on the map */
   ignLayerVisible: boolean;
   /** Toggles `ignLayerVisible` between true and false */
@@ -97,8 +89,6 @@ export const useAppStore = create<AppStore>((set) => ({
   ...initialState,
   scenicMode: false,
   hoveredRouteProgress: null,
-  heatmapVisible: false,
-  heatmapSport: "all" as HeatmapSport,
 
   setAddress: (address) => set({ address }),
   setProfileId: (selectedProfileId) => set({ selectedProfileId }),
@@ -132,9 +122,6 @@ export const useAppStore = create<AppStore>((set) => ({
 
   setScenicMode: (scenicMode) => set({ scenicMode }),
   setHoveredRouteProgress: (hoveredRouteProgress) => set({ hoveredRouteProgress }),
-
-  toggleHeatmap: () => set((state) => ({ heatmapVisible: !state.heatmapVisible })),
-  setHeatmapSport: (heatmapSport) => set({ heatmapSport }),
 
   ignLayerVisible: false,
   toggleIgnLayer: () => set((state) => ({ ignLayerVisible: !state.ignLayerVisible })),

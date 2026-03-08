@@ -11,7 +11,6 @@ import type {
   SessionProfile,
 } from "./types";
 import { PROFILES_BY_ID } from "./session-profiles";
-import { scoreRoutePopularity } from "./heatmap-scorer";
 
 const GRAPHHOPPER_API_KEY = process.env.GRAPHHOPPER_API_KEY ?? "";
 const ORS_API_KEY = process.env.ORS_API_KEY ?? "";
@@ -866,12 +865,6 @@ export function scoreRoute(
  * 9. Re-sort after popularity boost (scenic profiles only)
  * 10. Validate that the best candidate is not impossibly flat
  *
- * The Strava popularity boost applies when:
- * - `profile.weights.surfaceQuality >= 0.25`, or
- * - sport is `cycling_gravel` or `cycling_mtb`
- *
- * Boost formula: `totalScore += popularityScore × 0.25`
- *
  * @param request - Generation parameters from the API route handler
  * @returns The generated route with all candidates sorted by score
  * @throws {Error} `"UNKNOWN_PROFILE"` — profileId not in SESSION_PROFILES
@@ -1007,44 +1000,6 @@ export async function generateRoute(
 
   // Step 6: Sort by score (best first)
   candidates.sort((a, b) => b.totalScore - a.totalScore);
-
-  // Step 6b: Popularity scoring (Strava heatmap) — top 4 candidates
-  const heatmapSport =
-    profile.sport === "running"
-      ? ("running" as const)
-      : profile.sport.startsWith("cycling_")
-        ? ("ride" as const)
-        : ("all" as const);
-
-  const topN = Math.min(4, candidates.length);
-  try {
-    const popularityResults = await Promise.all(
-      candidates.slice(0, topN).map((c) =>
-        scoreRoutePopularity(c.geometry.coordinates, heatmapSport)
-      )
-    );
-
-    for (let i = 0; i < topN; i++) {
-      const { meanScore } = popularityResults[i];
-      candidates[i].popularityScore = meanScore;
-
-      // For SCENIC-weighted profiles: boost the total score
-      // Scenic profiles tend to have high surfaceQuality weight
-      const isScenicProfile =
-        profile.weights.surfaceQuality >= 0.25 ||
-        profile.sport === "cycling_gravel" ||
-        profile.sport === "cycling_mtb";
-
-      if (isScenicProfile) {
-        candidates[i].totalScore += meanScore * 0.25;
-      }
-    }
-
-    // Re-sort after popularity boost
-    candidates.sort((a, b) => b.totalScore - a.totalScore);
-  } catch {
-    // Heatmap proxy may be down — silently skip popularity scoring
-  }
 
   const best = candidates[0];
 

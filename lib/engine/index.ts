@@ -43,13 +43,15 @@ export async function generateRouteV2(
 
   // 5. Derive session weights and score edges
   const weights = deriveWeights(profile);
-  await scoreEdges(graph, weights, profile, scenicWayIds);
+  const { nodeElevation } = await scoreEdges(graph, weights, profile, scenicWayIds);
 
   // 6. Run solver
   const solverPaths = await solve(
     graph,
     closestNodeId,
-    request.targetDistanceKm
+    request.targetDistanceKm,
+    request.targetElevationM,
+    nodeElevation
   );
 
   if (solverPaths.length === 0) {

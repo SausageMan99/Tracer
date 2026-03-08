@@ -1,15 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useAppStore } from "@/lib/store";
 
 /**
  * Fixed top navigation bar for the /app route.
- * Shows: logo+back link / centered label / heatmap status
+ * Shows: logo+back link / centered label
  */
 export default function AppNav() {
-  const { heatmapVisible } = useAppStore();
-
   return (
     <nav
       style={{
@@ -68,29 +65,8 @@ export default function AppNav() {
         TRAILFORGE APP
       </span>
 
-      {/* Right: heatmap status */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "6px",
-          fontFamily: "var(--font-syne), sans-serif",
-          fontSize: "11px",
-          color: "var(--text-muted)",
-        }}
-      >
-        <span
-          style={{
-            width: "6px",
-            height: "6px",
-            borderRadius: "50%",
-            background: heatmapVisible ? "var(--accent-lime)" : "var(--text-muted)",
-            flexShrink: 0,
-            transition: "background 0.3s",
-          }}
-        />
-        Heatmap
-      </div>
+      {/* Right: spacer for symmetry */}
+      <div style={{ width: "80px" }} />
     </nav>
   );
 }

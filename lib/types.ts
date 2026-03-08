@@ -159,7 +159,6 @@ export interface RoutePoint extends Coordinate {
 /**
  * A fully evaluated route candidate produced by the generation pipeline.
  * Scores range from 0 to 1; `totalScore` is the weighted sum used for ranking.
- * `popularityScore` is optional because the Strava heatmap proxy may be unavailable.
  */
 export interface RouteCandidate {
   /** Subsampled route points with elevation (max 200 points) */
@@ -178,11 +177,6 @@ export interface RouteCandidate {
   loopScore: number;
   /** Weighted multi-criteria score 0–1 (higher = better match) */
   totalScore: number;
-  /**
-   * Strava heatmap popularity score 0–1. Present only when the local proxy
-   * (port 8080) is running during generation.
-   */
-  popularityScore?: number;
   /** Full road-following geometry for map display (more points than `points`) */
   geometry: {
     type: "LineString";
@@ -190,14 +184,6 @@ export interface RouteCandidate {
     coordinates: [number, number][];
   };
 }
-
-/**
- * Filter for the Strava heatmap overlay and popularity scoring.
- * - `"all"` → all activities
- * - `"running"` → running activities only
- * - `"ride"` → cycling activities only
- */
-export type HeatmapSport = "all" | "running" | "ride";
 
 /**
  * Statistics produced by the SmartRoute post-processing pipeline.
@@ -476,7 +462,6 @@ export interface EnrichedGraph {
 export interface SessionWeights {
   surface: number;
   elevation: number;
-  popularity: number;
   nature: number;
   quietness: number;
 }

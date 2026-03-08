@@ -12,11 +12,10 @@ Technical deep-dive into TrailForge — how the system is built, why key decisio
 4. [Route Generation Pipeline](#route-generation-pipeline)
 5. [Session Profiles](#session-profiles)
 6. [Scoring Algorithm](#scoring-algorithm)
-7. [Strava Heatmap Integration](#strava-heatmap-integration)
-8. [GPX Export](#gpx-export)
-9. [Feedback ML System](#feedback-ml-system)
-10. [External APIs](#external-apis)
-11. [Performance Considerations](#performance-considerations)
+7. [GPX Export](#gpx-export)
+8. [Feedback ML System](#feedback-ml-system)
+9. [External APIs](#external-apis)
+10. [Performance Considerations](#performance-considerations)
 
 ---
 
@@ -34,20 +33,17 @@ Browser
         │     └── AddressInput      — Nominatim autocomplete
         └── Map (Mapbox GL JS, client-only)
               ├── GeoJSON layers (slope gradient, arrows)
-              ├── Raster layer (Strava heatmap)
               └── Symbol layers (start/end markers, hover dot)
 
 API Routes (server-side, Node.js)
-  ├── POST /api/generate-route  → lib/route-generator.ts
-  └── GET  /api/heatmap-tile    → Go proxy on :8080
+  └── POST /api/generate-route  → lib/route-generator.ts
 
 External Services
   ├── GraphHopper API    (running round-trip routing)
   ├── OpenRouteService   (cycling routing with built-in elevation)
   ├── Open-Meteo         (elevation enrichment for GraphHopper results)
   ├── Overpass OSM       (terrain/surface tag queries)
-  ├── Nominatim OSM      (address geocoding, called from the browser)
-  └── Strava CloudFront  (heatmap tiles, via Go proxy)
+  └── Nominatim OSM      (address geocoding, called from the browser)
 ```
 
 The system has **no database**. Route results live in React/Zustand state for the duration of the session. Feedback data is persisted in browser `localStorage`.
@@ -75,7 +71,7 @@ All store actions (`setStatus`, `setCurrentRoute`, `clearRoute`, etc.) are defin
 
 ### Map Layer Architecture
 
-`MapView.tsx` manages 6 Mapbox GL source/layer pairs:
+`MapView.tsx` manages 5 Mapbox GL source/layer pairs:
 
 | Source ID | Layer type | Purpose |
 |-----------|-----------|---------|
@@ -84,7 +80,6 @@ All store actions (`setStatus`, `setCurrentRoute`, `clearRoute`, etc.) are defin
 | `route-hover-point` | `circle` | Dot at ElevationProfile hover position |
 | `route-start-marker` | `circle` | Green start marker |
 | `route-end-marker` | `circle` | Red end marker |
-| `strava-heatmap` | `raster` | Strava activity density tiles |
 
 Route animation uses `requestAnimationFrame` with an ease-out cubic curve over 1400 ms. The GeoJSON line is progressively trimmed from 0 % to 100 % of its total length using `turf.lineSliceAlong` so the route appears to draw itself on the map.
 
@@ -129,19 +124,6 @@ The handler (`app/api/generate-route/route.ts`) is thin — it validates the req
 | `"IMPOSSIBLE_ELEVATION:<n>"` | 422 | `IMPOSSIBLE_ELEVATION` |
 | `"GEOCODING_FAILED"` | 422 | `GEOCODING_FAILED` |
 | anything else | 500 | `UNKNOWN` |
-
-### API Route: GET /api/heatmap-tile
-
-This route exists solely to work around browser CORS policy. Chrome blocks cross-origin requests from `localhost:3000` to `localhost:8080`. The Next.js route proxies the tile request server-to-server:
-
-```
-Browser → GET /api/heatmap-tile?sport=all&color=hot&z=12&x=...&y=...
-       → Next.js validates params (whitelist for sport, color)
-       → fetch http://localhost:8080/identified/globalheat/{sport}/{color}/{z}/{x}/{y}@2x.png
-       → return raw PNG bytes with 1 h cache headers
-```
-
-Parameters are validated against explicit whitelists to prevent SSRF — only the `sport` and `color` values are injected into the proxy URL, not arbitrary user input.
 
 ---
 
@@ -220,7 +202,7 @@ loopScore = max(0, 1 - (endToStartKm / 5.0))
 
 ### Step 7 — Route Scoring
 
-`scoreRoute()` computes a weighted sum over five components:
+`scoreRoute()` computes a weighted sum over four components:
 
 | Component | Weight source | Description |
 |-----------|--------------|-------------|
@@ -228,7 +210,6 @@ loopScore = max(0, 1 - (endToStartKm / 5.0))
 | `distanceMatch` | `profile.weights.distance` | How close distance is to the target |
 | `surfaceQuality` | `profile.weights.surface` | Terrain score from Overpass |
 | `loopQuality` | `profile.weights.loop` | Loop closure quality |
-| `popularity` (scenic) | fixed `0.25` | Strava heatmap mean brightness |
 
 The elevation and distance match components use a Gaussian-like decay:
 
@@ -237,8 +218,6 @@ elevationMatch = exp(-0.5 × ((actual - target) / sigma)²)
 ```
 
 Where sigma is 20 % of the target value, so a 20 % deviation gives ~0.6, a 40 % deviation gives ~0.1.
-
-The Strava popularity component is computed **client-side** after the route is received, because the heatmap tiles are fetched through the browser's CORS proxy. The score is added to the `totalScore` if Scenic mode is active in the store.
 
 ### Step 8 — Ranking and Subsampling
 
@@ -260,7 +239,7 @@ Each profile specifies:
 | `sessionType` | One of `endurance`, `speed`, `hills`, `trail`, `exploration`, `descent` |
 | `targetDistanceKm` | Suggested default distance |
 | `targetElevationM` | Suggested default elevation |
-| `weights` | `ScoringWeights` object (must sum to ≈ 1.0 for the non-scenic components) |
+| `weights` | `ScoringWeights` object (must sum to ≈ 1.0) |
 | `graphhopperProfile` | `"foot"` or `"hike"` (running only) |
 | `orsPreferences` | ORS-specific options (cycling only) |
 
@@ -276,7 +255,6 @@ Full mathematical documentation is in [docs/algorithms/route-scoring.md](docs/al
 
 ```
 totalScore = w_elev × elevMatch + w_dist × distMatch + w_surf × surfaceScore + w_loop × loopScore
-           + (scenicMode ? 0.25 × popularityScore : 0)
 
 elevMatch  = exp(-0.5 × ((D+ - targetD+) / (0.2 × targetD+))²)
 distMatch  = exp(-0.5 × ((dist - targetDist) / (0.2 × targetDist))²)
@@ -292,41 +270,6 @@ distMatch  = exp(-0.5 × ((dist - targetDist) / (0.2 × targetDist))²)
 | Trail | 0.25 | 0.25 | 0.30 | 0.20 |
 | Exploration | 0.20 | 0.20 | 0.40 | 0.20 |
 | Descent (MTB DH) | 0.35 | 0.20 | 0.25 | 0.20 |
-
----
-
-## Strava Heatmap Integration
-
-The Strava global heatmap is a raster tile service protected by CloudFront signed cookies. The cookies are valid for a few weeks and must be refreshed manually.
-
-### Architecture
-
-```
-Browser (Mapbox GL raster source)
-  └── GET /api/heatmap-tile?sport=all&color=hot&z={z}&x={x}&y={y}   [Next.js — CORS proxy]
-         └── GET http://localhost:8080/identified/globalheat/{sport}/{color}/{z}/{x}/{y}@2x.png
-                └── GET https://heatmap-external-a.strava.com/...    [with CloudFront cookies]
-```
-
-The Go proxy (`cmd/proxy/`) holds the CloudFront session cookies and forwards all heatmap tile requests on behalf of the Next.js server. The proxy does not need to run if Scenic mode is never used — the app degrades gracefully (heatmap tiles return 502, popularity score stays at the neutral 0.5).
-
-### Popularity Scoring
-
-`scoreRoutePopularity()` in `lib/heatmap-scorer.ts` scores each route by sampling the heatmap tile at zoom 12. For each route point:
-
-1. Convert `[lat, lng]` to the `[tileX, tileY, pixelX, pixelY]` at zoom 12
-2. Fetch the `256×256` PNG tile via `/api/heatmap-tile`
-3. Draw the tile into an `OffscreenCanvas`
-4. Read a 7×7 pixel block centred on the point's pixel position
-5. Compute brightness using the "hot" colormap luminance formula:
-   ```
-   brightness = (R × 0.5 + G × 0.3 + B × 0.1) / (255 × 0.9)
-   ```
-6. Average across all sampled points → `meanPopularity` in [0, 1]
-
-Zoom 12 tiles cover ~38 km² — coarse enough to be cached aggressively but fine enough to differentiate popular from quiet areas within a city.
-
-See [docs/integrations/strava-heatmap.md](docs/integrations/strava-heatmap.md) for cookie renewal instructions.
 
 ---
 
@@ -407,11 +350,9 @@ Data is exported as JSON via the "Export feedbacks" button in the sidebar (visib
 | Open-Meteo Elevation | None | 10 000 req/day | Elevation enrichment |
 | Overpass OSM | None | ~10 req/min politely | Terrain/surface tags |
 | Nominatim OSM | None | 1 req/s | Address geocoding (browser) |
-| Strava heatmap | CloudFront cookies | None (tiles are public) | Popularity heatmap |
 
 All external API calls are made server-side (in API Routes or `route-generator.ts`), except:
 - Nominatim — called from the browser's `AddressInput` component
-- Strava tiles — fetched by Mapbox GL JS from `/api/heatmap-tile` (which proxies to the Go proxy)
 
 ---
 
@@ -427,10 +368,6 @@ GraphHopper seeds and ORS variant requests are always made in parallel (`Promise
 1. Terrain data changes at most a few times per day
 2. The app is typically run as a single Next.js instance
 3. The simplicity of an in-memory cache outweighs the consistency guarantees of a shared cache for this use case
-
-### Strava tile cache
-
-`/api/heatmap-tile` sets `Cache-Control: public, max-age=3600, stale-while-revalidate=86400`. Browsers and any intermediate CDN will cache tiles for 1 hour and serve stale tiles for up to 24 hours while revalidating in the background. Strava heatmap tiles change at most weekly.
 
 ### Map GeoJSON payload
 

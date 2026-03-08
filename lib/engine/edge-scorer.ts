@@ -17,40 +17,36 @@ export function deriveWeights(profile: SessionProfile): SessionWeights {
   const { sport, sessionType } = profile;
 
   // Base weights by sport
-  const base: SessionWeights = { surface: 0.25, elevation: 0.15, popularity: 0.15, nature: 0.2, quietness: 0.25 };
+  const base: SessionWeights = { surface: 0.3, elevation: 0.15, nature: 0.25, quietness: 0.3 };
 
   if (sport === "running") {
     base.surface = 0.3;
-    base.quietness = 0.25;
-    base.nature = 0.25;
-    base.elevation = 0.1;
-    base.popularity = 0.1;
-  } else if (sport === "cycling_road") {
-    base.surface = 0.3;
     base.quietness = 0.3;
+    base.nature = 0.25;
+    base.elevation = 0.15;
+  } else if (sport === "cycling_road") {
+    base.surface = 0.35;
+    base.quietness = 0.35;
     base.nature = 0.1;
-    base.elevation = 0.15;
-    base.popularity = 0.15;
+    base.elevation = 0.2;
   } else if (sport === "cycling_gravel") {
-    base.surface = 0.2;
+    base.surface = 0.25;
     base.quietness = 0.2;
-    base.nature = 0.3;
-    base.elevation = 0.15;
-    base.popularity = 0.15;
+    base.nature = 0.35;
+    base.elevation = 0.2;
   } else if (sport === "cycling_mtb") {
     base.surface = 0.15;
     base.quietness = 0.15;
-    base.nature = 0.35;
-    base.elevation = 0.2;
-    base.popularity = 0.15;
+    base.nature = 0.4;
+    base.elevation = 0.3;
   }
 
   // Intensity adjustments
   if (sessionType === "intervals_30_30" || sessionType === "intervals") {
-    base.elevation = 0.05; // Intervals want flat
+    base.elevation = 0.05;
     base.surface += 0.1;
   } else if (sessionType === "gran_fondo" || sessionType === "sortie_longue") {
-    base.elevation = 0.25;
+    base.elevation = 0.3;
     base.nature += 0.05;
   } else if (sessionType === "recuperation") {
     base.elevation = 0.05;
@@ -58,10 +54,9 @@ export function deriveWeights(profile: SessionProfile): SessionWeights {
   }
 
   // Normalize to sum = 1
-  const sum = base.surface + base.elevation + base.popularity + base.nature + base.quietness;
+  const sum = base.surface + base.elevation + base.nature + base.quietness;
   base.surface /= sum;
   base.elevation /= sum;
-  base.popularity /= sum;
   base.nature /= sum;
   base.quietness /= sum;
 
@@ -106,7 +101,7 @@ export async function scoreEdges(
   weights: SessionWeights,
   profile: SessionProfile,
   scenicWayIds: Set<string>
-): Promise<void> {
+): Promise<{ nodeElevation: Map<string, number> }> {
   // Fetch elevations for all unique nodes
   const nodeIds = Array.from(graph.nodes.keys());
   const coords: Coordinate[] = nodeIds.map((id) => {
@@ -163,14 +158,12 @@ export async function scoreEdges(
       else elevScore = Math.max(0.3, 1 - (gradient - 0.05) * 5);
     }
 
-    // Popularity is set to neutral (0.5) since we don't have per-edge data
-    const popularityScore = 0.5;
-
     edge.score =
       weights.surface * surfaceScore +
       weights.elevation * elevScore +
-      weights.popularity * popularityScore +
       weights.nature * natureScore +
       weights.quietness * quietnessScore;
   }
+
+  return { nodeElevation };
 }

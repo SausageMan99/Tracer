@@ -44,15 +44,10 @@ export interface RouteFeedback {
   /** Actual D+ of the generated route in metres */
   actualElevationM: number;
   /**
-   * Multi-criteria algorithmic score before popularity boost, in [0, 1].
+   * Multi-criteria algorithmic score in [0, 1].
    * Useful to identify routes that score high algorithmically but rate poorly.
    */
   algorithmicScore: number;
-  /**
-   * Strava heatmap popularity score in [0, 1], or 0 when proxy was unavailable.
-   * Key feature: does popularity correlate with user satisfaction?
-   */
-  popularityScore: number;
   /**
    * `|actualDistance - requestedDistance| / requestedDistance × 100`.
    * Rounded to integer percent.

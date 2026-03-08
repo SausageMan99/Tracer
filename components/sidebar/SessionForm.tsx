@@ -156,8 +156,6 @@ export default function SessionForm() {
     errorMessage,
     scenicMode,        setScenicMode,
     setMapCenter,
-    heatmapVisible,    heatmapSport,
-    toggleHeatmap,     setHeatmapSport,
   } = useAppStore();
 
   const [selectedSport, setSelectedSport] = useState<Sport>("running");
@@ -633,97 +631,6 @@ export default function SessionForm() {
           </div>
         </div>
 
-        {/* ── Heatmap toggle (always visible, scenic badge) ──────────────── */}
-        <Divider />
-        <div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              padding: "12px 16px",
-              background: "var(--bg-surface)",
-              border: "1px solid var(--border)",
-              borderRadius: "2px",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="16" height="16" style={{ color: heatmapVisible ? "var(--accent-trail)" : "var(--text-muted)" }}>
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
-                <path d="M12 6c0 2-2 4-2 6 0 1.1.9 2 2 2s2-.9 2-2c0-2-2-4-2-6z"/>
-              </svg>
-              <span
-                style={{
-                  fontFamily: "var(--font-syne), sans-serif",
-                  fontSize: "11px",
-                  fontWeight: 600,
-                  letterSpacing: "0.1em",
-                  color: heatmapVisible ? "var(--text-primary)" : "var(--text-muted)",
-                  textTransform: "uppercase",
-                }}
-              >
-                Heatmap Strava
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={toggleHeatmap}
-              aria-label={heatmapVisible ? "Désactiver la heatmap" : "Activer la heatmap"}
-              style={{
-                position: "relative",
-                width: "36px",
-                height: "18px",
-                borderRadius: "9px",
-                border: "none",
-                background: heatmapVisible ? "var(--accent-lime)" : "var(--bg-elevated)",
-                cursor: "pointer",
-                transition: "background 0.2s var(--ease-out-expo)",
-                flexShrink: 0,
-              }}
-            >
-              <span
-                style={{
-                  position: "absolute",
-                  top: "2px",
-                  left: heatmapVisible ? "20px" : "2px",
-                  width: "14px",
-                  height: "14px",
-                  borderRadius: "50%",
-                  background: "white",
-                  transition: "left 0.2s var(--ease-out-expo)",
-                }}
-              />
-            </button>
-          </div>
-
-          {heatmapVisible && (
-            <div style={{ display: "flex", gap: "4px", marginTop: "6px" }}>
-              {(["all", "running", "ride"] as const).map((sport) => (
-                <button
-                  key={sport}
-                  type="button"
-                  onClick={() => setHeatmapSport(sport)}
-                  style={{
-                    flex: 1,
-                    padding: "6px 0",
-                    borderRadius: "2px",
-                    fontFamily: "var(--font-syne), sans-serif",
-                    fontSize: "10px",
-                    fontWeight: 600,
-                    letterSpacing: "0.1em",
-                    border: "1px solid",
-                    cursor: "pointer",
-                    transition: "all 0.2s var(--ease-out-expo)",
-                    textTransform: "uppercase",
-                    ...(heatmapSport === sport ? chipActive : chipInactive),
-                  }}
-                >
-                  {sport === "all" ? "Tous" : sport === "running" ? "Course" : "Vélo"}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* ── Generate button (sticky bottom) ────────────────────────────── */}

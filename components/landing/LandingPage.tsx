@@ -411,123 +411,6 @@ function GpsDevicesVisual() {
   );
 }
 
-// ── Strava heatmap visual ─────────────────────────────────────────────────────
-
-function StravaHeatmapVisual() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cellsRef = useRef<HTMLDivElement[]>([]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    // Start all cells invisible
-    cellsRef.current.forEach((cell) => {
-      if (cell) gsap.set(cell, { opacity: 0, scale: 0.4 });
-    });
-
-    const trigger = ScrollTrigger.create({
-      trigger: container,
-      start: "top 80%",
-      once: true,
-      onEnter: () => {
-        cellsRef.current.forEach((cell, i) => {
-          if (!cell) return;
-          gsap.to(cell, {
-            opacity: 1,
-            scale: 1,
-            duration: 0.4,
-            delay: i * 0.015,
-            ease: "back.out(1.4)",
-          });
-        });
-      },
-    });
-    return () => trigger.kill();
-  }, []);
-
-  // Build a 12×7 grid simulating heatmap intensity
-  const cols = 12;
-  const heatData: number[][] = [
-    [0, 0, 1, 2, 2, 3, 4, 3, 2, 1, 0, 0],
-    [0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0],
-    [1, 2, 3, 5, 6, 7, 8, 7, 5, 3, 2, 1],
-    [0, 1, 3, 5, 7, 9, 9, 7, 5, 3, 1, 0],
-    [0, 0, 2, 4, 5, 6, 6, 5, 4, 2, 0, 0],
-    [0, 0, 1, 2, 3, 4, 4, 3, 2, 1, 0, 0],
-    [0, 0, 0, 1, 1, 2, 2, 1, 1, 0, 0, 0],
-  ];
-
-  const maxVal = 9;
-  const colors = [
-    "transparent",
-    "rgba(252,70,107,0.08)",
-    "rgba(252,70,107,0.15)",
-    "rgba(252,70,107,0.25)",
-    "rgba(252,70,107,0.35)",
-    "rgba(252,70,107,0.45)",
-    "rgba(252,70,107,0.58)",
-    "rgba(252,70,107,0.70)",
-    "rgba(252,70,107,0.82)",
-    "rgba(252,70,107,0.95)",
-  ];
-
-  let cellIndex = 0;
-
-  return (
-    <div
-      ref={containerRef}
-      style={{ padding: "24px", width: "100%", display: "flex", flexDirection: "column", gap: "12px" }}
-    >
-      {/* Strava-orange label */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-        <svg viewBox="0 0 24 24" fill="#FC461B" width="14" height="14">
-          <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066m-7.008-5.599l2.836 5.598h4.172L10.463 0l-7 13.828h4.169" />
-        </svg>
-        <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "9px", color: "rgba(252,70,107,0.7)", letterSpacing: "0.15em" }}>
-          ACTIVITÉ LOCALE · 847 ATHLÈTES
-        </span>
-      </div>
-
-      {/* Grid */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${cols}, 1fr)`,
-          gap: "3px",
-        }}
-      >
-        {heatData.map((row, ri) =>
-          row.map((val, ci) => {
-            const idx = cellIndex++;
-            return (
-              <div
-                key={`${ri}-${ci}`}
-                ref={(el) => { if (el) cellsRef.current[idx] = el; }}
-                style={{
-                  aspectRatio: "1",
-                  borderRadius: "2px",
-                  background: colors[Math.min(val, maxVal)],
-                  border: val > 0 ? "1px solid rgba(252,70,107,0.12)" : "none",
-                }}
-              />
-            );
-          })
-        )}
-      </div>
-
-      {/* Legend */}
-      <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "4px" }}>
-        <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "8px", color: "var(--text-muted)" }}>Faible</span>
-        {[0.1, 0.25, 0.45, 0.65, 0.9].map((o) => (
-          <div key={o} style={{ width: "16px", height: "6px", borderRadius: "1px", background: `rgba(252,70,107,${o})` }} />
-        ))}
-        <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "8px", color: "var(--text-muted)" }}>Fort</span>
-      </div>
-    </div>
-  );
-}
-
 // ── Timeline section ──────────────────────────────────────────────────────────
 
 function TimelineStep({
@@ -1094,12 +977,6 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               title: "Toutes les marques supportées.",
               desc: "GPX 1.1, timestamps synthétiques pour Wahoo, élévation sur chaque trackpoint pour Garmin. Aucune configuration requise.",
               visual: <GpsDevicesVisual />,
-            },
-            {
-              badge: "Mode Scenic",
-              title: "Vois où les autres s'entraînent.",
-              desc: "Superpose les données d'activité Strava sur ta carte. Identifie les zones les plus empruntées, découvre des itinéraires locaux populaires et optimise ton parcours selon les préférences de la communauté.",
-              visual: <StravaHeatmapVisual />,
             },
           ]}
         />

@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppStore } from "@/lib/store";
-import type { GeneratedRoute, HeatmapSport, RouteCandidate } from "@/lib/types";
+import type { GeneratedRoute, RouteCandidate } from "@/lib/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -383,83 +383,6 @@ function updateHoverPoint(
   } catch { /* ok */ }
 }
 
-// ── Strava heatmap layer management ──────────────────────────────────────────
-
-const HEATMAP_SOURCE_ID = "strava-heatmap";
-const HEATMAP_LAYER_ID = "strava-heatmap-layer";
-
-/** Tile URL via the Next.js API proxy (same-origin → no CORS) */
-function buildHeatmapTileUrl(sport: HeatmapSport): string {
-  return `/api/heatmap-tile?sport=${sport}&color=hot&z={z}&x={x}&y={y}`;
-}
-
-/** Check if the Strava proxy is reachable (via our same-origin API proxy) */
-async function isProxyAlive(): Promise<boolean> {
-  try {
-    const res = await fetch(
-      "/api/heatmap-tile?sport=all&color=hot&z=5&x=16&y=11",
-      { signal: AbortSignal.timeout(3000) }
-    );
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-function removeHeatmapLayer(map: mapboxgl.Map) {
-  try {
-    if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
-    if (map.getSource(HEATMAP_SOURCE_ID)) map.removeSource(HEATMAP_SOURCE_ID);
-  } catch { /* ok */ }
-}
-
-async function applyHeatmap(
-  map: mapboxgl.Map,
-  visible: boolean,
-  sport: HeatmapSport
-) {
-  if (!map.isStyleLoaded()) return;
-
-  // Always remove existing source & layer first
-  removeHeatmapLayer(map);
-
-  if (!visible) return;
-
-  // Probe proxy before adding tiles — avoids flood of console errors when proxy is down
-  const alive = await isProxyAlive();
-  if (!alive) return;
-
-  // Guard: map or visibility may have changed during the async probe
-  if (!map.isStyleLoaded()) return;
-
-  try {
-    map.addSource(HEATMAP_SOURCE_ID, {
-      type: "raster",
-      tiles: [buildHeatmapTileUrl(sport)],
-      tileSize: 512,
-      minzoom: 5,
-      maxzoom: 16,
-      attribution: "&copy; Strava",
-    });
-
-    // Insert below road labels so route remains visible on top
-    const beforeLayer = map.getLayer("road-label") ? "road-label" : undefined;
-
-    map.addLayer(
-      {
-        id: HEATMAP_LAYER_ID,
-        type: "raster",
-        source: HEATMAP_SOURCE_ID,
-        paint: {
-          "raster-opacity": 0.5,
-          "raster-opacity-transition": { duration: 300 },
-        },
-      },
-      beforeLayer
-    );
-  } catch { /* silently degrade */ }
-}
-
 // ── Duration formatter ────────────────────────────────────────────────────────
 // TODO: This function is identical to the one in RouteResult.tsx — extract to
 // a shared lib/format.ts util to avoid drift between the two implementations.
@@ -500,7 +423,7 @@ export default function MapView() {
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const rafRef = useRef<number>(0);
 
-  const { currentRoute, scenicMode, hoveredRouteProgress, heatmapVisible, heatmapSport, status } = useAppStore();
+  const { currentRoute, scenicMode, hoveredRouteProgress, status } = useAppStore();
 
   // ── Initialise map once ───────────────────────────────────────────────────
   useEffect(() => {
@@ -579,13 +502,6 @@ export default function MapView() {
     if (!map) return;
     updateHoverPoint(map, currentRoute, hoveredRouteProgress, scenicMode);
   }, [hoveredRouteProgress, currentRoute, scenicMode]);
-
-  // ── Strava heatmap overlay ────────────────────────────────────────────────
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    applyHeatmap(map, heatmapVisible, heatmapSport);
-  }, [heatmapVisible, heatmapSport]);
 
   // ── Stats overlay data ────────────────────────────────────────────────────
   const best = currentRoute?.best;

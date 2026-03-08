@@ -12,7 +12,6 @@ import {
   scoreRoute,
   computeLoopScore,
 } from "../route-generator-legacy";
-import { scoreRoutePopularity } from "../heatmap-scorer";
 
 const MAX_ROUTE_POINTS = 200;
 
@@ -134,41 +133,6 @@ export async function postProcess(
 
   // Sort by totalScore descending
   candidates.sort((a, b) => b.totalScore - a.totalScore);
-
-  // Strava popularity scoring for top 4
-  const heatmapSport =
-    profile.sport === "running"
-      ? ("running" as const)
-      : profile.sport.startsWith("cycling_")
-        ? ("ride" as const)
-        : ("all" as const);
-
-  const topN = Math.min(4, candidates.length);
-  try {
-    const popularityResults = await Promise.all(
-      candidates.slice(0, topN).map((c) =>
-        scoreRoutePopularity(c.geometry.coordinates, heatmapSport)
-      )
-    );
-
-    for (let i = 0; i < topN; i++) {
-      const { meanScore } = popularityResults[i];
-      candidates[i].popularityScore = meanScore;
-
-      const isScenicProfile =
-        profile.weights.surfaceQuality >= 0.25 ||
-        profile.sport === "cycling_gravel" ||
-        profile.sport === "cycling_mtb";
-
-      if (isScenicProfile) {
-        candidates[i].totalScore += meanScore * 0.25;
-      }
-    }
-
-    candidates.sort((a, b) => b.totalScore - a.totalScore);
-  } catch {
-    // Heatmap proxy unavailable — skip popularity scoring
-  }
 
   return candidates;
 }

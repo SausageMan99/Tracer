@@ -73,7 +73,6 @@ export default function FeedbackButtons({
       actualDistanceKm: best.distanceKm,
       actualElevationM: best.ascendM,
       algorithmicScore: best.totalScore,
-      popularityScore: best.popularityScore ?? 0,
       distanceErrorPct: Math.round(distanceError * 100),
       elevationErrorPct: elevationError !== null ? Math.round(elevationError * 100) : null,
     };
