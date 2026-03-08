@@ -1,28 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addToWaitlist, type WaitlistEntry } from "@/lib/waitlist";
+import { createRateLimiter } from "@/lib/rate-limiter";
 
-// ── Rate limiting (in-memory per IP) ─────────────────────────────────────────
+// ── Rate limiting (shared utility with auto-eviction) ────────────────────────
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 5;
-const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return false;
-  }
-
-  if (entry.count >= RATE_LIMIT) {
-    return true;
-  }
-
-  rateLimitMap.set(ip, { count: entry.count + 1, resetAt: entry.resetAt });
-  return false;
-}
+const rateLimiter = createRateLimiter({ limit: 5, windowMs: 60 * 60 * 1000 });
 
 // ── Email validation ─────────────────────────────────────────────────────────
 
@@ -45,9 +27,9 @@ function validateSource(source: unknown): source is WaitlistEntry["source"] {
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
-  if (isRateLimited(ip)) {
+  if (rateLimiter.isLimited(ip)) {
     return NextResponse.json(
-      { success: false, message: "Trop de requêtes. Réessaye plus tard." },
+      { success: false, error: "Trop de requêtes. Réessaye plus tard." },
       { status: 429 },
     );
   }
@@ -57,7 +39,7 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { success: false, message: "Corps de requête invalide." },
+      { success: false, error: "Corps de requête invalide." },
       { status: 400 },
     );
   }
@@ -66,21 +48,21 @@ export async function POST(request: NextRequest) {
 
   if (!validateEmail(email)) {
     return NextResponse.json(
-      { success: false, message: "Email invalide." },
+      { success: false, error: "Email invalide." },
       { status: 400 },
     );
   }
 
   if (!validateSport(sport)) {
     return NextResponse.json(
-      { success: false, message: "Sport invalide." },
+      { success: false, error: "Sport invalide." },
       { status: 400 },
     );
   }
 
   if (!validateSource(source)) {
     return NextResponse.json(
-      { success: false, message: "Source invalide." },
+      { success: false, error: "Source invalide." },
       { status: 400 },
     );
   }

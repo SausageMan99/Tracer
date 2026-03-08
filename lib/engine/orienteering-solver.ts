@@ -505,12 +505,8 @@ export async function solve(
   targetElevationM: number = 0,
   nodeElevation: Map<string, number> = new Map()
 ): Promise<SolverPath[]> {
-  const results = await Promise.all(
-    SOLVER_CONFIGS.map((config) =>
-      Promise.resolve(
-        solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config)
-      )
-    )
+  const results = SOLVER_CONFIGS.map((config) =>
+    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config)
   );
 
   const allPaths = results.flat();

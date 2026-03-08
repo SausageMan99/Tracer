@@ -5,6 +5,7 @@ import type {
   GraphNode,
 } from "../types";
 import { haversineKm } from "../route-generator-legacy";
+import { RouteGenerationError } from "../errors";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -124,10 +125,10 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           await new Promise((r) => setTimeout(r, 2000));
           return overpassFetch(attempt + 1);
         }
-        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
       }
       if (!res.ok) {
-        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
       }
       return res;
     } catch (err) {
@@ -136,7 +137,7 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           await new Promise((r) => setTimeout(r, 2000));
           return overpassFetch(attempt + 1);
         }
-        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
       }
       throw err;
     }

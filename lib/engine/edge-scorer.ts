@@ -17,61 +17,43 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
   const { sport, sessionType } = profile;
 
   // Base weights by sport
-  const base: SessionWeights = { surface: 0.3, elevation: 0.15, nature: 0.25, quietness: 0.3 };
+  let w: SessionWeights = { surface: 0.3, elevation: 0.15, nature: 0.25, quietness: 0.3 };
 
-  if (sport === "running") {
-    base.surface = 0.3;
-    base.quietness = 0.3;
-    base.nature = 0.25;
-    base.elevation = 0.15;
-  } else if (sport === "cycling_road") {
-    base.surface = 0.35;
-    base.quietness = 0.35;
-    base.nature = 0.1;
-    base.elevation = 0.2;
+  if (sport === "cycling_road") {
+    w = { surface: 0.35, elevation: 0.2, nature: 0.1, quietness: 0.35 };
   } else if (sport === "cycling_gravel") {
-    base.surface = 0.25;
-    base.quietness = 0.2;
-    base.nature = 0.35;
-    base.elevation = 0.2;
+    w = { surface: 0.25, elevation: 0.2, nature: 0.35, quietness: 0.2 };
   } else if (sport === "cycling_mtb") {
-    base.surface = 0.15;
-    base.quietness = 0.15;
-    base.nature = 0.4;
-    base.elevation = 0.3;
+    w = { surface: 0.15, elevation: 0.3, nature: 0.4, quietness: 0.15 };
   }
 
-  // Intensity adjustments
+  // Intensity adjustments (immutable spreads)
   if (sessionType === "intervals_30_30" || sessionType === "intervals") {
-    base.elevation = 0.05;
-    base.surface += 0.1;
+    w = { ...w, elevation: 0.05, surface: w.surface + 0.1 };
   } else if (sessionType === "gran_fondo" || sessionType === "sortie_longue") {
-    base.elevation = 0.3;
-    base.nature += 0.05;
+    w = { ...w, elevation: 0.3, nature: w.nature + 0.05 };
   } else if (sessionType === "recuperation") {
-    base.elevation = 0.05;
-    base.quietness += 0.1;
+    w = { ...w, elevation: 0.05, quietness: w.quietness + 0.1 };
   }
 
   // Scenic mode: boost nature & quietness, reduce surface & elevation
   if (scenicMode) {
-    base.nature += 0.15;
-    base.quietness += 0.05;
-    base.surface -= 0.1;
-    base.elevation -= 0.1;
-    // Clamp to minimum 0.05
-    base.surface = Math.max(0.05, base.surface);
-    base.elevation = Math.max(0.05, base.elevation);
+    w = {
+      surface: Math.max(0.05, w.surface - 0.1),
+      elevation: Math.max(0.05, w.elevation - 0.1),
+      nature: w.nature + 0.15,
+      quietness: w.quietness + 0.05,
+    };
   }
 
   // Normalize to sum = 1
-  const sum = base.surface + base.elevation + base.nature + base.quietness;
-  base.surface /= sum;
-  base.elevation /= sum;
-  base.nature /= sum;
-  base.quietness /= sum;
-
-  return base;
+  const sum = w.surface + w.elevation + w.nature + w.quietness;
+  return {
+    surface: w.surface / sum,
+    elevation: w.elevation / sum,
+    nature: w.nature / sum,
+    quietness: w.quietness / sum,
+  };
 }
 
 function scoreSurface(surface: string | undefined, sport: string): number {
@@ -133,7 +115,11 @@ export async function scoreEdges(
   let elevations: number[];
   try {
     elevations = await fetchElevations(coords);
-  } catch {
+  } catch (err) {
+    console.warn(
+      "[edge-scorer] Elevation API failed, defaulting all elevations to 0:",
+      err instanceof Error ? err.message : err
+    );
     elevations = coords.map(() => 0);
   }
 

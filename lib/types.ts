@@ -233,7 +233,7 @@ export interface GeneratedRoute {
   best: RouteCandidate;
   /** All candidates sorted descending by score (best first) */
   candidates: RouteCandidate[];
-  /** Geocoded start coordinate (from Nominatim) */
+  /** Geocoded start coordinate (from Mapbox) */
   startCoordinate: Coordinate;
   /** Session profile used to generate this route */
   profile: SessionProfile;
@@ -264,6 +264,8 @@ export interface GenerateRouteRequest {
   waypoints?: string[];
   /** Optional end address (absent = loop) */
   endAddress?: string;
+  /** When true, boost nature/quietness weights for scenic routing */
+  scenicMode?: boolean;
 }
 
 /**
@@ -283,7 +285,7 @@ export interface GenerateRouteResponse {
  * Error codes:
  * - `NO_ROAD_NETWORK` → GraphHopper/ORS found no routable path
  * - `IMPOSSIBLE_ELEVATION` → requested D+ exceeds terrain maximum
- * - `GEOCODING_FAILED` → Nominatim could not resolve the address
+ * - `GEOCODING_FAILED` → Mapbox could not resolve the address
  * - `UNKNOWN` → unexpected server error
  */
 export interface GenerateRouteError {

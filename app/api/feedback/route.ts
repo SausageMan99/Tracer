@@ -1,32 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as fs from "fs";
+import * as fs from "fs/promises";
 import * as path from "path";
+import { createRateLimiter } from "@/lib/rate-limiter";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const FEEDBACKS_FILE = path.join(DATA_DIR, "feedbacks.json");
 
-// ── Rate limiting (in-memory per IP) ─────────────────────────────────────────
+// ── Rate limiting (shared utility with auto-eviction) ────────────────────────
 
-const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
-const RATE_LIMIT = 10;
-const RATE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
-
-function isRateLimited(ip: string): boolean {
-  const now = Date.now();
-  const entry = rateLimitMap.get(ip);
-
-  if (!entry || now > entry.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
-    return false;
-  }
-
-  if (entry.count >= RATE_LIMIT) {
-    return true;
-  }
-
-  rateLimitMap.set(ip, { count: entry.count + 1, resetAt: entry.resetAt });
-  return false;
-}
+const rateLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
 
 // ── Validation ───────────────────────────────────────────────────────────────
 
@@ -42,21 +24,20 @@ function isValidFeedback(body: Record<string, unknown>): boolean {
   return true;
 }
 
-// ── File helpers ─────────────────────────────────────────────────────────────
+// ── File helpers (async) ─────────────────────────────────────────────────────
 
-function loadFeedbacksFromDisk(): unknown[] {
+async function loadFeedbacksFromDisk(): Promise<unknown[]> {
   try {
-    if (!fs.existsSync(FEEDBACKS_FILE)) return [];
-    const raw = fs.readFileSync(FEEDBACKS_FILE, "utf-8");
+    const raw = await fs.readFile(FEEDBACKS_FILE, "utf-8");
     return JSON.parse(raw);
   } catch {
     return [];
   }
 }
 
-function saveFeedbacksToDisk(feedbacks: unknown[]): void {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  fs.writeFileSync(FEEDBACKS_FILE, JSON.stringify(feedbacks, null, 2), "utf-8");
+async function saveFeedbacksToDisk(feedbacks: unknown[]): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  await fs.writeFile(FEEDBACKS_FILE, JSON.stringify(feedbacks, null, 2), "utf-8");
 }
 
 // ── POST handler ─────────────────────────────────────────────────────────────
@@ -64,9 +45,9 @@ function saveFeedbacksToDisk(feedbacks: unknown[]): void {
 export async function POST(request: NextRequest) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
-  if (isRateLimited(ip)) {
+  if (rateLimiter.isLimited(ip)) {
     return NextResponse.json(
-      { success: false, message: "Trop de requêtes. Réessaye plus tard." },
+      { success: false, error: "Trop de requêtes. Réessaye plus tard." },
       { status: 429 },
     );
   }
@@ -76,30 +57,26 @@ export async function POST(request: NextRequest) {
     body = await request.json();
   } catch {
     return NextResponse.json(
-      { success: false, message: "Corps de requête invalide." },
+      { success: false, error: "Corps de requête invalide." },
       { status: 400 },
     );
   }
 
   if (!isValidFeedback(body)) {
     return NextResponse.json(
-      { success: false, message: "Données de feedback invalides." },
+      { success: false, error: "Données de feedback invalides." },
       { status: 400 },
     );
   }
 
   try {
-    const feedbacks = loadFeedbacksFromDisk();
-    feedbacks.push({
-      ...body,
-      timestamp: Date.now(),
-      ip,
-    });
-    saveFeedbacksToDisk(feedbacks);
+    const feedbacks = await loadFeedbacksFromDisk();
+    const updated = [...feedbacks, { ...body, timestamp: Date.now(), ip }];
+    await saveFeedbacksToDisk(updated);
   } catch (err) {
     console.error("[feedback] Failed to save:", err);
     return NextResponse.json(
-      { success: false, message: "Erreur de sauvegarde." },
+      { success: false, error: "Erreur de sauvegarde." },
       { status: 500 },
     );
   }
@@ -107,19 +84,24 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ success: true });
 }
 
-// ── GET handler (admin export with secret) ───────────────────────────────────
+// ── GET handler (admin export) ───────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const secret = request.nextUrl.searchParams.get("secret");
+  // Accept secret from Authorization header (preferred) or query param (legacy)
+  const authHeader = request.headers.get("authorization");
+  const secret = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7)
+    : request.nextUrl.searchParams.get("secret");
+
   const adminSecret = process.env.ADMIN_SECRET;
 
   if (!adminSecret || secret !== adminSecret) {
     return NextResponse.json(
-      { success: false, message: "Non autorisé." },
+      { success: false, error: "Non autorisé." },
       { status: 401 },
     );
   }
 
-  const feedbacks = loadFeedbacksFromDisk();
+  const feedbacks = await loadFeedbacksFromDisk();
   return NextResponse.json({ success: true, count: feedbacks.length, feedbacks });
 }

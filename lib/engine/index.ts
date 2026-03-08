@@ -1,6 +1,7 @@
 import type { GeneratedRoute, RouteRequest } from "../types";
 import { PROFILES_BY_ID } from "../session-profiles";
 import { geocodeAddress, haversineKm } from "../route-generator-legacy";
+import { RouteGenerationError } from "../errors";
 import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
@@ -11,7 +12,7 @@ export async function generateRouteV2(
 ): Promise<GeneratedRoute> {
   // 1. Resolve profile
   const profile = PROFILES_BY_ID.get(request.profileId);
-  if (!profile) throw new Error("UNKNOWN_PROFILE");
+  if (!profile) throw new RouteGenerationError("UNKNOWN", { message: "Unknown profile" });
 
   // 2. Geocode start address
   const startCoordinate = await geocodeAddress(request.address);
@@ -23,7 +24,7 @@ export async function generateRouteV2(
   );
 
   if (graph.nodes.size === 0) {
-    throw new Error("NO_ROAD_NETWORK:EMPTY_GRAPH");
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });
   }
 
   // 4. Find closest node to start
@@ -38,7 +39,7 @@ export async function generateRouteV2(
   }
 
   if (!closestNodeId) {
-    throw new Error("NO_ROAD_NETWORK:EMPTY_GRAPH");
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });
   }
 
   // 5. Derive session weights and score edges
@@ -55,7 +56,7 @@ export async function generateRouteV2(
   );
 
   if (solverPaths.length === 0) {
-    throw new Error("NO_ROAD_NETWORK:SOLVER_EMPTY");
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "SOLVER_EMPTY" });
   }
 
   // 7. Post-process into RouteCandidate[]
@@ -70,7 +71,7 @@ export async function generateRouteV2(
   );
 
   if (candidates.length === 0) {
-    throw new Error("NO_ROAD_NETWORK:SOLVER_EMPTY");
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "SOLVER_EMPTY" });
   }
 
   const best = candidates[0];
@@ -83,7 +84,7 @@ export async function generateRouteV2(
     const maxEstimate = Math.round(
       Math.max(...candidates.map((c) => c.ascendM))
     );
-    throw new Error(`IMPOSSIBLE_ELEVATION:${maxEstimate}`);
+    throw new RouteGenerationError("IMPOSSIBLE_ELEVATION", { maxElevationEstimate: maxEstimate });
   }
 
   return {
