@@ -1,5 +1,5 @@
-import LandingPage from "@/components/landing/LandingPage";
+import LandingPageV2 from "@/components/landing/LandingPageV2";
 
 export default function FallbackPage() {
-  return <LandingPage />;
+  return <LandingPageV2 />;
 }

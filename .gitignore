@@ -12,6 +12,9 @@
 # route engine graph cache
 /.cache/
 
+# waitlist data
+/.data/
+
 # next.js
 /.next/
 /out/

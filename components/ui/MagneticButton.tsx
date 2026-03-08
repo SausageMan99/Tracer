@@ -50,7 +50,7 @@ export default function MagneticButton({
     display: "inline-flex",
     alignItems: "center",
     gap: "8px",
-    padding: primary ? "20px 48px" : "16px 36px",
+    padding: primary ? "18px clamp(28px, 6vw, 48px)" : "14px clamp(20px, 4vw, 36px)",
     borderRadius: "2px",
     fontFamily: "var(--font-syne), sans-serif",
     fontSize: "14px",

@@ -163,7 +163,7 @@ function solveWithConfig(
       });
 
       // Dead-end escape: allow revisits if no unvisited edges
-      let candidateEdges = unvisitedEdges.length > 0
+      const candidateEdges = unvisitedEdges.length > 0
         ? unvisitedEdges
         : allEdges.filter((e) => {
             const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);

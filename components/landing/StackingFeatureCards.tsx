@@ -37,7 +37,7 @@ function CardContent({
         boxSizing: "border-box",
       }}
     >
-      <div style={{ order: reverse ? 2 : 1 }}>
+      <div className={reverse ? "md:order-2" : "md:order-1"}>
         <div
           style={{
             display: "inline-flex",
@@ -86,8 +86,8 @@ function CardContent({
         </p>
       </div>
       <div
+        className={reverse ? "md:order-1" : "md:order-2"}
         style={{
-          order: reverse ? 1 : 2,
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
           borderRadius: "2px",

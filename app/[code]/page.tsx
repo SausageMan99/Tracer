@@ -1,6 +1,6 @@
-import { getPrecomputed, generatePermutations } from "flags/next";
+import { generatePermutations } from "flags/next";
 import { newLandingHeroFlag } from "@/lib/feature-flags/flags";
-import LandingPage from "@/components/landing/LandingPage";
+import LandingPageV2 from "@/components/landing/LandingPageV2";
 
 const landingFlags = [newLandingHeroFlag] as const;
 
@@ -14,8 +14,8 @@ export default async function PrecomputedLandingPage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  const { code } = await params;
-  const showNewHero = await getPrecomputed(newLandingHeroFlag, landingFlags, code);
+  // params consumed to satisfy Next.js dynamic route contract
+  await params;
 
-  return <LandingPage showNewHero={showNewHero} />;
+  return <LandingPageV2 />;
 }

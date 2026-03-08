@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { gsap, ScrollTrigger, ScrambleTextPlugin } from "@/lib/gsap-setup";
+import { gsap } from "@/lib/gsap-setup";
 
 interface ScrambleNumberProps {
   text: string;
