@@ -21,6 +21,12 @@ function subsampleCoords(coords: Coordinate[], max: number): Coordinate[] {
   return Array.from({ length: max }, (_, i) => coords[Math.round(i * step)]);
 }
 
+function subsampleValues(values: number[], totalLength: number, max: number): number[] {
+  if (totalLength <= max) return values;
+  const step = (totalLength - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => values[Math.round(i * step)]);
+}
+
 function estimateDuration(
   distanceKm: number,
   ascendM: number,
@@ -52,7 +58,8 @@ export async function postProcess(
   startCoordinate: Coordinate,
   profile: SessionProfile,
   targetDistanceKm: number,
-  targetElevationM: number
+  targetElevationM: number,
+  nodeElevation: Map<string, number> = new Map()
 ): Promise<RouteCandidate[]> {
   if (paths.length === 0) return [];
 
@@ -70,12 +77,23 @@ export async function postProcess(
       // Subsample to ≤200 points
       const sampled = subsampleCoords(fullCoords, MAX_ROUTE_POINTS);
 
-      // Fetch elevations
+      // Build elevations from pre-fetched nodeElevation map, fall back to API
       let elevations: number[];
-      try {
-        elevations = await fetchElevations(sampled);
-      } catch {
-        elevations = sampled.map(() => 0);
+      if (nodeElevation.size > 0) {
+        // Look up elevation for each sampled coordinate by matching back to closest node
+        elevations = solverPath.nodeIds.length === fullCoords.length
+          ? subsampleValues(
+              solverPath.nodeIds.map((nid) => nodeElevation.get(nid) ?? 0),
+              fullCoords.length,
+              sampled.length
+            )
+          : sampled.map(() => 0);
+      } else {
+        try {
+          elevations = await fetchElevations(sampled);
+        } catch {
+          elevations = sampled.map(() => 0);
+        }
       }
 
       const points: RoutePoint[] = sampled.map((c, i) => ({

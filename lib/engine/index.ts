@@ -65,7 +65,8 @@ export async function generateRouteV2(
     startCoordinate,
     profile,
     request.targetDistanceKm,
-    request.targetElevationM
+    request.targetElevationM,
+    nodeElevation
   );
 
   if (candidates.length === 0) {

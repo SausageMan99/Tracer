@@ -451,7 +451,11 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
       try {
         const res = await fetch(url.toString());
         const data: OpenMeteoElevationResponse = await res.json();
-        return data.elevation ?? [];
+        const rawElevation = data.elevation;
+        if (!rawElevation || !Array.isArray(rawElevation) || rawElevation.length === 0) {
+          throw new Error("Empty elevation response from Open-Meteo");
+        }
+        return rawElevation;
       } catch {
         return batch.map(() => 0);
       }
@@ -854,14 +858,12 @@ export function scoreRoute(
  * 5. Query Overpass for terrain data (single bbox query, cached 1h)
  * 6. Score each candidate with `scoreRoute()`
  * 7. Sort descending by `totalScore`
- * 8. Fetch Strava heatmap popularity for top 4 candidates (optional)
- * 9. Re-sort after popularity boost (scenic profiles only)
- * 10. Validate that the best candidate is not impossibly flat
+ * 8. Validate that the best candidate is not impossibly flat
  *
  * @param request - Generation parameters from the API route handler
  * @returns The generated route with all candidates sorted by score
  * @throws {Error} `"UNKNOWN_PROFILE"` — profileId not in SESSION_PROFILES
- * @throws {Error} `"GEOCODING_FAILED"` — address not resolvable by Nominatim
+ * @throws {Error} `"GEOCODING_FAILED"` — address not resolvable by Mapbox
  * @throws {Error} `"NO_ROAD_NETWORK"` — routing engine found no valid path
  * @throws {Error} `"IMPOSSIBLE_ELEVATION:N"` — best candidate has < 30% of target D+
  *   (N = maximum D+ found across all candidates, in metres)

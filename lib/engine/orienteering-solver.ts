@@ -26,20 +26,19 @@ interface SolverConfig {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SOLVER_CONFIGS: SolverConfig[] = [
-  { beamWidth: 50, temperature: 0.3, seedBearing: 0,   expansionFactor: 3 },
-  { beamWidth: 30, temperature: 0.5, seedBearing: 72,  expansionFactor: 3 },
-  { beamWidth: 80, temperature: 0.2, seedBearing: 144, expansionFactor: 3 },
-  { beamWidth: 40, temperature: 0.8, seedBearing: 216, expansionFactor: 3 },
-  { beamWidth: 60, temperature: 0.4, seedBearing: 288, expansionFactor: 3 },
+  { beamWidth: 60, temperature: 0.2,  seedBearing: 0,   expansionFactor: 3 },
+  { beamWidth: 40, temperature: 0.3,  seedBearing: 72,  expansionFactor: 3 },
+  { beamWidth: 80, temperature: 0.15, seedBearing: 144, expansionFactor: 3 },
+  { beamWidth: 50, temperature: 0.25, seedBearing: 216, expansionFactor: 3 },
+  { beamWidth: 70, temperature: 0.2,  seedBearing: 288, expansionFactor: 3 },
 ];
 
 const MAX_ITERATIONS = 2000;
 const DISTANCE_TOLERANCE = 0.15;
 const CLOSE_ENOUGH_KM = 0.2;
-const MAX_EDGE_REVISITS = 2;
-const REVISIT_PENALTY = 0.3;
-const BACKTRACK_PENALTY = 0.3;
-const NEAR_REVERSAL_DEGREES = 30;
+const MAX_EDGE_REVISITS = 1;
+const REVISIT_PENALTY = 0.15;
+const ROAD_DISTANCE_FACTOR = 1.4;
 
 // ── Utility functions ────────────────────────────────────────────────────────
 
@@ -59,6 +58,17 @@ function normalizeAngle(angle: number): number {
   let a = angle % 360;
   if (a < 0) a += 360;
   return a > 180 ? a - 360 : a;
+}
+
+/**
+ * Smooth cosine penalty based on angle between candidate edge and reverse of incoming bearing.
+ * 0° from reverse (U-turn) → 0.0, 90° → 0.5, 180° (straight ahead) → 1.0
+ */
+function backtrackPenalty(incomingBearing: number, candidateBearing: number): number {
+  const reverseBearing = (incomingBearing + 180) % 360;
+  const angleDiff = Math.abs(candidateBearing - reverseBearing);
+  const normalized = Math.min(angleDiff, 360 - angleDiff); // 0 = perfect U-turn, 180 = straight ahead
+  return 0.5 * (1 - Math.cos((normalized / 180) * Math.PI));
 }
 
 function softmaxSelect(scores: number[], temperature: number): number {
@@ -98,6 +108,72 @@ function softmaxSelectMultiple(
     if (idx < 0) break;
     selected.push(remaining[idx].index);
     remaining.splice(idx, 1);
+  }
+
+  return selected;
+}
+
+// ── Diverse beam selection (farthest-point sampling) ─────────────────────────
+
+function getLastCoord(state: BeamState, graph: EnrichedGraph): { lat: number; lng: number } {
+  const node = graph.nodes.get(state.currentNodeId);
+  return node ? { lat: node.lat, lng: node.lng } : { lat: 0, lng: 0 };
+}
+
+function diverseBeamSelect(
+  candidates: BeamState[],
+  beamWidth: number,
+  targetDistanceKm: number,
+  targetElevationM: number,
+  graph: EnrichedGraph
+): BeamState[] {
+  if (candidates.length <= beamWidth) return candidates;
+
+  // Sort by adjusted score-per-km with elevation factor
+  candidates.sort((a, b) => {
+    const scoreA = a.distanceKm > 0 ? a.totalScore / a.distanceKm : 0;
+    const scoreB = b.distanceKm > 0 ? b.totalScore / b.distanceKm : 0;
+
+    if (targetElevationM > 0) {
+      const progressA = a.distanceKm / targetDistanceKm;
+      const expectedAscentA = targetElevationM * progressA;
+      const elevFactorA = 1.0 - 0.3 * Math.max(0, Math.abs(a.cumulativeAscentM - expectedAscentA) / Math.max(targetElevationM, 1));
+
+      const progressB = b.distanceKm / targetDistanceKm;
+      const expectedAscentB = targetElevationM * progressB;
+      const elevFactorB = 1.0 - 0.3 * Math.max(0, Math.abs(b.cumulativeAscentM - expectedAscentB) / Math.max(targetElevationM, 1));
+
+      return (scoreB * elevFactorB) - (scoreA * elevFactorA);
+    }
+
+    return scoreB - scoreA;
+  });
+
+  // Farthest-point sampling for spatial diversity
+  const selected: BeamState[] = [candidates[0]];
+  const selectedCoords = [getLastCoord(candidates[0], graph)];
+  const remaining = candidates.slice(1);
+
+  while (selected.length < beamWidth && remaining.length > 0) {
+    let bestIdx = 0;
+    let bestMinDist = -1;
+
+    for (let i = 0; i < remaining.length; i++) {
+      const coord = getLastCoord(remaining[i], graph);
+      let minDist = Infinity;
+      for (const sc of selectedCoords) {
+        const d = haversineKm(coord, sc);
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > bestMinDist) {
+        bestMinDist = minDist;
+        bestIdx = i;
+      }
+    }
+
+    selected.push(remaining[bestIdx]);
+    selectedCoords.push(getLastCoord(remaining[bestIdx], graph));
+    remaining.splice(bestIdx, 1);
   }
 
   return selected;
@@ -173,36 +249,47 @@ function solveWithConfig(
       if (candidateEdges.length === 0) continue;
 
       // Compute adjusted scores
+      const currentCoord = { lat: currentNode.lat, lng: currentNode.lng };
       const adjustedScores = candidateEdges.map((edge) => {
         let score = edge.score;
         const toNode = graph.nodes.get(edge.to);
         if (!toNode) return 0.01;
+
+        const toCoord = { lat: toNode.lat, lng: toNode.lng };
 
         // 1.1 Anti-backtracking: hard-reject immediate U-turn
         if (state.lastFrom !== null && edge.to === state.lastFrom) {
           return 0.01;
         }
 
-        // Soft-penalize near-reversal
+        // Graduated anti-backtracking: smooth cosine penalty
         if (state.lastFrom !== null) {
           const lastNode = graph.nodes.get(state.lastFrom);
           if (lastNode) {
-            const incomingBearing = computeBearing(lastNode.lat, lastNode.lng, currentNode.lat, currentNode.lng);
-            const reverseBearing = normalizeAngle(incomingBearing + 180);
+            const inBearing = computeBearing(lastNode.lat, lastNode.lng, currentNode.lat, currentNode.lng);
             const edgeBearing = computeBearing(currentNode.lat, currentNode.lng, toNode.lat, toNode.lng);
-            const angleDiff = Math.abs(normalizeAngle(edgeBearing - reverseBearing));
-            if (angleDiff < NEAR_REVERSAL_DEGREES) {
-              score *= BACKTRACK_PENALTY;
-            }
+            const inBearingNorm = ((inBearing % 360) + 360) % 360;
+            const edgeBearingNorm = ((edgeBearing % 360) + 360) % 360;
+            score *= backtrackPenalty(inBearingNorm, edgeBearingNorm);
           }
         }
 
-        // 1.2 Distance budget guard
+        // 1.2 Distance budget guard — with road-distance factor
         const edgeDist = edge.lengthKm;
         const distAfterEdge = state.distanceKm + edgeDist;
-        const distToStart = haversineKm({ lat: toNode.lat, lng: toNode.lng }, startCoord);
-        if (distAfterEdge + distToStart > maxDist) {
-          return 0.01; // Can't close loop — skip
+        const straightLineReturn = haversineKm(toCoord, startCoord);
+        const estimatedRoadReturn = straightLineReturn * ROAD_DISTANCE_FACTOR;
+        const remainingBudget = maxDist - distAfterEdge;
+
+        if (progress >= 0.5) {
+          // After 50% progress, prefer A* cache distance when available
+          const cachedReturn = returnCache.getDistance(graph, edge.to, startNodeId);
+          const returnEst = cachedReturn !== null ? cachedReturn : estimatedRoadReturn;
+          if (returnEst > remainingBudget) {
+            return 0.01;
+          }
+        } else if (estimatedRoadReturn > remainingBudget) {
+          return 0.01;
         }
 
         // 1.3 Revisit penalty
@@ -220,10 +307,19 @@ function solveWithConfig(
           score *= directionalBias;
         }
 
-        // Return-to-start bias (after 60% progress)
-        if (progress > 0.6) {
+        // Outward bias (0-50% progress): prefer edges moving away from start
+        if (progress < 0.5) {
+          const distFromStart = haversineKm(toCoord, startCoord);
+          const currentDistFromStart = haversineKm(currentCoord, startCoord);
+          if (distFromStart > currentDistFromStart) {
+            score += 0.15;
+          }
+        }
+
+        // Return-to-start bias (after 50% progress)
+        if (progress > 0.5) {
           const remaining = targetDistanceKm - state.distanceKm;
-          const closingFactor = Math.max(0.1, 1 - distToStart / Math.max(remaining, 0.1));
+          const closingFactor = Math.max(0.1, 1 - straightLineReturn / Math.max(remaining, 0.1));
           score *= 0.5 + 0.5 * closingFactor;
         }
 
@@ -297,8 +393,8 @@ function solveWithConfig(
 
         const newProgress = newDist / targetDistanceKm;
 
-        // 3.2 Forced loop closure at 75%+
-        if (newProgress >= 0.75) {
+        // 3.2 Forced loop closure at 65%+
+        if (newProgress >= 0.65) {
           const returnDist = returnCache.getDistance(graph, selectedEdge.to, startNodeId);
 
           if (returnDist !== null) {
@@ -322,8 +418,8 @@ function solveWithConfig(
               }
             }
 
-            // At 90%+, force closure for all reachable states
-            if (newProgress >= 0.9) {
+            // At 85%+, force closure for all reachable states
+            if (newProgress >= 0.85) {
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
                 validPaths.push({
@@ -360,27 +456,8 @@ function solveWithConfig(
       }
     }
 
-    // Keep top beamWidth states by adjusted score-per-km
-    nextBeam.sort((a, b) => {
-      const scoreA = a.distanceKm > 0 ? a.totalScore / a.distanceKm : 0;
-      const scoreB = b.distanceKm > 0 ? b.totalScore / b.distanceKm : 0;
-
-      // 2.2 Elevation budget factor in beam pruning
-      if (targetElevationM > 0) {
-        const progressA = a.distanceKm / targetDistanceKm;
-        const expectedAscentA = targetElevationM * progressA;
-        const elevFactorA = 1.0 - 0.3 * Math.max(0, Math.abs(a.cumulativeAscentM - expectedAscentA) / Math.max(targetElevationM, 1));
-
-        const progressB = b.distanceKm / targetDistanceKm;
-        const expectedAscentB = targetElevationM * progressB;
-        const elevFactorB = 1.0 - 0.3 * Math.max(0, Math.abs(b.cumulativeAscentM - expectedAscentB) / Math.max(targetElevationM, 1));
-
-        return (scoreB * elevFactorB) - (scoreA * elevFactorA);
-      }
-
-      return scoreB - scoreA;
-    });
-    beam = nextBeam.slice(0, beamWidth);
+    // Keep top beamWidth states using diverse beam selection
+    beam = diverseBeamSelect(nextBeam, beamWidth, targetDistanceKm, targetElevationM, graph);
   }
 
   return validPaths;
