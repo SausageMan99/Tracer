@@ -95,6 +95,10 @@ export interface SessionProfile {
   distanceRange: DistanceRange;
   /** Allowed D+ range for this profile, in metres */
   elevationRange: ElevationRange;
+  /** Curated distance preset chips shown below the slider, in km */
+  distancePresets: number[];
+  /** Curated elevation preset chips shown below the slider, in metres */
+  elevationPresets: number[];
   /** Short French description shown below the session chip */
   description: string;
   /** Scoring weight vector — must sum to 1.0 */
@@ -119,7 +123,7 @@ export interface SessionProfile {
  * Mirrors the HTTP POST body of `/api/generate-route`.
  */
 export interface RouteRequest {
-  /** Free-text starting address, geocoded via Nominatim */
+  /** Free-text starting address, geocoded via Mapbox */
   address: string;
   /** Profile ID, must exist in `PROFILES_BY_ID` */
   profileId: string;
@@ -131,6 +135,8 @@ export interface RouteRequest {
   waypoints?: string[];
   /** Optional end address; when absent the route loops back to start */
   endAddress?: string;
+  /** When true, boost nature/quietness weights for scenic routing */
+  scenicMode?: boolean;
 }
 
 /**
@@ -417,19 +423,20 @@ export interface OverpassResponse {
   elements: OverpassElement[];
 }
 
-// ---- Nominatim (internal) ----
+// ---- Mapbox Geocoding (internal) ----
 
 /**
- * A single geocoding result from the Nominatim API.
- * Only the fields needed for coordinate extraction are typed.
+ * A single feature from the Mapbox Geocoding v5 API response.
  */
-export interface NominatimResult {
-  /** WGS-84 latitude as a string (Nominatim convention) */
-  lat: string;
-  /** WGS-84 longitude as a string (Nominatim convention) */
-  lon: string;
-  /** Full human-readable address */
-  display_name: string;
+export interface MapboxFeature {
+  /** Unique feature identifier */
+  id: string;
+  /** Full human-readable place name */
+  place_name: string;
+  /** Short place name (city/locality name) */
+  text: string;
+  /** [lng, lat] coordinate pair */
+  center: [number, number];
 }
 
 // ---- Route Generation Engine V2 ----
@@ -448,6 +455,8 @@ export interface EnrichedEdge {
   lengthKm: number;
   highway: string;
   surface?: string;
+  lit?: string;
+  access?: string;
   osmWayId: number;
   score: number;
 }

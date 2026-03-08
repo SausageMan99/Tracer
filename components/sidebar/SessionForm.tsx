@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import {
   PROFILES_BY_ID,
@@ -94,20 +94,6 @@ const CHIP_LABELS: Record<string, string> = {
   cycling_mtb_intervals:      "Intervals",
 };
 
-// ── Build preset values ───────────────────────────────────────────────────────
-
-function buildPresets(min: number, def: number, max: number, count = 4): number[] {
-  const step = (max - min) / (count - 1);
-  const raw  = Array.from({ length: count }, (_, i) => Math.round(min + i * step));
-  if (!raw.includes(def)) {
-    const closest = raw.reduce((a, b) =>
-      Math.abs(b - def) < Math.abs(a - def) ? b : a
-    );
-    raw[raw.indexOf(closest)] = def;
-  }
-  return [...new Set(raw)].sort((a, b) => a - b);
-}
-
 // ── Section label ─────────────────────────────────────────────────────────────
 
 function SidebarSectionLabel({ children }: { children: React.ReactNode }) {
@@ -156,6 +142,7 @@ export default function SessionForm() {
     errorMessage,
     scenicMode,        setScenicMode,
     setMapCenter,
+    setSidebarOpen,
   } = useAppStore();
 
   const [selectedSport, setSelectedSport] = useState<Sport>("running");
@@ -233,11 +220,17 @@ export default function SessionForm() {
     if (!address.trim() || !currentProfile || isLoading) return;
     setLoading();
 
-    const body: GenerateRouteRequest = {
+    // Close sidebar on mobile when generating
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+
+    const body: GenerateRouteRequest & { scenicMode?: boolean } = {
       address: address.trim(),
       profileId: selectedProfileId,
       targetDistanceKm,
       targetElevationM,
+      scenicMode: scenicMode || undefined,
     };
 
     try {
@@ -255,18 +248,16 @@ export default function SessionForm() {
     } catch {
       setError("Erreur réseau. Vérifiez votre connexion et réessayez.");
     }
-  }, [address, currentProfile, isLoading, selectedProfileId, setError, setLoading, setSuccess, targetDistanceKm, targetElevationM]);
+  }, [address, currentProfile, isLoading, selectedProfileId, setError, setLoading, setSuccess, targetDistanceKm, targetElevationM, scenicMode, setSidebarOpen]);
 
   // Slider ranges
-  const distMin     = currentProfile?.distanceRange.min     ?? 5;
-  const distMax     = currentProfile?.distanceRange.max     ?? 100;
-  const distDefault = currentProfile?.distanceRange.default ?? 20;
-  const elevMin     = currentProfile?.elevationRange.min    ?? 0;
-  const elevMax     = currentProfile?.elevationRange.max    ?? 2000;
-  const elevDefault = currentProfile?.elevationRange.default ?? 300;
+  const distMin = currentProfile?.distanceRange.min ?? 5;
+  const distMax = currentProfile?.distanceRange.max ?? 100;
+  const elevMin = currentProfile?.elevationRange.min ?? 0;
+  const elevMax = currentProfile?.elevationRange.max ?? 2000;
 
-  const distPresets = useMemo(() => buildPresets(distMin, distDefault, distMax), [selectedProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
-  const elevPresets = useMemo(() => buildPresets(elevMin, elevDefault, elevMax), [selectedProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const distPresets = currentProfile?.distancePresets ?? [];
+  const elevPresets = currentProfile?.elevationPresets ?? [];
 
   // ── Shared styles ──────────────────────────────────────────────────────────
 
@@ -299,16 +290,12 @@ export default function SessionForm() {
   return (
     <form
       onSubmit={(e) => { e.preventDefault(); handleGenerate(); }}
-      style={{ display: "flex", flexDirection: "column", paddingBottom: "24px" }}
+      className="flex flex-col pb-6"
       aria-label="Formulaire de génération de parcours"
     >
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          padding: "20px 24px 18px",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
+      <div className="px-4 md:px-6 pt-5 pb-[18px] border-b border-[var(--border)]">
+
         <SidebarSectionLabel>Configurer la séance</SidebarSectionLabel>
         <p
           style={{
@@ -322,7 +309,7 @@ export default function SessionForm() {
         </p>
       </div>
 
-      <div style={{ padding: "0 24px" }}>
+      <div className="px-4 md:px-6">
         {/* ── Address ──────────────────────────────────────────────────────── */}
         <div style={{ paddingTop: "20px" }}>
           <SidebarSectionLabel>Point de départ</SidebarSectionLabel>
@@ -383,8 +370,8 @@ export default function SessionForm() {
                   aria-checked={isActive}
                   disabled={isLoading}
                   onClick={() => handleSportChange(sport)}
+                  className="h-14 md:h-[72px]"
                   style={{
-                    height: "72px",
                     display: "flex",
                     flexDirection: "column",
                     alignItems: "center",
@@ -635,12 +622,9 @@ export default function SessionForm() {
 
       {/* ── Generate button (sticky bottom) ────────────────────────────── */}
       <div
+        className="sticky bottom-0 z-10 px-4 md:px-6 py-4"
         style={{
-          position: "sticky",
-          bottom: 0,
-          padding: "16px 24px",
           background: "linear-gradient(to top, var(--bg-deep) 80%, transparent)",
-          zIndex: 10,
         }}
       >
         <button

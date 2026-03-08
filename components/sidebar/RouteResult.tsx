@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useAppStore } from "@/lib/store";
 import { downloadGPX } from "@/lib/gpx-export";
 import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import ScoreRing from "@/components/ui/ScoreRing";
+import WaitlistForm from "@/components/ui/WaitlistForm";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,13 +108,41 @@ export default function RouteResult() {
   } = useAppStore();
 
   const [feedbackCount, setFeedbackCount] = useState(0);
+  const [showWaitlistWidget, setShowWaitlistWidget] = useState(false);
+  const [waitlistDismissed, setWaitlistDismissed] = useState(false);
+
   useEffect(() => {
     setFeedbackCount(loadFeedbacks().length);
   }, [currentRoute]);
 
+  // Show waitlist widget after 30s or after first GPX download
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (localStorage.getItem("tf-waitlist-dismissed") === "1") {
+      setWaitlistDismissed(true);
+      return;
+    }
+    const timer = setTimeout(() => setShowWaitlistWidget(true), 30000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleDismissWaitlist = useCallback(() => {
+    setWaitlistDismissed(true);
+    localStorage.setItem("tf-waitlist-dismissed", "1");
+  }, []);
+
+  const handleDownloadGPX = useCallback(() => {
+    if (!currentRoute) return;
+    downloadGPX(currentRoute);
+    // Show waitlist widget after first download
+    if (!waitlistDismissed) {
+      setShowWaitlistWidget(true);
+    }
+  }, [currentRoute, waitlistDismissed]);
+
   if (status === "error") {
     return (
-      <div style={{ padding: "24px" }}>
+      <div className="px-4 md:px-6 py-6">
         <div
           role="alert"
           aria-live="assertive"
@@ -155,12 +184,14 @@ export default function RouteResult() {
   const total = candidates.length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", paddingBottom: "24px" }}>
+    <div className="flex flex-col pb-6">
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div
+        className="px-4 md:px-6"
         style={{
-          padding: "16px 24px",
+          paddingTop: "16px",
+          paddingBottom: "16px",
           borderBottom: "1px solid var(--border)",
           display: "flex",
           alignItems: "center",
@@ -203,7 +234,7 @@ export default function RouteResult() {
         </div>
       </div>
 
-      <div style={{ padding: "0 24px" }}>
+      <div className="px-4 md:px-6">
 
         {/* ── Profile ─────────────────────────────────────────────────────── */}
         <div style={{ padding: "14px 0 14px", borderBottom: "1px solid var(--border)" }}>
@@ -364,7 +395,7 @@ export default function RouteResult() {
         {/* ── Actions ───────────────────────────────────────────────────────── */}
         <div style={{ marginTop: "20px", display: "flex", flexDirection: "column", gap: "8px" }}>
           <button
-            onClick={() => downloadGPX(currentRoute)}
+            onClick={handleDownloadGPX}
             style={{
               width: "100%",
               height: "48px",
@@ -460,6 +491,44 @@ export default function RouteResult() {
             >
               EXPORTER FEEDBACKS ({feedbackCount})
             </button>
+          </div>
+        )}
+        {/* ── Post-generation waitlist widget ───────────────────────────── */}
+        {showWaitlistWidget && !waitlistDismissed && (
+          <div
+            style={{
+              marginTop: "20px",
+              paddingTop: "16px",
+              borderTop: "1px solid var(--border)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+              <span
+                style={{
+                  fontFamily: "var(--font-syne), sans-serif",
+                  fontSize: "12px",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Recevoir les nouveautés ?
+              </span>
+              <button
+                onClick={handleDismissWaitlist}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  padding: "2px 6px",
+                  opacity: 0.5,
+                }}
+                aria-label="Fermer"
+              >
+                ✕
+              </button>
+            </div>
+            <WaitlistForm source="post-generation" compact />
           </div>
         )}
       </div>

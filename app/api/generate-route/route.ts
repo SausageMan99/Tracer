@@ -59,6 +59,7 @@ export async function POST(req: NextRequest) {
     targetElevationM: body.targetElevationM,
     waypoints: body.waypoints,
     endAddress: body.endAddress,
+    scenicMode: (body as Record<string, unknown>).scenicMode === true ? true : undefined,
   };
 
   try {
@@ -86,13 +87,27 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     const message = err instanceof Error ? err.message : "";
 
-    if (message === "NO_ROAD_NETWORK") {
+    if (message.startsWith("NO_ROAD_NETWORK")) {
+      const subCode = message.split(":")[1] ?? "";
+      let errorMsg: string;
+      switch (subCode) {
+        case "OVERPASS_TIMEOUT":
+          errorMsg = "Serveur cartographique indisponible. Réessayez dans 30s.";
+          break;
+        case "EMPTY_GRAPH":
+          errorMsg = "Aucune route trouvée. Essayez un point de départ plus urbain ou une distance plus courte.";
+          break;
+        case "SOLVER_EMPTY":
+          errorMsg = "Impossible de construire un parcours en boucle. Essayez une distance différente.";
+          break;
+        default:
+          errorMsg = "Aucun réseau routier détecté à cet endroit. Essayez un autre point de départ.";
+      }
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
           errorCode: "NO_ROAD_NETWORK",
-          error:
-            "Aucun réseau routier détecté à cet endroit. Essayez un autre point de départ.",
+          error: errorMsg,
         },
         { status: 422 }
       );

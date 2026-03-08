@@ -111,15 +111,38 @@ nwr["landuse"~"^(forest|wood)$"](around:${radiusM},${center.lat},${center.lng});
 nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
 );out body qt;`;
 
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: `data=${encodeURIComponent(query)}`,
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-  });
+  const overpassFetch = async (attempt: number): Promise<Response> => {
+    try {
+      const res = await fetch("https://overpass-api.de/api/interpreter", {
+        method: "POST",
+        body: `data=${encodeURIComponent(query)}`,
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (res.status === 429 || res.status === 503) {
+        if (attempt < 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+          return overpassFetch(attempt + 1);
+        }
+        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+      }
+      if (!res.ok) {
+        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+      }
+      return res;
+    } catch (err) {
+      if (err instanceof Error && err.name === "TimeoutError") {
+        if (attempt < 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+          return overpassFetch(attempt + 1);
+        }
+        throw new Error("NO_ROAD_NETWORK:OVERPASS_TIMEOUT");
+      }
+      throw err;
+    }
+  };
 
-  if (!res.ok) {
-    throw new Error("NO_ROAD_NETWORK");
-  }
+  const res = await overpassFetch(0);
 
   const data: { elements: OverpassGraphElement[] } = await res.json();
 
@@ -155,6 +178,8 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
 
     const highway = el.tags.highway;
     const surface = el.tags.surface;
+    const lit = el.tags.lit;
+    const access = el.tags.access;
     const wayId = el.id;
 
     for (let i = 0; i < el.nodes.length - 1; i++) {
@@ -202,6 +227,8 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           lengthKm,
           highway,
           surface,
+          lit,
+          access,
           osmWayId: wayId,
           score: 0,
         };
@@ -217,6 +244,8 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           lengthKm,
           highway,
           surface,
+          lit,
+          access,
           osmWayId: wayId,
           score: 0,
         };

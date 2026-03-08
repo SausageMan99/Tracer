@@ -1,14 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useAppStore } from "@/lib/store";
+import type { MapboxFeature } from "@/lib/types";
 
-interface NominatimSuggestion {
-  place_id: number;
-  display_name: string;
-}
-
-function formatSuggestion(s: NominatimSuggestion): { main: string; sub: string } {
-  const parts = s.display_name.split(", ");
+function formatSuggestion(s: MapboxFeature): { main: string; sub: string } {
+  const parts = s.place_name.split(", ");
   return {
     main: parts.slice(0, 2).join(", "),
     sub: parts.slice(2).join(", "),
@@ -60,7 +57,8 @@ export default function AddressInput({
   compact = false,
   dark = false,
 }: AddressInputProps) {
-  const [suggestions, setSuggestions] = useState<NominatimSuggestion[]>([]);
+  const setMapCenter = useAppStore((s) => s.setMapCenter);
+  const [suggestions, setSuggestions] = useState<MapboxFeature[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
@@ -68,6 +66,7 @@ export default function AddressInput({
   const abortRef = useRef<AbortController | null>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sessionTokenRef = useRef(crypto.randomUUID());
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -94,31 +93,18 @@ export default function AddressInput({
       abortRef.current = controller;
       setIsSearching(true);
       try {
-        const url = new URL("https://nominatim.openstreetmap.org/search");
-        url.searchParams.set("q", query.trim());
-        url.searchParams.set("format", "jsonv2");
-        url.searchParams.set("limit", "6");
-        url.searchParams.set("addressdetails", "1");
-        url.searchParams.set("dedupe", "1");
-        // Bias results toward France + neighbouring countries
-        url.searchParams.set("countrycodes", "fr,be,ch,lu,es,it,de");
-        url.searchParams.set("accept-language", "fr");
-        const res = await fetch(url.toString(), {
-          signal: controller.signal,
-          headers: {
-            "User-Agent": "Tracer/1.0 (running-cycling route generator)",
-            Accept: "application/json",
-            "Accept-Language": "fr",
-          },
-        });
+        const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+        const encoded = encodeURIComponent(query.trim());
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${token}&autocomplete=true&limit=5&language=fr&country=fr,be,ch,lu,es,it,de&types=address,place,locality,poi&session_token=${sessionTokenRef.current}`;
+        const res = await fetch(url, { signal: controller.signal });
         if (res.ok) {
-          const data: NominatimSuggestion[] = await res.json();
-          setSuggestions(data);
-          setShowSuggestions(data.length > 0);
+          const data = await res.json();
+          const features: MapboxFeature[] = data.features ?? [];
+          setSuggestions(features);
+          setShowSuggestions(features.length > 0);
           setActiveIndex(-1);
         }
       } catch (err) {
-        // AbortError = request superseded by a newer one — not an error
         if (err instanceof Error && err.name !== "AbortError") {
           /* non-fatal */
         }
@@ -133,11 +119,16 @@ export default function AddressInput({
     search(val);
   };
 
-  const select = (s: NominatimSuggestion) => {
-    onChange(s.display_name);
+  const select = (s: MapboxFeature) => {
+    onChange(s.place_name);
+    // Move map to the selected address
+    const [lng, lat] = s.center;
+    setMapCenter({ lat, lng });
     setSuggestions([]);
     setShowSuggestions(false);
     setActiveIndex(-1);
+    // Generate a new session token for the next search session (billing efficiency)
+    sessionTokenRef.current = crypto.randomUUID();
     inputRef.current?.focus();
   };
 
@@ -242,7 +233,7 @@ export default function AddressInput({
             const isActive = i === activeIndex;
             return (
               <li
-                key={s.place_id}
+                key={s.id}
                 id={`${id}-opt-${i}`}
                 role="option"
                 aria-selected={isActive}

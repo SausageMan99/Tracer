@@ -23,7 +23,7 @@ export async function generateRouteV2(
   );
 
   if (graph.nodes.size === 0) {
-    throw new Error("NO_ROAD_NETWORK");
+    throw new Error("NO_ROAD_NETWORK:EMPTY_GRAPH");
   }
 
   // 4. Find closest node to start
@@ -38,11 +38,11 @@ export async function generateRouteV2(
   }
 
   if (!closestNodeId) {
-    throw new Error("NO_ROAD_NETWORK");
+    throw new Error("NO_ROAD_NETWORK:EMPTY_GRAPH");
   }
 
   // 5. Derive session weights and score edges
-  const weights = deriveWeights(profile);
+  const weights = deriveWeights(profile, request.scenicMode);
   const { nodeElevation } = await scoreEdges(graph, weights, profile, scenicWayIds);
 
   // 6. Run solver
@@ -55,7 +55,7 @@ export async function generateRouteV2(
   );
 
   if (solverPaths.length === 0) {
-    throw new Error("NO_ROAD_NETWORK");
+    throw new Error("NO_ROAD_NETWORK:SOLVER_EMPTY");
   }
 
   // 7. Post-process into RouteCandidate[]
@@ -69,7 +69,7 @@ export async function generateRouteV2(
   );
 
   if (candidates.length === 0) {
-    throw new Error("NO_ROAD_NETWORK");
+    throw new Error("NO_ROAD_NETWORK:SOLVER_EMPTY");
   }
 
   const best = candidates[0];

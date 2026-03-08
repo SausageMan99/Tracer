@@ -423,17 +423,18 @@ export default function MapView() {
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const rafRef = useRef<number>(0);
 
-  const { currentRoute, scenicMode, hoveredRouteProgress, status } = useAppStore();
+  const { currentRoute, scenicMode, hoveredRouteProgress, status, mapCenter, mapZoom } = useAppStore();
 
   // ── Initialise map once ───────────────────────────────────────────────────
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
+    const storeState = useAppStore.getState();
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
       style: "mapbox://styles/mapbox/dark-v11",
-      center: [2.3522, 48.8566],
-      zoom: 12,
+      center: [storeState.mapCenter.lng, storeState.mapCenter.lat],
+      zoom: storeState.mapZoom,
     });
     mapRef.current = map;
 
@@ -502,6 +503,15 @@ export default function MapView() {
     if (!map) return;
     updateHoverPoint(map, currentRoute, hoveredRouteProgress, scenicMode);
   }, [hoveredRouteProgress, currentRoute, scenicMode]);
+
+  // ── Fly to mapCenter when it changes (geolocation / address selection) ───
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapCenter) return;
+    if (currentRoute) return; // fitBounds handles post-generation
+    map.flyTo({ center: [mapCenter.lng, mapCenter.lat], zoom: mapZoom ?? 13, duration: 1200 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapCenter]);
 
   // ── Stats overlay data ────────────────────────────────────────────────────
   const best = currentRoute?.best;
@@ -596,13 +606,7 @@ export default function MapView() {
       {/* ── Stats overlay (bottom-left, shown when route exists) ─────────── */}
       {best && (
         <div
-          style={{
-            position: "absolute",
-            bottom: "32px",
-            left: "16px",
-            zIndex: 10,
-            pointerEvents: "none",
-          }}
+          className="absolute left-4 z-10 pointer-events-none bottom-20 md:bottom-8"
           aria-label="Statistiques du parcours"
         >
           <div

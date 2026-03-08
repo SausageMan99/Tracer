@@ -5,21 +5,21 @@
 /* ── TrailForge Design Tokens ─────────────────────────────────────────────── */
 
 :root {
-  --bg-deep:      #080C0A;
+  --bg-deep:      #0A0D0C;
   --bg-surface:   #0D1410;
   --bg-elevated:  #141C17;
   --border:       #2A3D30;
   --text-primary: #E8EDE9;
   --text-muted:   #8FA898;
   --accent-moss:  #4A7C59;
-  --accent-sage:  #7FB08A;
-  --accent-lime:  #A8D672;
+  --accent-sage:  #81C784;
+  --accent-lime:  #7CB342;
   --accent-amber: #D4A843;
   --accent-trail: #C17A3A;
   --gradient-hero: linear-gradient(160deg, #080C0A 0%, #0F1F12 50%, #080C0A 100%);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* Legacy compatibility */
-  --primary:       #A8D672;
+  --primary:       #7CB342;
   --font-inter:    "Inter", sans-serif;
   --font-syne:     "Syne", sans-serif;
 }
@@ -29,10 +29,12 @@
 html {
   background-color: var(--bg-deep);
   color: var(--text-primary);
+  overflow-x: clip;
 }
 
 body {
   font-family: var(--font-inter), sans-serif;
+  overflow-x: clip;
 }
 
 /* ── Scrollbar utilities ──────────────────────────────────────────────────── */
@@ -228,6 +230,14 @@ input[type="range"].dark-slider::-moz-range-thumb {
 
 .map-radar-ring-delay {
   animation-delay: 1.2s;
+}
+
+/* ── How It Works — mobile fallback ───────────────────────────────────────── */
+
+@media (max-width: 767px) {
+  .how-step-grid {
+    grid-template-columns: 1fr !important;
+  }
 }
 
 /* ── Custom cursor — hide default on landing page ────────────────────────── */

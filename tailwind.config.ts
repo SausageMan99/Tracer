@@ -10,15 +10,15 @@ const config: Config = {
     extend: {
       colors: {
         trailforge: {
-          "bg-deep":     "#080C0A",
+          "bg-deep":     "#0A0D0C",
           "bg-surface":  "#0D1410",
           "bg-elevated": "#141C17",
           border:        "#2A3D30",
           "text-primary":"#E8EDE9",
           "text-muted":  "#8FA898",
           "accent-moss": "#4A7C59",
-          "accent-sage": "#7FB08A",
-          "accent-lime": "#A8D672",
+          "accent-sage": "#81C784",
+          "accent-lime": "#7CB342",
           "accent-amber":"#D4A843",
           "accent-trail":"#C17A3A",
         },

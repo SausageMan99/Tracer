@@ -13,7 +13,7 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 
-export function deriveWeights(profile: SessionProfile): SessionWeights {
+export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): SessionWeights {
   const { sport, sessionType } = profile;
 
   // Base weights by sport
@@ -51,6 +51,17 @@ export function deriveWeights(profile: SessionProfile): SessionWeights {
   } else if (sessionType === "recuperation") {
     base.elevation = 0.05;
     base.quietness += 0.1;
+  }
+
+  // Scenic mode: boost nature & quietness, reduce surface & elevation
+  if (scenicMode) {
+    base.nature += 0.15;
+    base.quietness += 0.05;
+    base.surface -= 0.1;
+    base.elevation -= 0.1;
+    // Clamp to minimum 0.05
+    base.surface = Math.max(0.05, base.surface);
+    base.elevation = Math.max(0.05, base.elevation);
   }
 
   // Normalize to sum = 1
@@ -96,6 +107,16 @@ function scoreNature(osmWayId: number, scenicWayIds: Set<string>): number {
   return scenicWayIds.has(String(osmWayId)) ? 1.0 : 0.3;
 }
 
+function scoreSafety(lit?: string, access?: string): number {
+  // Penalize private/restricted access
+  if (access === "private" || access === "no") return 0.0;
+
+  // Lighting score blended into quietness
+  if (lit === "yes") return 1.0;
+  if (lit === "no") return 0.3;
+  return 0.5; // unknown
+}
+
 export async function scoreEdges(
   graph: EnrichedGraph,
   weights: SessionWeights,
@@ -131,8 +152,15 @@ export async function scoreEdges(
 
   // Score each edge
   for (const edge of graph.edges.values()) {
+    // Skip private/restricted access edges entirely
+    if (edge.access === "private" || edge.access === "no") {
+      edge.score = 0;
+      continue;
+    }
+
     const surfaceScore = scoreSurface(edge.surface, profile.sport);
-    const quietnessScore = scoreQuietness(edge.highway);
+    const safetyScore = scoreSafety(edge.lit, edge.access);
+    const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
     const natureScore = scoreNature(edge.osmWayId, scenicWayIds);
 
     // Elevation score: based on gradient

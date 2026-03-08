@@ -61,6 +61,12 @@ interface AppStore extends AppState {
   ignLayerVisible: boolean;
   /** Toggles `ignLayerVisible` between true and false */
   toggleIgnLayer: () => void;
+  /** Whether the sidebar drawer is open (relevant on mobile) */
+  sidebarOpen: boolean;
+  /** Set sidebar open/closed state */
+  setSidebarOpen: (open: boolean) => void;
+  /** Toggle sidebar open/closed */
+  toggleSidebar: () => void;
 }
 
 const defaultProfile = SESSION_PROFILES[0];
@@ -125,4 +131,8 @@ export const useAppStore = create<AppStore>((set) => ({
 
   ignLayerVisible: false,
   toggleIgnLayer: () => set((state) => ({ ignLayerVisible: !state.ignLayerVisible })),
+
+  sidebarOpen: false,
+  setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
+  toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 }));

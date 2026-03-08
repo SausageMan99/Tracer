@@ -61,7 +61,8 @@ export interface RouteFeedback {
 }
 
 /**
- * Appends a new feedback entry to the localStorage store.
+ * Appends a new feedback entry to the localStorage store and
+ * persists it to the server API (fire-and-forget).
  *
  * Silently ignores errors (localStorage full, SSR context, or JSON failures).
  * Feedback loss is acceptable — it must never throw in the UI.
@@ -75,6 +76,17 @@ export function saveFeedback(feedback: RouteFeedback): void {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(existing));
   } catch {
     // localStorage might be full or unavailable
+  }
+
+  // Fire-and-forget API persistence
+  try {
+    fetch("/api/feedback", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(feedback),
+    }).catch(() => { /* non-critical */ });
+  } catch {
+    // fetch not available (SSR) — ignore
   }
 }
 

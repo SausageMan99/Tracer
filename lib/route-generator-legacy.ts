@@ -2,7 +2,7 @@ import type {
   Coordinate,
   GeneratedRoute,
   GraphHopperResponse,
-  NominatimResult,
+  MapboxFeature,
   OpenMeteoElevationResponse,
   OverpassResponse,
   RouteCandidate,
@@ -136,36 +136,29 @@ export function haversineKm(a: Coordinate, b: Coordinate): number {
 // ─── Geocoding ───────────────────────────────────────────────────────────────
 
 /**
- * Converts a free-text address to WGS-84 coordinates using Nominatim.
+ * Converts a free-text address to WGS-84 coordinates using Mapbox Geocoding v5.
  *
  * @param address - Any address string (city, street, POI name, etc.)
  * @returns The first geocoding result as a `Coordinate`
- * @throws {Error} With message `"GEOCODING_FAILED"` when Nominatim returns
+ * @throws {Error} With message `"GEOCODING_FAILED"` when Mapbox returns
  *   no results or responds with a non-OK HTTP status
- *
- * @example
- * await geocodeAddress("Parc de la Tête d'Or, Lyon")
- * // → { lat: 45.7770, lng: 4.8553 }
  */
 export async function geocodeAddress(address: string): Promise<Coordinate> {
-  const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("q", address);
-  url.searchParams.set("format", "json");
-  url.searchParams.set("limit", "1");
+  const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? process.env.MAPBOX_TOKEN ?? "";
+  const encoded = encodeURIComponent(address);
+  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${token}&limit=1&language=fr`;
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      "User-Agent": "Tracer/1.0 (running-cycling route generator)",
-      Accept: "application/json",
-    },
+  const res = await fetch(url, {
+    signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) throw new Error("GEOCODING_FAILED");
 
-  const data: NominatimResult[] = await res.json();
-  if (!data.length) throw new Error("GEOCODING_FAILED");
+  const data: { features: MapboxFeature[] } = await res.json();
+  if (!data.features?.length) throw new Error("GEOCODING_FAILED");
 
-  return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  const [lng, lat] = data.features[0].center;
+  return { lat, lng };
 }
 
 // ─── GraphHopper (running) ────────────────────────────────────────────────────
