@@ -11,6 +11,28 @@ import type {
   SessionProfile,
 } from "./types";
 import { PROFILES_BY_ID } from "./session-profiles";
+import {
+  haversineKm,
+  computeAscent,
+  computeLoopScore,
+  scoreRoute,
+  PAVED_SURFACES,
+  UNPAVED_SURFACES,
+  TRAIL_HIGHWAY_TYPES,
+  QUIET_HIGHWAY_TYPES,
+  BUSY_HIGHWAY_TYPES,
+} from "./engine/utils";
+export {
+  haversineKm,
+  computeAscent,
+  computeLoopScore,
+  scoreRoute,
+  PAVED_SURFACES,
+  UNPAVED_SURFACES,
+  TRAIL_HIGHWAY_TYPES,
+  QUIET_HIGHWAY_TYPES,
+  BUSY_HIGHWAY_TYPES,
+} from "./engine/utils";
 
 const GRAPHHOPPER_API_KEY = process.env.GRAPHHOPPER_API_KEY ?? "";
 const ORS_API_KEY = process.env.ORS_API_KEY ?? "";
@@ -102,35 +124,23 @@ interface CacheEntry {
  * A single Overpass query covers all candidates from the same generation
  * request (their bboxes overlap significantly).
  *
- * TODO: Expired entries are never evicted — the Map will grow across the
- * process lifetime. Add periodic pruning (e.g. a setInterval that deletes
- * entries where `entry.expiresAt < Date.now()`) for long-running deployments.
+ * Expired entries are evicted every 5 minutes by a background timer.
  */
 const overpassCache = new Map<string, CacheEntry>();
 
-// ─── Haversine ───────────────────────────────────────────────────────────────
+const EVICTION_INTERVAL_MS = 5 * 60 * 1000; // Every 5 minutes
 
-/**
- * Computes the great-circle distance between two WGS-84 coordinates.
- *
- * @param a - First coordinate
- * @param b - Second coordinate
- * @returns Distance in kilometres
- *
- * @example
- * haversineKm({ lat: 48.8566, lng: 2.3522 }, { lat: 48.8600, lng: 2.3600 })
- * // → ~0.73 km
- */
-export function haversineKm(a: Coordinate, b: Coordinate): number {
-  const R = 6371;
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
-  const sin2 =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((a.lat * Math.PI) / 180) *
-      Math.cos((b.lat * Math.PI) / 180) *
-      Math.sin(dLng / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(sin2));
+const cacheEvictionTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of overpassCache) {
+    if (now > entry.expiresAt) {
+      overpassCache.delete(key);
+    }
+  }
+}, EVICTION_INTERVAL_MS);
+
+if (cacheEvictionTimer.unref) {
+  cacheEvictionTimer.unref();
 }
 
 // ─── Geocoding ───────────────────────────────────────────────────────────────
@@ -214,13 +224,18 @@ async function fetchCandidateRoutes(
     url.searchParams.set("key", GRAPHHOPPER_API_KEY);
 
     try {
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), {
+        signal: AbortSignal.timeout(15_000),
+      });
       const data: GraphHopperResponse = await res.json();
       if (!data.paths?.length || !data.paths[0].points?.coordinates?.length) {
         throw new Error("NO_ROAD_NETWORK");
       }
       return [{ path: data.paths[0], seed: 0 }];
     } catch (err) {
+      if (err instanceof Error && err.name === "TimeoutError") {
+        throw new Error("NO_ROAD_NETWORK:API_TIMEOUT");
+      }
       if (err instanceof Error && err.message === "NO_ROAD_NETWORK") throw err;
       throw new Error("NO_ROAD_NETWORK");
     }
@@ -243,7 +258,9 @@ async function fetchCandidateRoutes(
       url.searchParams.set("key", GRAPHHOPPER_API_KEY);
 
       try {
-        const res = await fetch(url.toString());
+        const res = await fetch(url.toString(), {
+          signal: AbortSignal.timeout(15_000),
+        });
         const data: GraphHopperResponse = await res.json();
         if (!data.paths?.length) return null;
         const path = data.paths[0];
@@ -304,6 +321,7 @@ async function fetchORSSingleRoute(
         Accept: "application/json, application/geo+json",
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15_000),
     });
 
     if (!res.ok) return null;
@@ -449,7 +467,9 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
       url.searchParams.set("longitude", batch.map((c) => c.lng).join(","));
 
       try {
-        const res = await fetch(url.toString());
+        const res = await fetch(url.toString(), {
+          signal: AbortSignal.timeout(10_000),
+        });
         const data: OpenMeteoElevationResponse = await res.json();
         const rawElevation = data.elevation;
         if (!rawElevation || !Array.isArray(rawElevation) || rawElevation.length === 0) {
@@ -463,36 +483,6 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
   );
 
   return results.flat();
-}
-
-// ─── D+ / D- computation ─────────────────────────────────────────────────────
-
-/**
- * Computes total positive and negative elevation gain from an elevation profile.
- *
- * No smoothing threshold is applied — every inter-point difference contributes.
- * For accurate results, the input should already be subsampled to ≤200 points
- * so that GPS noise doesn't inflate D+ significantly.
- *
- * @param elevations - Elevation values in metres ASL, in route order
- * @returns `{ ascendM, descendM }` both in metres (positive values)
- *
- * @example
- * computeAscent([100, 150, 120, 200])
- * // → { ascendM: 130, descendM: 30 }
- */
-export function computeAscent(elevations: number[]): {
-  ascendM: number;
-  descendM: number;
-} {
-  let ascendM = 0;
-  let descendM = 0;
-  for (let i = 1; i < elevations.length; i++) {
-    const diff = elevations[i] - elevations[i - 1];
-    if (diff > 0) ascendM += diff;
-    else descendM += Math.abs(diff);
-  }
-  return { ascendM, descendM };
 }
 
 // ─── Terrain quality scoring (Overpass) ──────────────────────────────────────
@@ -579,6 +569,7 @@ nwr["leisure"="nature_reserve"](${bbox.join(",")});
       method: "POST",
       body: `data=${encodeURIComponent(query)}`,
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      signal: AbortSignal.timeout(20_000),
     });
     const data: OverpassResponse = await res.json();
     overpassCache.set(key, { data, expiresAt: Date.now() + CACHE_TTL_MS });
@@ -587,37 +578,6 @@ nwr["leisure"="nature_reserve"](${bbox.join(",")});
     return { elements: [] };
   }
 }
-
-// ─── Road type sets ───────────────────────────────────────────────────────────
-
-/** OSM surface tag values considered fully paved. */
-export const PAVED_SURFACES = new Set([
-  "asphalt", "concrete", "paving_stones", "sett", "cobblestone", "paved",
-]);
-
-/** OSM surface tag values considered unpaved or soft ground. */
-export const UNPAVED_SURFACES = new Set([
-  "gravel", "dirt", "grass", "ground", "unpaved", "compacted", "fine_gravel", "sand",
-]);
-
-/** OSM highway types preferred for trail/off-road sports. */
-export const TRAIL_HIGHWAY_TYPES = new Set([
-  "track", "path", "cycleway", "bridleway", "footway",
-]);
-
-/**
- * OSM highway types that are quiet secondary roads — reward for all non-MTB sports.
- * These avoid both major arterials (dangerous) and remote tracks (unreliable surface).
- */
-export const QUIET_HIGHWAY_TYPES = new Set([
-  "secondary", "tertiary", "unclassified", "residential", "service",
-  "secondary_link", "tertiary_link",
-]);
-
-/** OSM highway types that are actively penalised for all sports (high traffic). */
-export const BUSY_HIGHWAY_TYPES = new Set([
-  "motorway", "trunk", "primary", "motorway_link", "trunk_link", "primary_link",
-]);
 
 /**
  * Computes a sport-specific terrain quality score from Overpass data.
@@ -765,84 +725,6 @@ export function computeTerrainScore(
         0.10 * cycleRouteBonus
       );
   }
-}
-
-// ─── Loop score ───────────────────────────────────────────────────────────────
-
-/**
- * Computes how well a route closes back to its start point.
- *
- * Score formula: `max(0, 1 - distanceKm / 2.0)` where `distanceKm` is the
- * haversine distance between the last route point and `start`.
- *
- * A gap of 0 km → score 1.0 (perfect loop).
- * A gap of 2 km or more → score 0.0.
- *
- * @param points - Route points (only the last one is used)
- * @param start - Start coordinate to measure closure against
- * @returns Loop quality score in [0, 1]
- */
-export function computeLoopScore(points: RoutePoint[], start: Coordinate): number {
-  if (points.length === 0) return 0;
-  const end = points[points.length - 1];
-  const distKm = haversineKm(start, end);
-  return Math.max(0, 1 - distKm / 2.0);
-}
-
-// ─── Scoring ─────────────────────────────────────────────────────────────────
-
-/**
- * Computes the weighted multi-criteria score for a route candidate.
- *
- * Formula:
- * ```
- * score = w.elevationMatch × elevMatch
- *       + w.distanceMatch  × distMatch
- *       + w.surfaceQuality × surfaceScore
- *       + w.loopQuality    × loopScore
- * ```
- *
- * Where:
- * - `elevMatch = max(0, 1 - |ascendM − targetElevationM| / max(targetElevationM, 1))`
- * - `distMatch = max(0, 1 - |distanceKm − targetDistanceKm| / max(targetDistanceKm, 1))`
- *
- * Both error terms are normalised to the target value, so a 20% error
- * always produces a 0.8 component score regardless of absolute magnitude.
- *
- * @param candidate - Partial candidate with the four scored fields
- * @param profile - Session profile providing scoring weights
- * @param targetDistanceKm - Desired distance in km
- * @param targetElevationM - Desired D+ in metres
- * @returns Weighted score in [0, 1] (higher = better)
- *
- * @example
- * scoreRoute(
- *   { ascendM: 160, distanceKm: 13.5, surfaceScore: 0.7, loopScore: 0.9 },
- *   PROFILES_BY_ID.get("running_endurance")!,
- *   14, 150
- * )
- * // → ~0.81
- */
-export function scoreRoute(
-  candidate: Pick<RouteCandidate, "ascendM" | "distanceKm" | "surfaceScore" | "loopScore">,
-  profile: SessionProfile,
-  targetDistanceKm: number,
-  targetElevationM: number
-): number {
-  const { weights } = profile;
-
-  const elevDiff = Math.abs(candidate.ascendM - targetElevationM);
-  const elevMatch = Math.max(0, 1 - elevDiff / Math.max(targetElevationM, 1));
-
-  const distDiff = Math.abs(candidate.distanceKm - targetDistanceKm);
-  const distMatch = Math.max(0, 1 - distDiff / Math.max(targetDistanceKm, 1));
-
-  return (
-    weights.elevationMatch * elevMatch +
-    weights.distanceMatch * distMatch +
-    weights.surfaceQuality * candidate.surfaceScore +
-    weights.loopQuality * candidate.loopScore
-  );
 }
 
 // ─── Main entry point ─────────────────────────────────────────────────────────
