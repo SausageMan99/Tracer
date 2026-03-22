@@ -1,19 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import type { Coordinate } from "@/lib/types";
 import { DirectFetcher } from "@/lib/engine/adapters/direct-fetcher";
+import { validateBody } from "@/lib/utils/proxy-validators";
 
 const fetcher = new DirectFetcher();
-
-export function validateBody(body: unknown): Coordinate[] {
-  const { coordinates } = body as { coordinates: Coordinate[] };
-  if (!Array.isArray(coordinates) || coordinates.length === 0) {
-    throw new Error("coordinates array required");
-  }
-  if (coordinates.length > 500) {
-    throw new Error("Max 500 coordinates per request");
-  }
-  return coordinates;
-}
 
 export async function POST(request: NextRequest) {
   try {

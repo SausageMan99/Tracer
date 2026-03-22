@@ -1,15 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useAppStore } from "@/lib/store";
 
 /**
  * Fixed top navigation bar for the /app route.
- * Shows: hamburger (mobile) / logo+back link / centered label
+ * Shows: logo+back link (left) / centered label (desktop only)
+ * The hamburger/drawer pattern has been replaced by a bottom sheet on mobile.
  */
 export default function AppNav() {
-  const toggleSidebar = useAppStore((s) => s.toggleSidebar);
-
   return (
     <nav
       style={{
@@ -26,29 +24,8 @@ export default function AppNav() {
         zIndex: 50,
       }}
     >
-      {/* Left: hamburger (mobile) + back link */}
+      {/* Left: back link */}
       <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-        {/* Hamburger — mobile only */}
-        <button
-          type="button"
-          className="md:hidden"
-          onClick={toggleSidebar}
-          aria-label="Ouvrir le panneau de configuration"
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-            padding: "4px",
-            display: "flex",
-            alignItems: "center",
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="20" height="20">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-        </button>
-
         <Link
           href="/"
           style={{

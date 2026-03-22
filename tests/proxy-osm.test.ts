@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateParams } from "../app/api/proxy/osm/route";
+import { validateParams } from "../lib/utils/proxy-validators";
 
 describe("OSM proxy validation", () => {
   it("rejects missing lat param", () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateBody } from "../app/api/proxy/elevation/route";
+import { validateBody } from "../lib/utils/proxy-validators";
 
 describe("Elevation proxy validation", () => {
   it("rejects empty coordinates", () => {

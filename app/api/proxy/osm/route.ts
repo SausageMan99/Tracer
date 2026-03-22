@@ -1,21 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { DirectFetcher } from "@/lib/engine/adapters/direct-fetcher";
+import { validateParams } from "@/lib/utils/proxy-validators";
 
 const fetcher = new DirectFetcher();
-
-export function validateParams(params: URLSearchParams) {
-  const rawLat = params.get("lat");
-  const rawLng = params.get("lng");
-  const rawRadius = params.get("radius");
-  if (rawLat === null || rawLng === null || rawRadius === null) throw new Error("Missing params");
-  const lat = Number(rawLat);
-  const lng = Number(rawLng);
-  const radius = Number(rawRadius);
-  if (isNaN(lat) || isNaN(lng) || isNaN(radius)) throw new Error("Missing params");
-  if (radius > 25) throw new Error("Radius too large");
-  if (radius < 0.5) throw new Error("Radius too small");
-  return { lat, lng, radius };
-}
 
 export async function GET(request: NextRequest) {
   try {
