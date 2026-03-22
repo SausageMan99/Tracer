@@ -3,7 +3,7 @@ import { DirectFetcher } from "@/lib/engine/adapters/direct-fetcher";
 
 const fetcher = new DirectFetcher();
 
-function validateParams(params: URLSearchParams) {
+export function validateParams(params: URLSearchParams) {
   const rawLat = params.get("lat");
   const rawLng = params.get("lng");
   const rawRadius = params.get("radius");

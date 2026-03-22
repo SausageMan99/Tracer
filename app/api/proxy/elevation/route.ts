@@ -4,7 +4,7 @@ import { DirectFetcher } from "@/lib/engine/adapters/direct-fetcher";
 
 const fetcher = new DirectFetcher();
 
-function validateBody(body: unknown): Coordinate[] {
+export function validateBody(body: unknown): Coordinate[] {
   const { coordinates } = body as { coordinates: Coordinate[] };
   if (!Array.isArray(coordinates) || coordinates.length === 0) {
     throw new Error("coordinates array required");
