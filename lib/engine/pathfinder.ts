@@ -1,5 +1,5 @@
 import type { EnrichedGraph } from "../types";
-import { haversineKm } from "../route-generator-legacy";
+import { haversineKm } from "./utils";
 
 interface PathResult {
   distanceKm: number;
@@ -83,15 +83,23 @@ export function findShortestPath(
   const hStart = haversineKm({ lat: fromNode.lat, lng: fromNode.lng }, toCoord);
   openSet.push(hStart, fromNodeId);
 
+  const closedSet = new Set<string>();
+  const maxNodes = graph.nodes.size;
+
   while (openSet.size > 0) {
     const [, currentId] = openSet.pop()!;
 
+    if (closedSet.has(currentId)) continue;
+    closedSet.add(currentId);
+
     if (currentId === toNodeId) {
-      // Reconstruct path
+      // Reconstruct path with iteration guard
       const nodeIds: string[] = [toNodeId];
       const edgeIds: string[] = [];
       let cur = toNodeId;
+      let steps = 0;
       while (cameFrom.has(cur)) {
+        if (++steps > maxNodes) return null; // corrupted cameFrom — abort
         const prev = cameFrom.get(cur)!;
         nodeIds.push(prev.nodeId);
         edgeIds.push(prev.edgeId);
@@ -116,6 +124,7 @@ export function findShortestPath(
       if (!edge) continue;
 
       const neighborId = edge.to === currentId ? edge.from : edge.to;
+      if (closedSet.has(neighborId)) continue;
       // Only follow edges in the correct direction (from → to)
       // But graph edges may be bidirectional stored as separate edges
       if (edge.from !== currentId && edge.to !== currentId) continue;
@@ -148,7 +157,7 @@ export class ReturnDistanceCache {
   private pathCache = new Map<string, PathResult | null>();
 
   getDistance(graph: EnrichedGraph, fromNodeId: string, toNodeId: string): number | null {
-    const key = fromNodeId;
+    const key = `${fromNodeId}→${toNodeId}`;
     if (this.cache.has(key)) return this.cache.get(key)!;
 
     const result = findShortestPath(graph, fromNodeId, toNodeId);
@@ -159,7 +168,7 @@ export class ReturnDistanceCache {
   }
 
   getPath(graph: EnrichedGraph, fromNodeId: string, toNodeId: string): PathResult | null {
-    const key = fromNodeId;
+    const key = `${fromNodeId}→${toNodeId}`;
     if (this.pathCache.has(key)) return this.pathCache.get(key)!;
 
     const result = findShortestPath(graph, fromNodeId, toNodeId);

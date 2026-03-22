@@ -4,13 +4,11 @@ import type {
   EnrichedGraph,
   GraphNode,
 } from "../types";
-import { haversineKm } from "../route-generator-legacy";
+import { haversineKm } from "./utils";
 import { RouteGenerationError } from "../errors";
-import * as fs from "fs";
-import * as path from "path";
-
-const CACHE_DIR = path.join(process.cwd(), ".cache", "graphs");
-const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+import type { CacheAdapter, CachedGraph } from "./adapters/cache-adapter";
+import { buildCacheKey } from "./adapters/cache-adapter";
+import type { DataFetcher } from "./adapters/data-fetcher";
 
 const HIGHWAY_FILTER = [
   "secondary",
@@ -27,70 +25,25 @@ const HIGHWAY_FILTER = [
   "living_street",
 ].join("|");
 
-interface OverpassGraphElement {
-  type: "node" | "way";
-  id: number;
-  lat?: number;
-  lon?: number;
-  nodes?: number[];
-  tags?: Record<string, string>;
-}
-
-interface CachedGraph {
-  nodes: [string, GraphNode][];
-  edges: [string, EnrichedEdge][];
-  center: Coordinate;
-  radiusKm: number;
-  scenicWayIds: string[];
-  cachedAt: number;
-}
-
 function computeRadius(targetDistanceKm: number): number {
   return Math.max(2, Math.min(25, targetDistanceKm * 0.4));
 }
 
-function getCacheKey(center: Coordinate, radiusKm: number): string {
-  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}.json`;
-}
-
-function tryLoadCache(cacheKey: string): CachedGraph | null {
-  const filePath = path.join(CACHE_DIR, cacheKey);
-  try {
-    if (!fs.existsSync(filePath)) return null;
-    const raw = fs.readFileSync(filePath, "utf-8");
-    const cached: CachedGraph = JSON.parse(raw);
-    if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
-      fs.unlinkSync(filePath);
-      return null;
-    }
-    return cached;
-  } catch {
-    return null;
-  }
-}
-
-function saveCache(cacheKey: string, data: CachedGraph): void {
-  try {
-    fs.mkdirSync(CACHE_DIR, { recursive: true });
-    fs.writeFileSync(
-      path.join(CACHE_DIR, cacheKey),
-      JSON.stringify(data),
-      "utf-8"
-    );
-  } catch {
-    // Cache write failure is non-critical
-  }
-}
-
 export async function buildGraph(
   center: Coordinate,
-  targetDistanceKm: number
+  targetDistanceKm: number,
+  cache: CacheAdapter,
+  fetcher: DataFetcher
 ): Promise<{ graph: EnrichedGraph; scenicWayIds: Set<string> }> {
   const radiusKm = computeRadius(targetDistanceKm);
-  const radiusM = Math.round(radiusKm * 1000);
-  const cacheKey = getCacheKey(center, radiusKm);
+  if (targetDistanceKm > radiusKm * 3) {
+    console.warn(
+      `[graph-builder] Target distance ${targetDistanceKm}km may exceed graph coverage (radius=${radiusKm}km)`
+    );
+  }
+  const cacheKey = buildCacheKey(center.lat, center.lng, radiusKm);
 
-  const cached = tryLoadCache(cacheKey);
+  const cached = await cache.load(cacheKey);
   if (cached) {
     return {
       graph: {
@@ -103,49 +56,12 @@ export async function buildGraph(
     };
   }
 
-  // Fetch highway ways with geometry + scenic features
-  const query = `[out:json][timeout:30];(
-way["highway"~"^(${HIGHWAY_FILTER})$"](around:${radiusM},${center.lat},${center.lng});
-(._;>;);
-nwr["natural"~"^(water|wood|forest|grassland|heath)$"](around:${radiusM},${center.lat},${center.lng});
-nwr["landuse"~"^(forest|wood)$"](around:${radiusM},${center.lat},${center.lng});
-nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
-);out body qt;`;
-
-  const overpassFetch = async (attempt: number): Promise<Response> => {
-    try {
-      const res = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        body: `data=${encodeURIComponent(query)}`,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (res.status === 429 || res.status === 503) {
-        if (attempt < 1) {
-          await new Promise((r) => setTimeout(r, 2000));
-          return overpassFetch(attempt + 1);
-        }
-        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
-      }
-      if (!res.ok) {
-        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
-      }
-      return res;
-    } catch (err) {
-      if (err instanceof Error && err.name === "TimeoutError") {
-        if (attempt < 1) {
-          await new Promise((r) => setTimeout(r, 2000));
-          return overpassFetch(attempt + 1);
-        }
-        throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
-      }
-      throw err;
-    }
-  };
-
-  const res = await overpassFetch(0);
-
-  const data: { elements: OverpassGraphElement[] } = await res.json();
+  let data: Awaited<ReturnType<DataFetcher["fetchOverpassData"]>>;
+  try {
+    data = await fetcher.fetchOverpassData(center, radiusKm);
+  } catch {
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
+  }
 
   // Step 1: Collect nodes
   const nodeCoords = new Map<number, { lat: number; lon: number }>();
@@ -164,7 +80,11 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
       tags.natural ||
       tags.landuse === "forest" ||
       tags.landuse === "wood" ||
-      tags.leisure === "nature_reserve"
+      tags.leisure === "nature_reserve" ||
+      tags.tourism === "viewpoint" ||
+      tags.waterway === "river" ||
+      tags.waterway === "stream" ||
+      tags.boundary === "national_park"
     ) {
       scenicWayIds.add(String(el.id));
     }
@@ -178,6 +98,9 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
     if (el.type !== "way" || !el.nodes?.length || !el.tags?.highway) continue;
 
     const highway = el.tags.highway;
+    // Validate the highway tag matches our filter
+    if (!HIGHWAY_FILTER.split("|").includes(highway)) continue;
+
     const surface = el.tags.surface;
     const lit = el.tags.lit;
     const access = el.tags.access;
@@ -259,14 +182,15 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
   const graph: EnrichedGraph = { nodes, edges, center, radiusKm };
 
   // Cache as serialized arrays
-  saveCache(cacheKey, {
+  const cacheData: CachedGraph = {
     nodes: Array.from(nodes.entries()),
     edges: Array.from(edges.entries()),
     center,
     radiusKm,
     scenicWayIds: Array.from(scenicWayIds),
     cachedAt: Date.now(),
-  });
+  };
+  await cache.save(cacheKey, cacheData);
 
   return { graph, scenicWayIds };
 }

@@ -1,5 +1,5 @@
 import type { EnrichedGraph, SolverPath } from "../types";
-import { haversineKm } from "../route-generator-legacy";
+import { haversineKm } from "./utils";
 import { ReturnDistanceCache } from "./pathfinder";
 import { type TierConfig, type SolverConfig, PRO_TIER } from "./tier-config";
 

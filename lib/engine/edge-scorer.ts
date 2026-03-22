@@ -5,13 +5,13 @@ import type {
   SessionWeights,
 } from "../types";
 import {
-  fetchElevations,
   PAVED_SURFACES,
   UNPAVED_SURFACES,
   QUIET_HIGHWAY_TYPES,
   BUSY_HIGHWAY_TYPES,
   TRAIL_HIGHWAY_TYPES,
-} from "../route-generator-legacy";
+} from "./utils";
+import type { DataFetcher } from "./adapters/data-fetcher";
 
 export function deriveWeights(
   profile: SessionProfile,
@@ -133,6 +133,7 @@ export async function scoreEdges(
   weights: SessionWeights,
   profile: SessionProfile,
   scenicWayIds: Set<string>,
+  fetcher: DataFetcher,
   enableFullScenic: boolean = true
 ): Promise<{ nodeElevation: Map<string, number> }> {
   // Fetch elevations for all unique nodes
@@ -144,7 +145,7 @@ export async function scoreEdges(
 
   let elevations: number[];
   try {
-    elevations = await fetchElevations(coords);
+    elevations = await fetcher.fetchElevations(coords);
   } catch (err) {
     console.warn(
       "[edge-scorer] Elevation API failed, defaulting all elevations to 0:",
