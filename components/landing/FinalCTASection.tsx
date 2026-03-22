@@ -1,15 +1,9 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import GrainOverlay from "@/components/ui/GrainOverlay";
 import TextReveal from "@/components/ui/TextReveal";
 import MagneticButton from "@/components/ui/MagneticButton";
 import ScrambleNumber from "@/components/ui/ScrambleNumber";
-
-const TerrainCanvas = dynamic(
-  () => import("@/components/landing/TerrainCanvas"),
-  { ssr: false, loading: () => null },
-);
 
 export default function FinalCTASection() {
   return (
@@ -18,16 +12,25 @@ export default function FinalCTASection() {
       style={{
         position: "relative",
         overflow: "hidden",
-        background: "var(--bg-deep)",
+        background: "var(--app-bg-deep)",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
         textAlign: "center",
-        borderTop: "1px solid var(--border)",
+        borderTop: "1px solid var(--app-border)",
       }}
     >
-      <TerrainCanvas cameraY={50} cameraZ={40} opacity={0.5} />
+      {/* Background gradient (replaces TerrainCanvas removed with Three.js) */}
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: "radial-gradient(ellipse at 50% 80%, #0F1F12 0%, #080C0A 70%)",
+          zIndex: 0,
+        }}
+      />
       <GrainOverlay opacity={0.03} />
 
       <div
@@ -43,10 +46,10 @@ export default function FinalCTASection() {
       >
         <h2
           style={{
-            fontFamily: "var(--font-playfair), serif",
+            fontFamily: "var(--font-heading), serif",
             fontSize: "clamp(36px, 6vw, 72px)",
             fontStyle: "italic",
-            color: "var(--text-primary)",
+            color: "var(--app-text-primary)",
             lineHeight: 1.15,
             maxWidth: "600px",
           }}
@@ -68,9 +71,9 @@ export default function FinalCTASection() {
           <ScrambleNumber
             text="127 parcours forgés cette semaine"
             style={{
-              fontFamily: "var(--font-jetbrains), monospace",
+              fontFamily: "var(--font-body), monospace",
               fontSize: "13px",
-              color: "var(--text-muted)",
+              color: "var(--app-text-muted)",
               opacity: 0.7,
             }}
           />

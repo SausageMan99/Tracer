@@ -1,29 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import {
-  Playfair_Display,
-  Syne,
-  Inter,
-  JetBrains_Mono,
-} from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import SmoothScrollProvider from "@/components/providers/SmoothScrollProvider";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-
-const playfairDisplay = Playfair_Display({
-  subsets: ["latin"],
-  weight: ["400", "700"],
-  style: ["normal", "italic"],
-  variable: "--font-playfair",
-  display: "swap",
-});
-
-const syne = Syne({
-  subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  variable: "--font-syne",
-  display: "swap",
-});
 
 const inter = Inter({
   subsets: ["latin"],
@@ -60,10 +39,10 @@ export default function RootLayout({
     <html
       lang="fr"
       suppressHydrationWarning
-      className={`${playfairDisplay.variable} ${syne.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body className="antialiased">
-        <SmoothScrollProvider>{children}</SmoothScrollProvider>
+        {children}
         <Analytics />
         <SpeedInsights />
       </body>

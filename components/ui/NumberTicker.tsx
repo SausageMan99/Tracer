@@ -1,37 +1,26 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { gsap } from "gsap";
-import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useEffect, useRef, useState } from "react";
 
 interface NumberTickerProps {
-  /** Start value */
   from?: number;
-  /** End value */
   to: number;
-  /** Animation duration in seconds */
   duration?: number;
-  /** Optional suffix (e.g. "+" or "s") */
   suffix?: string;
-  /** Optional prefix (e.g. "<") */
   prefix?: string;
   className?: string;
   style?: React.CSSProperties;
-  /** Whether to start animating immediately. Default true. */
   autoStart?: boolean;
 }
 
 /**
- * Animated number counter using GSAP ScrollTrigger.
- * Animates from `from` to `to` once the element enters the viewport.
- *
- * @example
- * <NumberTicker to={847} suffix="+" className="text-accent-lime" />
+ * Animated number counter using IntersectionObserver + requestAnimationFrame.
+ * GSAP dependency removed.
  */
 export default function NumberTicker({
   from = 0,
   to,
-  duration = 1.5,
+  duration = 1500,
   suffix = "",
   prefix = "",
   className = "",
@@ -39,48 +28,45 @@ export default function NumberTicker({
   autoStart = true,
 }: NumberTickerProps) {
   const spanRef = useRef<HTMLSpanElement>(null);
+  const [displayed, setDisplayed] = useState(from);
+  const hasRun = useRef(false);
 
   useEffect(() => {
     if (!autoStart || !spanRef.current) return;
 
-    gsap.registerPlugin(ScrollTrigger);
-
     const el = spanRef.current;
-    const obj = { val: from };
 
-    // Set initial display value
-    el.textContent = `${prefix}${from}${suffix}`;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !hasRun.current) {
+          hasRun.current = true;
+          const start = performance.now();
+          const range = to - from;
 
-    const tween = gsap.to(obj, {
-      val: to,
-      duration,
-      ease: "power2.out",
-      paused: true,
-      onUpdate: () => {
-        if (el) {
-          el.textContent = `${prefix}${Math.round(obj.val)}${suffix}`;
+          function tick(now: number) {
+            const elapsed = now - start;
+            const progress = Math.min(elapsed / duration, 1);
+            // ease out quad
+            const eased = 1 - (1 - progress) * (1 - progress);
+            setDisplayed(Math.round(from + range * eased));
+            if (progress < 1) requestAnimationFrame(tick);
+          }
+
+          requestAnimationFrame(tick);
+          observer.disconnect();
         }
       },
-    });
+      { threshold: 0.3 }
+    );
 
-    const st = ScrollTrigger.create({
-      trigger: el,
-      start: "top 80%",
-      once: true,
-      onEnter: () => tween.play(),
-    });
-
-    return () => {
-      tween.kill();
-      st.kill();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [autoStart, from, to, duration]);
 
   return (
     <span ref={spanRef} className={`number-ticker ${className}`} style={style}>
       {prefix}
-      {from}
+      {displayed}
       {suffix}
     </span>
   );

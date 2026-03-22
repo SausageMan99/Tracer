@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import CustomCursor from "@/components/ui/CustomCursor";
 import LoadingSequence from "@/components/landing/LoadingSequence";
 import HeroSection from "@/components/landing/HeroSection";
 import ManifestoSection from "@/components/landing/ManifestoSection";
@@ -21,15 +20,12 @@ export default function LandingPageV2() {
 
   return (
     <main
-      className="custom-cursor"
       style={{
-        background: "var(--bg-deep)",
-        color: "var(--text-primary)",
+        background: "var(--app-bg-deep)",
+        color: "var(--app-text-primary)",
         overflowX: "hidden",
       }}
     >
-      <CustomCursor />
-
       {!loadingDone && <LoadingSequence onComplete={handleLoadingComplete} />}
 
       <HeroSection />

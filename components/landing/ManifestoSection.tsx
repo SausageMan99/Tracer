@@ -1,7 +1,5 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { gsap } from "@/lib/gsap-setup";
 import SectionLabel from "@/components/landing/shared/SectionLabel";
 import TextReveal from "@/components/ui/TextReveal";
 import TopographicDivider from "@/components/landing/shared/TopographicDivider";
@@ -13,63 +11,23 @@ const PAIN_STATEMENTS = [
 ] as const;
 
 export default function ManifestoSection() {
-  const sectionRef = useRef<HTMLDivElement>(null);
-  const statementsRef = useRef<(HTMLParagraphElement | null)[]>([]);
-
-  useEffect(() => {
-    const section = sectionRef.current;
-    if (!section) return;
-
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      statementsRef.current.forEach((el) => {
-        if (el) el.style.opacity = "1";
-      });
-      return;
-    }
-
-    const ctx = gsap.context(() => {
-      statementsRef.current.forEach((el, i) => {
-        if (!el) return;
-        gsap.fromTo(
-          el,
-          { opacity: 0, y: 30 },
-          {
-            opacity: 1,
-            y: 0,
-            duration: 0.8,
-            ease: "expo.out",
-            scrollTrigger: {
-              trigger: el,
-              start: "top 82%",
-              once: true,
-            },
-            delay: i * 0.1,
-          },
-        );
-      });
-    }, section);
-
-    return () => ctx.revert();
-  }, []);
-
   return (
     <section
-      ref={sectionRef}
       className="px-6 md:px-16 lg:px-32"
       style={{
         paddingTop: "clamp(100px, 12vw, 160px)",
         paddingBottom: "32px",
-        background: "var(--bg-deep)",
+        background: "var(--app-bg-deep)",
       }}
     >
       <SectionLabel>01 — Le constat</SectionLabel>
 
       <h2
         style={{
-          fontFamily: "var(--font-playfair), serif",
+          fontFamily: "var(--font-heading), serif",
           fontSize: "clamp(28px, 4.5vw, 56px)",
           fontStyle: "italic",
-          color: "var(--text-primary)",
+          color: "var(--app-text-primary)",
           lineHeight: 1.2,
           marginTop: "24px",
           marginBottom: "16px",
@@ -95,14 +53,13 @@ export default function ManifestoSection() {
         {PAIN_STATEMENTS.map((text, i) => (
           <p
             key={i}
-            ref={(el) => { statementsRef.current[i] = el; }}
+            className="reveal-up"
             style={{
-              fontFamily: "var(--font-inter), sans-serif",
+              fontFamily: "var(--font-ui), sans-serif",
               fontSize: "clamp(18px, 2.5vw, 24px)",
-              color: "var(--text-muted)",
+              color: "var(--app-text-muted)",
               lineHeight: 1.6,
-              opacity: 0,
-              borderLeft: "2px solid var(--accent-moss)",
+              borderLeft: "2px solid var(--app-accent-moss)",
               paddingLeft: "20px",
             }}
           >

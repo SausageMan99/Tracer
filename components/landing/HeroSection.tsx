@@ -1,48 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
-import { gsap } from "@/lib/gsap-setup";
 import GrainOverlay from "@/components/ui/GrainOverlay";
 import TextReveal from "@/components/ui/TextReveal";
 import MagneticButton from "@/components/ui/MagneticButton";
 import SectionLabel from "@/components/landing/shared/SectionLabel";
 
-const TerrainCanvas = dynamic(
-  () => import("@/components/landing/TerrainCanvas"),
-  { ssr: false, loading: () => null },
-);
-
 export default function HeroSection() {
-  const heroSubRef = useRef<HTMLDivElement>(null);
-  const heroCtaRef = useRef<HTMLDivElement>(null);
-  const heroNavRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoFailed, setVideoFailed] = useState(false);
-
-  useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-
-    const ctx = gsap.context(() => {
-      const tl = gsap.timeline({ defaults: { ease: "expo.out" } });
-
-      if (heroSubRef.current) {
-        gsap.set(heroSubRef.current, { opacity: 0, y: 20 });
-        tl.to(heroSubRef.current, { opacity: 1, y: 0, duration: 0.7 }, 0.8);
-      }
-      if (heroCtaRef.current) {
-        gsap.set(heroCtaRef.current, { opacity: 0, scale: 0.92 });
-        tl.to(heroCtaRef.current, { opacity: 1, scale: 1, duration: 0.7 }, 1.1);
-      }
-      if (heroNavRef.current) {
-        gsap.set(heroNavRef.current, { opacity: 0, y: -20 });
-        tl.to(heroNavRef.current, { opacity: 1, y: 0, duration: 0.6 }, 1.5);
-      }
-    });
-
-    return () => ctx.revert();
-  }, []);
 
   return (
     <section
@@ -55,8 +22,8 @@ export default function HeroSection() {
         flexDirection: "column",
       }}
     >
-      {/* Video background or TerrainCanvas fallback */}
-      {!videoFailed ? (
+      {/* Video background */}
+      {!videoFailed && (
         <>
           <video
             ref={videoRef}
@@ -76,7 +43,6 @@ export default function HeroSection() {
           >
             <source src="/hero.mp4" type="video/mp4" />
           </video>
-          {/* Dark overlay over video */}
           <div
             style={{
               position: "absolute",
@@ -87,15 +53,12 @@ export default function HeroSection() {
             aria-hidden="true"
           />
         </>
-      ) : (
-        <TerrainCanvas cameraY={32} cameraZ={65} opacity={0.65} />
       )}
 
       <GrainOverlay opacity={0.035} />
 
       {/* Nav */}
       <nav
-        ref={heroNavRef}
         className="py-6 md:py-7 px-6 md:px-10"
         style={{
           position: "absolute",
@@ -110,12 +73,12 @@ export default function HeroSection() {
       >
         <span
           style={{
-            fontFamily: "var(--font-syne), sans-serif",
+            fontFamily: "var(--font-ui), sans-serif",
             fontSize: "13px",
             fontWeight: 700,
             letterSpacing: "0.3em",
             textTransform: "uppercase",
-            color: "var(--text-primary)",
+            color: "var(--app-text-primary)",
           }}
         >
           TRAILFORGE
@@ -123,11 +86,11 @@ export default function HeroSection() {
         <Link
           href="/app"
           style={{
-            fontFamily: "var(--font-syne), sans-serif",
+            fontFamily: "var(--font-ui), sans-serif",
             fontSize: "12px",
             fontWeight: 600,
             letterSpacing: "0.1em",
-            color: "var(--accent-lime)",
+            color: "var(--app-accent-lime)",
             textDecoration: "none",
             border: "1px solid rgba(168,214,114,0.3)",
             padding: "8px 20px",
@@ -135,12 +98,12 @@ export default function HeroSection() {
             transition: "all 0.3s var(--ease-out-expo)",
           }}
           onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = "var(--accent-lime)";
-            (e.currentTarget as HTMLElement).style.color = "var(--bg-deep)";
+            (e.currentTarget as HTMLElement).style.background = "var(--app-accent-lime)";
+            (e.currentTarget as HTMLElement).style.color = "var(--app-bg-deep)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLElement).style.background = "";
-            (e.currentTarget as HTMLElement).style.color = "var(--accent-lime)";
+            (e.currentTarget as HTMLElement).style.color = "var(--app-accent-lime)";
           }}
         >
           Ouvrir l&apos;app →
@@ -165,14 +128,14 @@ export default function HeroSection() {
 
         <h1
           style={{
-            fontFamily: "var(--font-playfair), serif",
+            fontFamily: "var(--font-heading), serif",
             fontSize: "clamp(40px, 9vw, 110px)",
             fontStyle: "italic",
             fontWeight: 700,
             lineHeight: 1.05,
             marginTop: "24px",
             marginBottom: "28px",
-            color: "var(--text-primary)",
+            color: "var(--app-text-primary)",
           }}
         >
           <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
@@ -185,18 +148,18 @@ export default function HeroSection() {
             splitType="chars"
             stagger={0.03}
             delay={0.6}
-            style={{ color: "var(--accent-lime)" }}
+            style={{ color: "var(--app-accent-lime)" }}
           >
             t&apos;attend.
           </TextReveal>
         </h1>
 
-        <div ref={heroSubRef} style={{ marginBottom: "40px", textAlign: "center" }}>
+        <div style={{ marginBottom: "40px", textAlign: "center" }}>
           <p
             style={{
-              fontFamily: "var(--font-inter), sans-serif",
+              fontFamily: "var(--font-ui), sans-serif",
               fontSize: "clamp(17px, 2.2vw, 22px)",
-              color: "var(--text-muted)",
+              color: "var(--app-text-muted)",
               maxWidth: "540px",
               lineHeight: 1.7,
               margin: "0 auto",
@@ -205,17 +168,17 @@ export default function HeroSection() {
             Génère le parcours parfait pour ta séance.
             <br />
             D+, distance, surface.{" "}
-            <span style={{ color: "var(--accent-lime)", fontWeight: 600 }}>10 secondes.</span>
+            <span style={{ color: "var(--app-accent-lime)", fontWeight: 600 }}>10 secondes.</span>
           </p>
         </div>
 
-        <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
           <MagneticButton href="/app">Forger mon parcours</MagneticButton>
           <p
             style={{
-              fontFamily: "var(--font-inter), sans-serif",
+              fontFamily: "var(--font-ui), sans-serif",
               fontSize: "13px",
-              color: "var(--text-muted)",
+              color: "var(--app-text-muted)",
               marginTop: "12px",
               opacity: 0.7,
             }}
@@ -243,7 +206,7 @@ export default function HeroSection() {
             flexDirection: "column",
             alignItems: "center",
             gap: "4px",
-            color: "var(--text-muted)",
+            color: "var(--app-text-muted)",
             opacity: 0.6,
           }}
         >
