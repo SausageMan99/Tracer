@@ -13,7 +13,11 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 
-export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): SessionWeights {
+export function deriveWeights(
+  profile: SessionProfile,
+  scenicMode?: boolean,
+  enableFullScenic: boolean = true
+): SessionWeights {
   const { sport, sessionType } = profile;
 
   // Base weights by sport
@@ -43,6 +47,18 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
       elevation: Math.max(0.05, w.elevation - 0.1),
       nature: w.nature + 0.15,
       quietness: w.quietness + 0.05,
+    };
+  }
+
+  // When full scenic is disabled, zero out quietness and redistribute proportionally
+  if (!enableFullScenic) {
+    const redistributed = w.surface + w.elevation + w.nature;
+    const scaleFactor = redistributed > 0 ? (redistributed + w.quietness) / redistributed : 1;
+    w = {
+      surface: w.surface * scaleFactor,
+      elevation: w.elevation * scaleFactor,
+      nature: w.nature * scaleFactor,
+      quietness: 0,
     };
   }
 
@@ -85,25 +101,39 @@ function scoreQuietness(highway: string): number {
   return 0.5;
 }
 
-function scoreNature(osmWayId: number, scenicWayIds: Set<string>): number {
-  return scenicWayIds.has(String(osmWayId)) ? 1.0 : 0.3;
-}
+const NATURE_AFFINITY: Readonly<Record<string, number>> = {
+  path: 0.8,
+  track: 0.7,
+  bridleway: 0.75,
+  footway: 0.6,
+  cycleway: 0.5,
+  pedestrian: 0.4,
+  living_street: 0.35,
+  residential: 0.2,
+  service: 0.15,
+  unclassified: 0.25,
+  tertiary: 0.15,
+  secondary: 0.1,
+};
 
-function scoreSafety(lit?: string, access?: string): number {
-  // Penalize private/restricted access
-  if (access === "private" || access === "no") return 0.0;
+function scoreNature(
+  osmWayId: number,
+  highway: string,
+  scenicWayIds: Set<string>
+): number {
+  const affinityScore = NATURE_AFFINITY[highway] ?? 0.3;
+  const isScenic = scenicWayIds.has(String(osmWayId));
 
-  // Lighting score blended into quietness
-  if (lit === "yes") return 1.0;
-  if (lit === "no") return 0.3;
-  return 0.5; // unknown
+  // Blend: scenic detection (60%) + highway affinity (40%)
+  return isScenic ? 1.0 * 0.6 + affinityScore * 0.4 : affinityScore;
 }
 
 export async function scoreEdges(
   graph: EnrichedGraph,
   weights: SessionWeights,
   profile: SessionProfile,
-  scenicWayIds: Set<string>
+  scenicWayIds: Set<string>,
+  enableFullScenic: boolean = true
 ): Promise<{ nodeElevation: Map<string, number> }> {
   // Fetch elevations for all unique nodes
   const nodeIds = Array.from(graph.nodes.keys());
@@ -145,9 +175,9 @@ export async function scoreEdges(
     }
 
     const surfaceScore = scoreSurface(edge.surface, profile.sport);
-    const safetyScore = scoreSafety(edge.lit, edge.access);
-    const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
-    const natureScore = scoreNature(edge.osmWayId, scenicWayIds);
+    const quietnessScore = scoreQuietness(edge.highway);
+    const natureScore = scoreNature(edge.osmWayId, edge.highway, scenicWayIds);
+    const litBonus = enableFullScenic && edge.lit === "yes" ? 0.05 : 0;
 
     // Elevation score: based on gradient
     const fromElev = nodeElevation.get(edge.from) ?? 0;
@@ -158,25 +188,28 @@ export async function scoreEdges(
 
     let elevScore: number;
     if (prefersFlat) {
-      // Prefer flat: penalize steep gradients
+      // Prefer flat: penalize steep gradients (already smooth)
       elevScore = Math.max(0, 1 - gradient * 10);
     } else if (prefersClimbs) {
-      // Prefer moderate climbs (3-8% gradient is ideal)
-      if (gradient < 0.03) elevScore = 0.4 + gradient * 10;
-      else if (gradient <= 0.08) elevScore = 1.0;
-      else elevScore = Math.max(0.2, 1 - (gradient - 0.08) * 5);
+      // Smooth Gaussian bump centered at 5.5%, ideal range ~3-8%
+      const idealCenter = 0.055;
+      const idealWidth = 0.035;
+      const deviation = Math.abs(gradient - idealCenter) / idealWidth;
+      elevScore = Math.max(0.2, Math.exp(-0.5 * deviation * deviation));
     } else {
-      // Endurance: moderate preference, peaks around 3-5%
-      if (gradient < 0.02) elevScore = 0.6;
-      else if (gradient <= 0.05) elevScore = 0.9;
-      else elevScore = Math.max(0.3, 1 - (gradient - 0.05) * 5);
+      // Endurance: smooth Gaussian bump centered at 3.5%, ideal range ~2-5%
+      const idealCenter = 0.035;
+      const idealWidth = 0.02;
+      const deviation = Math.abs(gradient - idealCenter) / idealWidth;
+      elevScore = Math.max(0.3, Math.exp(-0.5 * deviation * deviation));
     }
 
     edge.score =
       weights.surface * surfaceScore +
       weights.elevation * elevScore +
       weights.nature * natureScore +
-      weights.quietness * quietnessScore;
+      weights.quietness * quietnessScore +
+      litBonus;
   }
 
   return { nodeElevation };
