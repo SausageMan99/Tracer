@@ -3,6 +3,8 @@ import { stripe } from "@/lib/stripe";
 import { sql, setUserTier } from "@/lib/db";
 import type Stripe from "stripe";
 
+export const dynamic = "force-dynamic";
+
 // ── Webhook signature verification ───────────────────────────────────────────
 
 async function getRawBody(request: NextRequest): Promise<Buffer> {

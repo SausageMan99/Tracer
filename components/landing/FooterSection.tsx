@@ -5,76 +5,84 @@ import Link from "next/link";
 export default function FooterSection() {
   return (
     <footer
-      className="py-8 px-6 md:px-16 lg:px-32"
       style={{
-        borderTop: "1px solid var(--border)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        flexWrap: "wrap",
-        gap: "16px",
-        background: "var(--bg-surface)",
+        background: "#3d3529",
+        borderTop: "1px solid rgba(255,255,255,0.08)",
+        padding: "48px 20px",
       }}
     >
-      <span
+      <div
         style={{
-          fontFamily: "var(--font-syne), sans-serif",
-          fontSize: "12px",
-          letterSpacing: "0.2em",
-          color: "var(--text-muted)",
+          maxWidth: "800px",
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: "32px",
         }}
       >
-        TRAILFORGE
-      </span>
-
-      <span
-        style={{
-          fontFamily: "var(--font-jetbrains), monospace",
-          fontSize: "11px",
-          color: "var(--text-muted)",
-          opacity: 0.5,
-        }}
-      >
-        48.8566°N 2.3522°E
-      </span>
-
-      <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
-        <Link
-          href="/app"
+        <p
           style={{
-            fontFamily: "var(--font-inter), sans-serif",
-            fontSize: "12px",
-            color: "var(--text-muted)",
-            textDecoration: "none",
+            fontFamily: "var(--font-heading)",
+            fontSize: "clamp(16px, 2vw, 20px)",
+            fontStyle: "italic",
+            color: "#f2ece3",
+            margin: 0,
+            opacity: 0.85,
           }}
         >
-          Application
-        </Link>
-        <a
-          href="https://github.com"
+          Construit par un traileur, pour les traileurs.
+        </p>
+
+        <div
           style={{
-            fontFamily: "var(--font-inter), sans-serif",
-            fontSize: "12px",
-            color: "var(--text-muted)",
-            textDecoration: "none",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: "16px",
           }}
         >
-          GitHub
-        </a>
+          <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
+            <Link
+              href="/app"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "12px",
+                color: "#8fa87e",
+                textDecoration: "none",
+                letterSpacing: "0.05em",
+              }}
+            >
+              Application
+            </Link>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "12px",
+                color: "#8fa87e",
+                textDecoration: "none",
+                letterSpacing: "0.05em",
+              }}
+            >
+              GitHub
+            </a>
+          </div>
+
+          <span
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "11px",
+              color: "rgba(242, 236, 227, 0.3)",
+              letterSpacing: "0.05em",
+            }}
+          >
+            © 2026 TrailForge
+          </span>
+        </div>
       </div>
-
-      <span
-        style={{
-          fontFamily: "var(--font-inter), sans-serif",
-          fontSize: "11px",
-          color: "var(--text-muted)",
-          opacity: 0.5,
-          width: "100%",
-          textAlign: "center",
-        }}
-      >
-        Projet personnel · 2026
-      </span>
     </footer>
   );
 }

@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { stripe } from "@/lib/stripe";
 import { sql } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 // ── POST /api/payments/portal ─────────────────────────────────────────────────
 
 export async function POST() {

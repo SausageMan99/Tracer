@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUserTier, sql } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 const MAX_LIMIT = 100;
 const DEFAULT_LIMIT = 20;
 

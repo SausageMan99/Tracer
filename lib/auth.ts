@@ -20,8 +20,16 @@ function getPool(): Pool {
 
 // ── NextAuth config ───────────────────────────────────────────────────────────
 
+// Pool is only created when an auth handler is invoked, not at module load time.
+// PostgresAdapter accepts a pool factory — we pass a lazy getter cast to satisfy types.
+const lazyPool = new Proxy({} as Pool, {
+  get(_target, prop) {
+    return (getPool() as unknown as Record<string | symbol, unknown>)[prop];
+  },
+});
+
 export const authConfig: NextAuthConfig = {
-  adapter: PostgresAdapter(getPool() as unknown as import("pg").Pool),
+  adapter: PostgresAdapter(lazyPool as unknown as import("pg").Pool),
 
   session: {
     strategy: "jwt",
