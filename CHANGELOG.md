@@ -9,13 +9,61 @@ Version numbering follows [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 
 ## [Unreleased]
 
+### Changed
+- Reorganized `lib/` into `lib/utils/` (format, animations, gsap-setup) and `lib/services/` (waitlist, feedback-store, rate-limiter)
+- Extracted shared `formatDuration()` utility from MapView and RouteResult into `lib/utils/format.ts`
+
+### Removed
+- Deleted legacy `LandingPage.tsx` (V1) — replaced by `LandingPageV2`
+
+---
+
+## [0.5.0] — 2026-03-09
+
 ### Added
-- Waypoint support: users can add optional via-points to guide the route through specific areas
-- A→B routing: end address field in `SessionForm` for point-to-point routes
-- Feedback dataset export button (visible when ≥ 1 feedback recorded)
+- **Rate limiting** on all API endpoints via `createRateLimiter` (20 req/min/IP on generate-route, 10/hr on feedback, 5/hr on waitlist)
+- **Typed error system** — `RouteGenerationError` class with machine-readable `code` and `subCode` (replaces string-encoded errors)
+- **Error sub-codes** for V2 engine: `OVERPASS_TIMEOUT`, `EMPTY_GRAPH`, `SOLVER_EMPTY` with French user messages
+- **Input validation** — numeric bounds checked against profile `distanceRange` and `elevationRange`
 
 ### Changed
-- Elevation profile hover now syncs a dot to the map in real time (via `hoveredRouteProgress` in the Zustand store)
+- API error responses now include structured `errorCode` and optional `subCode` fields
+- `429 Too Many Requests` response for rate-limited clients
+
+---
+
+## [0.4.0] — 2026-03-04
+
+### Added
+- **V2 routing engine** — OSM-graph-based beam-search solver (`lib/engine/`) as the primary route generation method
+  - Graph builder: Overpass OSM query with disk cache (7-day TTL)
+  - Edge scorer: 4 weight dimensions (surface, elevation, nature, quietness)
+  - Beam-search solver: 5 configs with directional seeding (0°, 72°, 144°, 216°, 288°)
+  - A* pathfinder for deterministic loop closure
+  - Post-processor: subsampling, elevation, candidate ranking, geometric deduplication
+- **Mapbox Geocoding v5** migration — replaces Nominatim for both frontend autocomplete and server-side geocoding
+- **Landing page V2** — modular section-based architecture (HeroSection, ManifestoSection, HowItWorksSection, StackingFeatureCards) with GSAP animations
+- **Waitlist system** — email signup with invite codes, file-based storage
+- **Mobile UX** — sidebar as slide-over drawer on mobile, FAB "Configurer" button, auto-close on generate
+- **Curated presets** — `distancePresets` and `elevationPresets` per session profile
+- **Safety scoring** — `scoreSafety()` using `lit` and `access` OSM tags, blended into quietness weight
+- **Scenic mode refinement** — `scenicMode` flag threaded to `deriveWeights()`, boosts nature + quietness
+- **Feedback API** — `POST /api/feedback` endpoint writing to `.data/feedbacks.json`
+- **Feature flags** — GrowthBook integration via `lib/feature-flags/`
+- **16 session profiles** (was 14) — added recuperation profiles and refined session types (seuil_lactique, intervals_30_30, sortie_longue, gran_fondo)
+
+### Changed
+- API route now uses V2-first strategy with automatic legacy fallback on error
+- Legacy engine used for waypoint/A→B routes (V2 is loop-only)
+- Scoring weights renormalized to 4 dimensions (surface, elevation, nature, quietness) — popularity removed
+
+### Fixed
+- **D+=0m elevation bug** — fixed cumulative elevation tracking in beam-search solver
+- **Zigzag routes** — anti-backtracking (hard-reject U-turns, soft-penalize near-reversals) and geometric deduplication (Jaccard > 0.6)
+
+### Removed
+- **Strava heatmap integration** — removed for legal compliance (tile proxy, Go proxy, heatmap-scorer, popularity score)
+- **Nominatim geocoding** — replaced by Mapbox Geocoding v5
 
 ---
 
@@ -53,7 +101,6 @@ Version numbering follows [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - **Direction arrows** on the route every 200 m (Mapbox symbol layer)
 - **Interactive elevation profile** (`ElevationProfile.tsx`) — SVG chart with hover crosshair, elevation bubble, and Zustand sync
 - **Score bars** in `RouteResult` (terrain, loop, global) using `ScoreBar` sub-component
-- `lib/heatmap-scorer.ts` scaffold (populated in v0.3.0)
 - `PROFILES_BY_SPORT` and `SPORT_LABELS` exports in `lib/session-profiles.ts`
 - `SidebarContainer.tsx` — mounts both `SessionForm` and `RouteResult` simultaneously for smooth transitions
 
@@ -91,7 +138,9 @@ Version numbering follows [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - `GET /api/generate-route` → `POST /api/generate-route` API route
 - `.env.example` with `NEXT_PUBLIC_MAPBOX_TOKEN`, `GRAPHHOPPER_API_KEY`
 
-[Unreleased]: https://github.com/your-org/trailforge/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/your-org/trailforge/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/your-org/trailforge/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/your-org/trailforge/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/your-org/trailforge/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/your-org/trailforge/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/your-org/trailforge/releases/tag/v0.1.0

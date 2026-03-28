@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addToWaitlist, type WaitlistEntry } from "@/lib/waitlist";
-import { createRateLimiter } from "@/lib/rate-limiter";
+import { addToWaitlist, type WaitlistEntry } from "@/lib/services/waitlist";
+import { createRateLimiter } from "@/lib/services/rate-limiter";
 
 // ── Rate limiting (shared utility with auto-eviction) ────────────────────────
 

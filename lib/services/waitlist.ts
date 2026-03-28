@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import { appendFile } from "fs/promises";
 import path from "path";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -13,46 +14,55 @@ export interface WaitlistEntry {
 // ── Storage ──────────────────────────────────────────────────────────────────
 
 const DATA_DIR = path.join(process.cwd(), ".data");
-const WAITLIST_FILE = path.join(DATA_DIR, "waitlist.json");
+const WAITLIST_FILE = path.join(DATA_DIR, "waitlist.jsonl");
 
-async function ensureDataDir(): Promise<void> {
-  try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-  } catch {
-    // already exists
-  }
-}
+// Simple async mutex — serializes all writes to prevent race conditions
+let writeLock = Promise.resolve();
 
 async function readEntries(): Promise<readonly WaitlistEntry[]> {
   try {
     const raw = await fs.readFile(WAITLIST_FILE, "utf-8");
-    return JSON.parse(raw) as WaitlistEntry[];
+    return raw
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as WaitlistEntry);
   } catch {
     return [];
   }
 }
 
-async function writeEntries(entries: readonly WaitlistEntry[]): Promise<void> {
-  await ensureDataDir();
-  await fs.writeFile(WAITLIST_FILE, JSON.stringify(entries, null, 2), "utf-8");
-}
-
 // ── Public API ───────────────────────────────────────────────────────────────
 
-export async function addToWaitlist(entry: WaitlistEntry): Promise<{ success: boolean; message: string }> {
-  const existing = await readEntries();
+export async function addToWaitlist(
+  entry: WaitlistEntry,
+): Promise<{ success: boolean; message: string }> {
+  return new Promise((resolve, reject) => {
+    writeLock = writeLock.then(async () => {
+      try {
+        const existing = await readEntries();
 
-  const alreadyExists = existing.some(
-    (e) => e.email.toLowerCase() === entry.email.toLowerCase(),
-  );
-  if (alreadyExists) {
-    return { success: true, message: "Déjà inscrit." };
-  }
+        const alreadyExists = existing.some(
+          (e) => e.email.toLowerCase() === entry.email.toLowerCase(),
+        );
+        if (alreadyExists) {
+          resolve({ success: true, message: "Déjà inscrit." });
+          return;
+        }
 
-  const updated = [...existing, entry];
-  await writeEntries(updated);
+        await fs.mkdir(DATA_DIR, { recursive: true });
+        await appendFile(
+          WAITLIST_FILE,
+          JSON.stringify(entry) + "\n",
+          "utf-8",
+        );
 
-  return { success: true, message: "Bienvenue dans la forge." };
+        resolve({ success: true, message: "Bienvenue dans la forge." });
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
 }
 
 export async function getWaitlistCount(): Promise<number> {

@@ -6,11 +6,11 @@ Reference for the GraphHopper Directions API integration used for running route 
 
 ## Overview
 
-GraphHopper is used exclusively for **running** routes. Its `round_trip` algorithm generates looped routes of a specified distance from a given start point, using a seed to vary the initial heading.
+GraphHopper is used exclusively for **running** routes in the **legacy engine**. The V2 engine (`lib/engine/`) uses Overpass/OSM directly and does not depend on GraphHopper. GraphHopper's `round_trip` algorithm generates looped routes of a specified distance from a given start point, using a seed to vary the initial heading.
 
 **API documentation:** [docs.graphhopper.com](https://docs.graphhopper.com/#operation/postRoute)
 
-**Relevant file:** `lib/route-generator.ts` — `fetchCandidateRoutes()`
+**Relevant file:** `lib/route-generator-legacy.ts` — `fetchCandidateRoutes()`
 
 ---
 

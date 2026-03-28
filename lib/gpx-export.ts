@@ -6,7 +6,7 @@ import type { GeneratedRoute } from "./types";
  * The output is compatible with Garmin Connect, Wahoo ELEMNT, Suunto,
  * and Komoot. Compatibility requirements met:
  * - `<time>` tag on every `<trkpt>` (required by Garmin and Wahoo)
- * - Full geometry coordinates for accurate distance in external tools
+ * - `<ele>` tag on `<trkpt>` when elevation is available (for Garmin profiles)
  * - Valid `xsi:schemaLocation` pointing to the official GPX 1.1 XSD
  * - `<type>` tag on `<trk>` for sport categorisation
  *
@@ -23,16 +23,21 @@ import type { GeneratedRoute } from "./types";
  */
 export function generateGPX(route: GeneratedRoute): string {
   const { best, profile } = route;
-  const coords = best.geometry.coordinates; // [lng, lat][] — full path
+  const points = best.points; // RoutePoint[] — subsampled with elevation
   const now = new Date();
   const msPerPoint =
-    coords.length > 1 ? (best.durationSeconds * 1000) / (coords.length - 1) : 0;
+    points.length > 1 ? (best.durationSeconds * 1000) / (points.length - 1) : 0;
 
-  const trkpts = coords
-    .map((coord, i) => {
+  const trkpts = points
+    .map((pt, i) => {
       const time = new Date(now.getTime() + i * msPerPoint);
+      const eleLine =
+        pt.elevation !== undefined
+          ? `        <ele>${pt.elevation.toFixed(1)}</ele>\n`
+          : "";
       return (
-        `      <trkpt lat="${coord[1].toFixed(7)}" lon="${coord[0].toFixed(7)}">\n` +
+        `      <trkpt lat="${pt.lat.toFixed(7)}" lon="${pt.lng.toFixed(7)}">\n` +
+        eleLine +
         `        <time>${time.toISOString()}</time>\n` +
         `      </trkpt>`
       );

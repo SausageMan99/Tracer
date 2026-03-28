@@ -8,19 +8,20 @@ Everything you need to go from zero to a running local dev environment, understa
 
 1. [Local Setup (from scratch)](#local-setup-from-scratch)
 2. [Environment Variables](#environment-variables)
-3. [Running the Strava Proxy](#running-the-strava-proxy)
-4. [Code Standards](#code-standards)
-5. [Tutorials](#tutorials)
+3. [Code Standards](#code-standards)
+4. [Tutorials](#tutorials)
    - [Add a new session profile](#add-a-new-session-profile)
    - [Add a new sport](#add-a-new-sport)
    - [Modify the scoring algorithm](#modify-the-scoring-algorithm)
    - [Add a new map layer](#add-a-new-map-layer)
-6. [Debugging Guide](#debugging-guide)
-7. [Architecture Quick-Reference](#architecture-quick-reference)
+5. [Debugging Guide](#debugging-guide)
+6. [Architecture Quick-Reference](#architecture-quick-reference)
 
 ---
 
 ## Local Setup (from scratch)
+
+**Prerequisites:** Node.js >= 22, npm >= 10, Git. No other runtimes required.
 
 ### macOS
 
@@ -31,24 +32,19 @@ source ~/.zshrc   # or ~/.bashrc
 nvm install 22
 nvm use 22
 
-# 2. Install Go 1.22
-brew install go   # or download from https://go.dev/dl/
-
-# 3. Clone the repo
+# 2. Clone the repo
 git clone https://github.com/your-org/trailforge.git
 cd trailforge
 
-# 4. Install JavaScript dependencies
+# 3. Install dependencies
 npm install
 
-# 5. Configure environment (see section below)
+# 4. Configure environment (see section below)
 cp .env.example .env.local
-# Fill in NEXT_PUBLIC_MAPBOX_TOKEN, GRAPHHOPPER_API_KEY, ORS_API_KEY
+# Fill in NEXT_PUBLIC_MAPBOX_TOKEN (required)
+# Optionally: GRAPHHOPPER_API_KEY, ORS_API_KEY (for legacy engine)
 
-# 6. Start the Strava proxy (optional, needed for Scenic mode)
-go run ./cmd/proxy &
-
-# 7. Start the dev server
+# 5. Start the dev server
 npm run dev
 ```
 
@@ -61,14 +57,19 @@ Open [http://localhost:3000](http://localhost:3000).
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 
-# Go 1.22
-wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-source ~/.bashrc
-
-# Then follow steps 3–7 from macOS above
+# Then follow steps 2-5 from macOS above
 ```
+
+### Useful npm scripts
+
+| Script | Description |
+|--------|-------------|
+| `npm run dev` | Start Next.js dev server with hot reload |
+| `npm run build` | Production build |
+| `npm run start` | Serve the production build |
+| `npm run lint` | Run ESLint |
+| `npm run test` | Run Vitest in watch mode |
+| `npm run test:run` | Run Vitest once (CI) |
 
 ---
 
@@ -76,48 +77,21 @@ source ~/.bashrc
 
 All variables are loaded from `.env.local` (gitignored). Never commit `.env.local`.
 
-| Variable | Required | Example | Description |
-|----------|----------|---------|-------------|
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Yes | `pk.eyJ1…` | Public Mapbox token — safe to expose to the browser. Must start with `pk.`. |
-| `GRAPHHOPPER_API_KEY` | Yes | `abc123…` | GraphHopper Directions API key. Used only server-side. |
-| `ORS_API_KEY` | Yes | `5b3ce…` | OpenRouteService API key. Used only server-side. |
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Yes | Mapbox GL JS + Geocoding v5 public token. Must start with `pk.`. |
+| `GRAPHHOPPER_API_KEY` | No | GraphHopper Directions API key. Used only server-side by the legacy engine (fallback for running). |
+| `ORS_API_KEY` | No | OpenRouteService API key. Used only server-side by the legacy engine (fallback for cycling). |
+
+No other variables are required. The V2 engine uses Open-Meteo (elevation) and Overpass (OSM data), both of which are unauthenticated public APIs.
 
 > **Security note:** `NEXT_PUBLIC_*` variables are embedded in the client bundle. Do not prefix server-side secrets with `NEXT_PUBLIC_`.
 
 ### Getting free API keys
 
 - **Mapbox:** Create an account at [account.mapbox.com](https://account.mapbox.com). The default public token works for development. For production, create a token scoped to your domain.
-- **GraphHopper:** Register at [graphhopper.com/dashboard](https://graphhopper.com/dashboard). The free tier allows 500 route requests/day, which is sufficient for development.
-- **OpenRouteService:** Register at [openrouteservice.org/dev](https://openrouteservice.org/dev/#/login). The free tier allows 2 000 requests/day.
-
----
-
-## Running the Strava Proxy
-
-The Go proxy handles Strava CloudFront cookie authentication. It is only needed if you want to test Scenic mode with real Strava heatmap tiles.
-
-### Starting the proxy
-
-```bash
-go run ./cmd/proxy
-# Listening on http://localhost:8080
-```
-
-### Renewing Strava cookies
-
-CloudFront cookies expire roughly every 3–4 weeks. When heatmap tiles start returning 403:
-
-1. Log in to [strava.com](https://www.strava.com) in your browser
-2. Open DevTools → Network tab → filter for `heatmap`
-3. Click on any heatmap tile request and copy all `Cookie:` headers
-4. Update the cookie values in `cmd/proxy/main.go` (look for `CloudFront-*` cookies)
-5. Restart the proxy
-
-Detailed instructions and cookie format are documented in [docs/integrations/strava-heatmap.md](docs/integrations/strava-heatmap.md).
-
-### If the proxy is not running
-
-The app works without the proxy. Scenic mode still functions — heatmap tiles will fail silently (returning 502), and the popularity score for all routes will fall back to the neutral value `0.5`, meaning routes are not boosted by popularity.
+- **GraphHopper (optional):** Register at [graphhopper.com/dashboard](https://graphhopper.com/dashboard). The free tier allows 500 route requests/day.
+- **OpenRouteService (optional):** Register at [openrouteservice.org/dev](https://openrouteservice.org/dev/#/login). The free tier allows 2 000 requests/day.
 
 ---
 
@@ -142,7 +116,7 @@ All exported symbols must have JSDoc. Follow the Google/TypeScript JSDoc standar
  *
  * @param foo - Description of the parameter, including valid values.
  * @returns Description of what is returned, including the null/undefined case.
- * @throws {Error} When the thrown message is `"SOME_CODE"` and what causes it.
+ * @throws {RouteGenerationError} When the thrown code is `"NO_ROAD_NETWORK"`.
  *
  * @example
  * const result = myFunction("example");
@@ -153,27 +127,27 @@ export function myFunction(foo: string): number { ... }
 
 Rules:
 - Write JSDoc in **English** (code is English; French is for the user-facing UI only)
-- Document the **"why"**, not the "what" — the code shows the what; the comment explains the reason
+- Document the **"why"**, not the "what" -- the code shows the what; the comment explains the reason
 - Always document `@throws` if the function can throw
 - Include `@example` for any function with non-obvious usage
 
 ### React components
 
 - Use the `"use client"` directive only when the component uses browser APIs (`useState`, `useEffect`, `useRef`, Mapbox, etc.). Server components are the default in the App Router.
-- Do not use `React.FC` — use named function declarations with explicit prop interfaces.
+- Do not use `React.FC` -- use named function declarations with explicit prop interfaces.
 - Prop interfaces are defined immediately above the component and are always named `<ComponentName>Props`.
 
 ### Styling
 
 - Tailwind CSS utility classes only. No `.css` files, no CSS-in-JS.
 - Inline `style={{}}` props are acceptable for dynamic values that Tailwind cannot express (e.g. `backgroundColor: accent`).
-- Color variables: use the design system values defined in `tailwind.config.ts`. The sidebar uses `#0F172A` (bg), `#1E293B` (card), `#F8FAFC` (text), `#64748B` (muted), `#0EA5E9` (blue accent).
+- Color variables: use the design system values defined in `tailwind.config.ts`. Key palette values: `--accent-lime: #7CB342`, `--accent-sage: #81C784`, `--bg-deep: #0A0D0C`.
 
 ### File organisation
 
 - One React component per file, named identically to the file (`MapView.tsx` exports `MapView`).
 - Library files in `lib/` are plain TypeScript modules (no React). They can be imported from both API routes and components.
-- No barrel files (`index.ts`). Import directly from the source file.
+- No barrel files (`index.ts`) except for `lib/engine/index.ts` which is the V2 entry point. Import directly from the source file everywhere else.
 
 ---
 
@@ -181,7 +155,7 @@ Rules:
 
 ### Add a new session profile
 
-A session profile defines the sport, display name, scoring weights, and routing parameters for a specific workout type. Adding a profile takes ~10 lines.
+A session profile defines the sport, display name, scoring weights, distance/elevation ranges, and curated presets for a specific workout type. There are currently 16 profiles across 4 sports. Adding a profile takes ~15 lines.
 
 **File to edit:** `lib/session-profiles.ts`
 
@@ -193,110 +167,122 @@ A session profile defines the sport, display name, scoring weights, and routing 
   name: "Fartlek",
   sport: "running",
   sessionType: "speed",
-  targetDistanceKm: 8,
-  targetElevationM: 100,
-  weights: {
-    elevation: 0.15,   // Elevation is not the focus
-    distance: 0.40,    // Distance accuracy matters more
-    surface: 0.25,     // Good surface for speed work
-    loop: 0.20,        // Prefer loops
-  },
+  distanceRange: { min: 5, default: 8, max: 15 },
+  elevationRange: { min: 0, default: 50, max: 150 },
+  distancePresets: [5, 8, 10, 12],
+  elevationPresets: [0, 50, 100, 150],
+  description: "Fartlek: accélérations libres sur terrain varié.",
   graphhopperProfile: "foot",
+  weights: {
+    elevationMatch: 0.15,
+    distanceMatch: 0.40,
+    surfaceQuality: 0.25,
+    loopQuality: 0.20,
+  },
 },
 ```
 
-2. That's it. `PROFILES_BY_ID` and `PROFILES_BY_SPORT` are derived automatically. The new profile will appear in the `SessionForm` dropdown under the "Running" group.
+2. That's it. `PROFILES_BY_ID` and `PROFILES_BY_SPORT` are derived automatically. The new profile will appear in the `SessionForm` dropdown under the corresponding sport group.
+
+**Profile structure reference:**
+- `distanceRange` / `elevationRange` -- min/default/max values that bound the UI sliders
+- `distancePresets` / `elevationPresets` -- curated chip values shown below each slider
+- `weights` -- must sum to 1.0; controls how the legacy scoring algorithm ranks candidates
 
 **Scoring weight guidelines:**
-- Weights should sum to ≈ 1.0 (they don't need to be exact — the algorithm normalises)
-- `elevation` weight: high for hills/climb sessions, low for speed/endurance
-- `distance` weight: high when hitting the exact target matters (intervals), low for exploration
-- `surface` weight: high for trail/gravel (terrain quality matters), low for road (all roads are similar)
-- `loop` weight: keep at 0.20 unless there is a specific reason to prefer out-and-back
+- `elevationMatch`: high for hills/climb sessions, low for speed/endurance
+- `distanceMatch`: high when hitting the exact target matters (intervals), low for exploration
+- `surfaceQuality`: high for trail/gravel (terrain quality matters), low for road
+- `loopQuality`: keep at 0.15-0.20 unless there is a specific reason to prefer out-and-back
 
 ---
 
 ### Add a new sport
 
-Adding a sport requires changes in four places:
+Adding a sport requires changes in up to four places, depending on whether you need V2 engine support.
 
-**1. `lib/types.ts` — extend the `Sport` type:**
+**1. `lib/types.ts` -- extend the `Sport` type:**
 
 ```typescript
-export type Sport = "running" | "cycling_road" | "cycling_gravel" | "cycling_mtb" | "hiking";
+export type Sport =
+  | "running"
+  | "cycling_road"
+  | "cycling_gravel"
+  | "cycling_mtb"
+  | "hiking";           // <-- add here
 ```
 
-**2. `lib/session-profiles.ts` — add profiles for the new sport and update `SPORT_LABELS`:**
+**2. `lib/session-profiles.ts` -- add profiles for the new sport and update `SPORT_LABELS`:**
 
 ```typescript
 export const SPORT_LABELS: Record<Sport, string> = {
   // existing entries...
-  hiking: "Randonnée",
+  hiking: "Randonnee",
 };
 ```
 
-**3. `lib/route-generator.ts` — add routing logic for the new sport:**
+Then add one or more `SessionProfile` entries with `sport: "hiking"` to the `SESSION_PROFILES` array.
 
-For a sport that uses GraphHopper, add the profile mapping in `fetchCandidateRoutes()`:
+**3. `lib/route-generator-legacy.ts` -- add legacy routing logic for the new sport:**
 
-```typescript
-const ghProfile = profile.graphhopperProfile ?? "foot";
-// GraphHopper supports: foot, hike, bike, mtb, racingbike, car, etc.
-```
-
-For a sport that uses ORS, add the profile mapping in `fetchCandidateRoutesORS()`:
+For a sport that uses GraphHopper, the existing `graphhopperProfile` field on the profile handles it. For ORS, add the profile mapping:
 
 ```typescript
 const orsProfile: Record<string, string> = {
   cycling_road: "cycling-road",
   cycling_gravel: "cycling-regular",
   cycling_mtb: "cycling-mountain",
-  hiking: "foot-hiking",   // ← add here
+  hiking: "foot-hiking",   // <-- add here
 };
 ```
 
-**4. `components/sidebar/SessionForm.tsx` — no changes needed** if you used a `Sport` value already listed in `PROFILES_BY_SPORT`. The form groups profiles by sport dynamically.
+**4. (V2 engine) `lib/engine/edge-scorer.ts` -- add sport-specific weights in `deriveWeights()`:**
+
+```typescript
+} else if (sport === "hiking") {
+  w = { surface: 0.15, elevation: 0.25, nature: 0.40, quietness: 0.20 };
+}
+```
+
+**No UI changes needed** -- `SessionForm` groups profiles by sport dynamically using `PROFILES_BY_SPORT`.
 
 ---
 
 ### Modify the scoring algorithm
 
-The scoring function is `scoreRoute()` in `lib/route-generator.ts` (around line 320).
+TrailForge has two scoring systems, both active:
+
+#### V2 edge scoring (primary engine)
+
+**Files:** `lib/engine/edge-scorer.ts`
+
+The V2 engine scores individual OSM edges using 4 weighted dimensions: **surface**, **elevation**, **nature**, **quietness**. The `deriveWeights()` function computes sport- and session-type-specific weights, normalized to sum to 1.0.
+
+To add a new scoring dimension:
+
+1. Add the new weight to `SessionWeights` in `lib/types.ts`
+2. Implement a scorer function in `edge-scorer.ts` (e.g. `scoreLighting()`)
+3. Include it in the `scoreEdges()` weighted sum
+4. Update `deriveWeights()` to assign values for each sport/session combination
+5. Ensure all weights still normalize to 1.0
+
+The `scenicMode` flag boosts nature and quietness weights while reducing surface and elevation weights.
+
+#### Legacy candidate scoring (fallback engine)
+
+**File:** `lib/route-generator-legacy.ts`
+
+The legacy engine uses `scoreRoute()` which computes a weighted sum of elevation match, distance match, surface quality, and loop quality. Weights come from the profile's `ScoringWeights`.
 
 **To change the Gaussian decay width** (how forgiving the score is for distance/elevation misses):
 
 ```typescript
-// Current: ±20% of target gives ~0.61, ±40% gives ~0.14
+// Current: +/-20% of target gives ~0.61, +/-40% gives ~0.14
 const sigma = 0.20 * target;
 
-// To make it more forgiving (±30% gives ~0.61):
+// To make it more forgiving (+/-30% gives ~0.61):
 const sigma = 0.30 * target;
 ```
-
-**To add a new scoring component** (e.g. route freshness based on how recently this area was visited):
-
-1. Add the new score to the `RouteCandidate` type in `lib/types.ts`:
-   ```typescript
-   freshnessScore: number;
-   ```
-
-2. Compute it in `scoreRoute()` and include it in the weighted sum:
-   ```typescript
-   const freshnessScore = computeFreshness(candidate.points, recentRoutes);
-   const totalScore = (
-     weights.elevation * elevationMatch +
-     weights.distance  * distanceMatch +
-     weights.surface   * surfaceQuality +
-     weights.loop      * loopQuality +
-     weights.freshness * freshnessScore
-   );
-   ```
-
-3. Add `freshness` to `ScoringWeights` in `lib/types.ts` and update each profile's weights in `lib/session-profiles.ts`.
-
-**To change the Strava popularity weight:**
-
-The popularity boost is hardcoded at `0.25` in `scoreRoute()`. Search for `HEATMAP_WEIGHT` or `0.25 *` in `lib/route-generator.ts` and change the constant.
 
 ---
 
@@ -335,71 +321,107 @@ if (map.getLayer("my-layer")) map.removeLayer("my-layer");
 if (map.getSource("my-source")) map.removeSource("my-source");
 ```
 
-**Important:** always guard `getLayer`/`getSource` calls with null checks — layer removal order matters in Mapbox (remove layers before sources).
+**Important:** always guard `getLayer`/`getSource` calls with null checks -- layer removal order matters in Mapbox (remove layers before sources).
 
 ---
 
 ## Debugging Guide
 
+### Error reference
+
 | Symptom | Where to look | Likely cause |
 |---------|---------------|--------------|
-| "Aucun réseau routier détecté" | `lib/route-generator.ts:fetchCandidateRoutes` | GraphHopper cannot snap start coord to a road; try a more central address |
-| "Adresse introuvable" | `lib/route-generator.ts:geocodeAddress` | Nominatim returned 0 results; check spelling or try a more specific address |
-| "Le D+ demandé n'est pas atteignable" | `lib/route-generator.ts` elevation check | The terrain around the start point is too flat for the requested D+ |
-| Map tiles are blank | `app/api/heatmap-tile/route.ts` | Go proxy not running or Strava cookies expired |
-| Heatmap tiles return 502 | `app/api/heatmap-tile/route.ts` → port 8080 | Go proxy not started; run `go run ./cmd/proxy` |
-| Route candidates all score < 30% | `lib/route-generator.ts:scoreRoute` | Scoring weights may be mismatched for the area (check surface coverage) |
-| GPX file rejected by Garmin | `lib/gpx-export.ts` | Missing `<ele>` or `<time>` on track points |
-| TypeScript error `Property X does not exist` | `lib/types.ts` | New field not added to the shared types |
-| Overpass query times out | `lib/route-generator.ts:fetchSurfaceData` | Route bounding box too large; route is likely > 50 km |
-| Nominatim autocomplete not showing | `components/sidebar/AddressInput.tsx` | Query is < 3 characters, or Nominatim rate-limited (max 1 req/s) |
+| "Aucun reseau routier detecte" (`EMPTY_GRAPH`) | `lib/engine/graph-builder.ts` | Overpass returned no ways near the start point. Try a more central/urban address. |
+| "Serveur cartographique indisponible" (`OVERPASS_TIMEOUT`) | `lib/engine/graph-builder.ts` | Overpass server overloaded. Retry in 30 seconds. |
+| "Impossible de construire un parcours en boucle" (`SOLVER_EMPTY`) | `lib/engine/orienteering-solver.ts` | Beam search couldn't find a valid loop. Try a different distance. |
+| "Adresse introuvable" (`GEOCODING_FAILED`) | `geocodeAddress()` | Mapbox Geocoding v5 returned 0 results. Check spelling or try a more specific address. |
+| "Le D+ demande n'est pas atteignable" (`IMPOSSIBLE_ELEVATION`) | `lib/engine/index.ts` | Terrain around the start point is too flat for the requested D+. |
+| "Trop de requetes" (HTTP 429) | Rate limiter | 20 requests/min/IP exceeded. Wait and retry. |
+| Route candidates all score < 30% | `lib/engine/edge-scorer.ts` or `lib/route-generator-legacy.ts` | Scoring weights may be mismatched for the area; check surface data coverage. |
+| GPX file rejected by Garmin | `lib/gpx-export.ts` | Missing `<ele>` or `<time>` on track points. |
+| Mapbox geocoding not showing results | `components/sidebar/AddressInput.tsx` | Query < 3 characters, or `NEXT_PUBLIC_MAPBOX_TOKEN` is invalid/missing. |
+| V2 engine fails, falls back to legacy | `app/api/generate-route/route.ts` | Check server console for the V2 error. The API handler catches V2 failures and retries with legacy. |
+| TypeScript error `Property X does not exist` | `lib/types.ts` | New field not added to the shared types. |
+
+### Typed errors
+
+All route generation failures use the `RouteGenerationError` class defined in `lib/errors.ts`. Errors have a machine-readable `code` (`RouteErrorCode`) and an optional `subCode` (`RouteErrorSubCode`) for finer granularity:
+
+| Code | Sub-codes | Description |
+|------|-----------|-------------|
+| `NO_ROAD_NETWORK` | `OVERPASS_TIMEOUT`, `EMPTY_GRAPH`, `SOLVER_EMPTY` | No routable graph could be built or solved |
+| `IMPOSSIBLE_ELEVATION` | -- | Requested D+ exceeds what the terrain can provide |
+| `GEOCODING_FAILED` | -- | Address could not be resolved by Mapbox |
+| `UNKNOWN` | -- | Unexpected server error |
 
 ### Useful console debugging
 
-Add these temporarily to `lib/route-generator.ts` to inspect the pipeline:
+Add these temporarily to `lib/engine/index.ts` to inspect the V2 pipeline:
 
 ```typescript
-// After geocoding
-console.log("[debug] geocoded:", coords);
+// After graph build
+console.log("[v2] graph nodes:", graph.nodes.size, "edges:", graph.edges.size);
 
+// After solver
+console.log("[v2] paths found:", paths.length, paths.map(p => ({
+  distKm: p.distanceKm.toFixed(1),
+  score: p.totalScore.toFixed(3),
+})));
+```
+
+For the legacy engine, add to `lib/route-generator-legacy.ts`:
+
+```typescript
 // After candidate fetch
-console.log("[debug] candidates:", candidates.map(c => ({
+console.log("[legacy] candidates:", candidates.map(c => ({
   distKm: c.distanceKm.toFixed(1),
   ascendM: c.ascendM,
   score: c.totalScore.toFixed(3),
 })));
-
-// After Overpass
-console.log("[debug] surface data elements:", surfaceData.elements.length);
 ```
 
 Remove all debug `console.log` calls before committing.
-
-### Checking API responses
-
-In development, the GraphHopper and ORS API responses can be inspected by temporarily logging them in `route-generator.ts`:
-
-```typescript
-// In fetchCandidateRoutes()
-const data: GraphHopperResponse = await res.json();
-console.log("[GH] paths[0]:", JSON.stringify(data.paths[0], null, 2));
-```
-
-ORS responses follow the GeoJSON `FeatureCollection` format — each feature's geometry coordinates include `[lng, lat, elevation]`.
 
 ---
 
 ## Architecture Quick-Reference
 
+### Routing pipeline
+
+The V2 engine is the primary route generator. The legacy engine serves as a fallback when V2 fails.
+
+**V2 pipeline** (`lib/engine/`):
+
+```
+graph-builder.ts    Build OSM graph from Overpass data
+      |
+edge-scorer.ts      Score edges (surface, elevation, nature, quietness)
+      |
+orienteering-solver.ts   Beam-search solver with multi-child expansion
+      |
+pathfinder.ts       A* pathfinder for deterministic loop closure
+      |
+route-post-processor.ts  Geometry dedup, elevation enrichment, formatting
+```
+
+**Legacy pipeline** (`lib/route-generator-legacy.ts`):
+- Uses GraphHopper (running) or OpenRouteService (cycling) for candidate route generation
+- Scores candidates with `scoreRoute()` using profile-specific `ScoringWeights`
+
+### Quick answers
+
 | Question | Answer |
 |----------|--------|
-| Where is state stored? | `lib/store.ts` — single flat Zustand store |
-| Where does route computation happen? | `lib/route-generator.ts` — server-side only |
-| How does Mapbox connect to the route? | `MapView.tsx` reads from Zustand; `setCurrentRoute` triggers a `useEffect` |
-| Where are scoring weights defined? | `lib/session-profiles.ts` — per profile |
-| How are new profiles picked up by the UI? | Automatically — `SessionForm` iterates `PROFILES_BY_SPORT` |
-| What is the CORS proxy for? | `app/api/heatmap-tile` proxies Strava tiles to avoid browser CORS blocking on `:8080` |
-| Where does GPX export happen? | Client-side in `lib/gpx-export.ts` — no server round-trip needed |
-| Why is Mapbox not SSR'd? | It uses browser-only APIs; disabled via `dynamic(…, { ssr: false })` in `ClientMapWrapper` |
-| How are Strava cookies managed? | In the Go proxy (`cmd/proxy/`); renewed manually every 3–4 weeks |
-| Where is feedback stored? | Browser `localStorage` via `lib/feedback-store.ts` |
+| Where is state stored? | `lib/store.ts` -- single flat Zustand store |
+| Where does V2 route computation happen? | `lib/engine/` -- server-side |
+| Where does legacy route computation happen? | `lib/route-generator-legacy.ts` -- server-side |
+| Where is the API handler? | `app/api/generate-route/route.ts` -- V2-first, legacy-fallback |
+| How does the map connect to the route? | `MapView.tsx` reads from Zustand store; `setCurrentRoute` triggers a `useEffect` |
+| Where are session profiles defined? | `lib/session-profiles.ts` -- 16 profiles across 4 sports |
+| Where is geocoding handled? | Mapbox Geocoding v5 in `components/sidebar/AddressInput.tsx` (autocomplete) and server-side `geocodeAddress()` |
+| Where is rate limiting configured? | `lib/services/rate-limiter.ts` -- 20 req/min/IP on route generation |
+| Where does GPX export happen? | Client-side in `lib/gpx-export.ts` -- no server round-trip needed |
+| Where is feedback stored? | Browser `localStorage` (`lib/services/feedback-store.ts`) + server (`.data/feedbacks.json` via `POST /api/feedback`, 10/IP/hour) |
+| Where are error types defined? | `lib/errors.ts` -- `RouteGenerationError` with typed codes and sub-codes |
+| Why is Mapbox not SSR'd? | It uses browser-only APIs; disabled via `dynamic(..., { ssr: false })` in `ClientMapWrapper` |
+| What external APIs are used? | Mapbox (map tiles + geocoding), Open-Meteo (elevation), Overpass (OSM data), GraphHopper/ORS (legacy routing) |

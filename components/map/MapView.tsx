@@ -383,21 +383,12 @@ function updateHoverPoint(
   } catch { /* ok */ }
 }
 
-// ── Duration formatter ────────────────────────────────────────────────────────
-// TODO: This function is identical to the one in RouteResult.tsx — extract to
-// a shared lib/format.ts util to avoid drift between the two implementations.
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h${m.toString().padStart(2, "0")}`;
-  return `${m} min`;
-}
+import { formatDuration } from "@/lib/utils/format";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
 /**
- * Interactive Mapbox GL JS map that displays the generated route and heatmap.
+ * Interactive Mapbox GL JS map that displays the generated route.
  *
  * Responsibilities:
  * - Initialises the Mapbox map on mount (style: outdoors-v12, Paris default centre)
@@ -406,7 +397,6 @@ function formatDuration(seconds: number): string {
  * - Animates route drawing with an ease-out cubic over 1400ms
  * - Switches between PERFORMANCE (slope gradient) and SCENIC (solid green) colours
  * - Synchronises the hover crosshair with ElevationProfile mouse events via Zustand
- * - Adds/removes the Strava heatmap raster layer below road labels
  * - Displays a frosted-glass stats overlay (distance, D+, duration) when a route exists
  *
  * Must be rendered with SSR disabled (loaded via `ClientMapWrapper`).

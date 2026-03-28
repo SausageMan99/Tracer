@@ -29,9 +29,9 @@ interface AddressInputProps {
 }
 
 /**
- * Accessible address autocomplete input backed by Nominatim.
+ * Accessible address autocomplete input backed by Mapbox Geocoding v5.
  *
- * After 380ms of debounce, queries the Nominatim OpenStreetMap geocoding API
+ * After 380ms of debounce, queries the Mapbox Geocoding v5 API
  * and displays up to 5 suggestions in an ARIA-compliant listbox dropdown.
  * Supports keyboard navigation (ArrowUp/Down, Enter to select, Escape to close).
  *
