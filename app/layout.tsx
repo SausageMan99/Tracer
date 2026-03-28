@@ -23,6 +23,29 @@ export const metadata: Metadata = {
   description:
     "Génère un parcours running ou cyclisme adapté à ta séance en 10 secondes. D+, distance, surface — zéro compromis.",
   icons: { icon: "/favicon.ico" },
+  metadataBase: new URL("https://trailforge.app"),
+  openGraph: {
+    type: "website",
+    locale: "fr_FR",
+    siteName: "TrailForge",
+    title: "TrailForge — Générateur de parcours GPS",
+    description:
+      "Génère un parcours running ou cyclisme adapté à ta séance en 10 secondes.",
+    url: "https://trailforge.app",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "TrailForge — Générateur de parcours GPS",
+    description:
+      "Génère un parcours running ou cyclisme adapté à ta séance en 10 secondes.",
+  },
+  alternates: {
+    canonical: "https://trailforge.app",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export const viewport: Viewport = {
