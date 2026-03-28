@@ -71,16 +71,53 @@ export default function FooterSection() {
             </a>
           </div>
 
-          <span
-            style={{
-              fontFamily: "var(--font-body)",
-              fontSize: "11px",
-              color: "rgba(242, 236, 227, 0.3)",
-              letterSpacing: "0.05em",
-            }}
-          >
-            © 2026 TrailForge
-          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+              <Link
+                href="/legal/privacy"
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "11px",
+                  color: "rgba(242, 236, 227, 0.45)",
+                  textDecoration: "none",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                Confidentialité
+              </Link>
+              <span
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "11px",
+                  color: "rgba(242, 236, 227, 0.2)",
+                }}
+              >
+                ·
+              </span>
+              <Link
+                href="/legal/terms"
+                style={{
+                  fontFamily: "var(--font-body)",
+                  fontSize: "11px",
+                  color: "rgba(242, 236, 227, 0.45)",
+                  textDecoration: "none",
+                  letterSpacing: "0.05em",
+                }}
+              >
+                CGU
+              </Link>
+            </div>
+            <span
+              style={{
+                fontFamily: "var(--font-body)",
+                fontSize: "11px",
+                color: "rgba(242, 236, 227, 0.3)",
+                letterSpacing: "0.05em",
+              }}
+            >
+              © 2026 TrailForge
+            </span>
+          </div>
         </div>
       </div>
     </footer>
