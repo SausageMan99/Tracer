@@ -1,5 +1,7 @@
 "use client";
 
+import { useState } from "react";
+
 interface UpgradePromptProps {
   onClose: () => void;
 }
@@ -12,6 +14,31 @@ const PRO_BENEFITS: string[] = [
 ];
 
 export function UpgradePrompt({ onClose }: UpgradePromptProps) {
+  const [loading, setLoading] = useState(false);
+
+  async function handleCheckout(plan: "monthly" | "annual") {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/payments/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan }),
+      });
+      const data = await res.json();
+      if (res.status === 401) {
+        window.location.href = "/auth/signin?callbackUrl=%2Fapp%3Fupgrade%3Dpro";
+        return;
+      }
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch {
+      // User can retry
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     /* Backdrop */
     <div
@@ -178,7 +205,8 @@ export function UpgradePrompt({ onClose }: UpgradePromptProps) {
         {/* Actions */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <button
-            onClick={onClose}
+            onClick={() => handleCheckout("monthly")}
+            disabled={loading}
             style={{
               width: "100%",
               height: "48px",
@@ -193,6 +221,7 @@ export function UpgradePrompt({ onClose }: UpgradePromptProps) {
               textTransform: "uppercase",
               cursor: "pointer",
               transition: "box-shadow 0.2s ease",
+              opacity: loading ? 0.6 : 1,
             }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLElement).style.boxShadow =
@@ -202,7 +231,7 @@ export function UpgradePrompt({ onClose }: UpgradePromptProps) {
               (e.currentTarget as HTMLElement).style.boxShadow = "";
             }}
           >
-            Passer Pro
+            {loading ? "Redirection..." : "Passer Pro"}
           </button>
 
           <button

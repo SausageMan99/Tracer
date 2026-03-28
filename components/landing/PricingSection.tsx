@@ -242,8 +242,8 @@ export default function PricingSection() {
               ))}
             </ul>
 
-            <button
-              type="button"
+            <Link
+              href="/auth/signin?callbackUrl=%2Fapp%3Fupgrade%3Dpro"
               style={{
                 fontFamily: "var(--font-body)",
                 fontSize: "13px",
@@ -259,10 +259,11 @@ export default function PricingSection() {
                 minHeight: "44px",
                 cursor: "pointer",
                 lineHeight: 1,
+                textDecoration: "none",
               }}
             >
               Passer Pro
-            </button>
+            </Link>
           </div>
         </div>
       </div>
