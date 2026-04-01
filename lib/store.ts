@@ -9,7 +9,7 @@
  * first session profile (running endurance) pre-selected.
  */
 import { create } from "zustand";
-import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
+import type { AppState, AppStatus, Coordinate, GeneratedRoute, GenerateRouteResponse, GenerateRouteError } from "./types";
 import { SESSION_PROFILES, PROFILES_BY_ID } from "./session-profiles";
 import { RouteWorkerClient } from "./engine/worker-client";
 import { LIGHT_CONFIG } from "./engine/solver-config";
@@ -168,19 +168,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       if (isHeavyRoute(state.targetDistanceKm, state.targetElevationM)) {
         // Heavy route — server-side with FULL_CONFIG
-        const res = await fetch("/api/generate-route", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            address: state.address,
-            profileId: state.selectedProfileId,
-            targetDistanceKm: state.targetDistanceKm,
-            targetElevationM: state.targetElevationM,
-            scenicMode: state.scenicMode || undefined,
-          }),
-        });
-        const data = await res.json() as { success: boolean; route?: GeneratedRoute; error?: string };
-        if (!data.success || !data.route) {
+        let res: Response;
+        try {
+          res = await fetch("/api/generate-route", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: state.address,
+              profileId: state.selectedProfileId,
+              targetDistanceKm: state.targetDistanceKm,
+              targetElevationM: state.targetElevationM,
+              scenicMode: state.scenicMode || undefined,
+            }),
+          });
+        } catch {
+          throw new Error("Serveur inaccessible. Vérifiez votre connexion.");
+        }
+        // The server geocodes the address independently — it cannot accept
+        // a pre-resolved coordinate. The `center` param (already geocoded
+        // client-side) is only used for the light/worker path below.
+        const data = await res.json() as GenerateRouteResponse | GenerateRouteError;
+        if (!data.success) {
           throw new Error(data.error ?? "Erreur lors de la génération du parcours.");
         }
         generatedRoute = data.route;

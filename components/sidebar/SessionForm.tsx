@@ -223,7 +223,7 @@ export default function SessionForm() {
       const [lng, lat] = geocodeData.features[0].center as [number, number];
       const center = { lat, lng };
 
-      // Generate route via Web Worker (store handles remaining loading/error state)
+      // Generate route (store dispatches to server or Web Worker based on distance/elevation)
       await generateRoute(center);
     } catch (e) {
       // Handle geocoding errors; worker errors are handled by the store action
