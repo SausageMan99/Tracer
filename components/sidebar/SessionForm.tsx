@@ -146,7 +146,7 @@ export default function SessionForm() {
     setMapCenter,
     setSidebarOpen,
     generationProgress,
-    generateRouteClientSide,
+    generateRoute,
   } = useAppStore();
 
   const [selectedSport, setSelectedSport] = useState<Sport>("running");
@@ -224,7 +224,7 @@ export default function SessionForm() {
       const center = { lat, lng };
 
       // Generate route via Web Worker (store handles remaining loading/error state)
-      await generateRouteClientSide(center);
+      await generateRoute(center);
     } catch (e) {
       // Handle geocoding errors; worker errors are handled by the store action
       if (e instanceof Error && e.message === "Adresse introuvable") {
@@ -233,7 +233,7 @@ export default function SessionForm() {
         useAppStore.getState().setError("Erreur réseau. Vérifiez votre connexion et réessayez.");
       }
     }
-  }, [address, currentProfile, isLoading, setSidebarOpen, generateRouteClientSide]);
+  }, [address, currentProfile, isLoading, setSidebarOpen, generateRoute]);
 
   // Slider ranges
   const distMin = currentProfile?.distanceRange.min ?? 5;

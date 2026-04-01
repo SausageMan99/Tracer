@@ -13,6 +13,7 @@ import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
 import { SESSION_PROFILES, PROFILES_BY_ID } from "./session-profiles";
 import { RouteWorkerClient } from "./engine/worker-client";
 import { LIGHT_CONFIG } from "./engine/solver-config";
+import { isHeavyRoute } from "./engine/dispatch-config";
 
 // ── Module-level worker client singleton ──────────────────────────────────────
 // Worker instances are not serialisable, so this lives outside the store state.
@@ -83,13 +84,11 @@ interface AppStore extends AppState {
    * during client-side route generation.
    */
   generationProgress: { stage: string; percent: number } | null;
-  /** Current user subscription tier — drives TierConfig selection */
-  userTier: "free" | "pro";
   /**
-   * Generate a route entirely client-side via the Web Worker.
-   * Accepts a pre-geocoded coordinate (geocoding must happen in the main thread).
+   * Generate a route, dispatching to the server for heavy routes and the
+   * Web Worker for light ones. Accepts a pre-geocoded coordinate.
    */
-  generateRouteClientSide: (center: Coordinate) => Promise<void>;
+  generateRoute: (center: Coordinate) => Promise<void>;
 }
 
 const defaultProfile = SESSION_PROFILES[0];
@@ -119,7 +118,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   scenicMode: false,
   hoveredRouteProgress: null,
   generationProgress: null,
-  userTier: "free",
 
   setAddress: (address) => set({ address }),
   setProfileId: (selectedProfileId) => set({ selectedProfileId }),
@@ -161,38 +159,59 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
-  generateRouteClientSide: async (center: Coordinate) => {
+  generateRoute: async (center: Coordinate) => {
     const state = get();
     set({ status: "loading", generationProgress: null, errorMessage: null });
+
     try {
-      const routes = await getWorkerClient().generate(
-        {
-          center,
-          targetDistanceKm: state.targetDistanceKm,
-          targetElevationM: state.targetElevationM,
-          profileId: state.selectedProfileId,
-          tierConfig: LIGHT_CONFIG,
-          scenicMode: state.scenicMode,
-        },
-        (stage, percent) => set({ generationProgress: { stage, percent } })
-      );
-      if (routes.length === 0) throw new Error("No routes found");
-      const profile = PROFILES_BY_ID.get(state.selectedProfileId)!;
+      let generatedRoute: GeneratedRoute;
+
+      if (isHeavyRoute(state.targetDistanceKm, state.targetElevationM)) {
+        // Heavy route — server-side with FULL_CONFIG
+        const res = await fetch("/api/generate-route", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            address: state.address,
+            profileId: state.selectedProfileId,
+            targetDistanceKm: state.targetDistanceKm,
+            targetElevationM: state.targetElevationM,
+            scenicMode: state.scenicMode || undefined,
+          }),
+        });
+        const data = await res.json() as { success: boolean; route?: GeneratedRoute; error?: string };
+        if (!data.success || !data.route) {
+          throw new Error(data.error ?? "Erreur lors de la génération du parcours.");
+        }
+        generatedRoute = data.route;
+      } else {
+        // Light route — client-side Web Worker with LIGHT_CONFIG
+        const routes = await getWorkerClient().generate(
+          {
+            center,
+            targetDistanceKm: state.targetDistanceKm,
+            targetElevationM: state.targetElevationM,
+            profileId: state.selectedProfileId,
+            tierConfig: LIGHT_CONFIG,
+            scenicMode: state.scenicMode,
+          },
+          (stage, percent) => set({ generationProgress: { stage, percent } })
+        );
+        if (routes.length === 0) throw new Error("Aucun parcours trouvé.");
+        const profile = PROFILES_BY_ID.get(state.selectedProfileId)!;
+        generatedRoute = { best: routes[0], candidates: routes, startCoordinate: center, profile };
+      }
+
       set({
         status: "success",
-        currentRoute: {
-          best: routes[0],
-          candidates: routes,
-          startCoordinate: center,
-          profile,
-        },
+        currentRoute: generatedRoute,
         candidateIndex: 0,
         generationProgress: null,
       });
     } catch (e) {
       set({
         status: "error",
-        errorMessage: e instanceof Error ? e.message : "Route generation failed",
+        errorMessage: e instanceof Error ? e.message : "La génération du parcours a échoué.",
         generationProgress: null,
       });
     }
