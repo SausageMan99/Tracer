@@ -60,7 +60,7 @@ async function handleGenerate(
     targetDistanceKm: number;
     targetElevationM: number;
     profileId: string;
-    tierConfig: import("./tier-config").TierConfig;
+    tierConfig: import("./solver-config").TierConfig;
     scenicMode?: boolean;
   }
 ): Promise<void> {

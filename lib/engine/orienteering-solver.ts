@@ -1,7 +1,7 @@
 import type { EnrichedGraph, SolverPath } from "../types";
 import { haversineKm } from "./utils";
 import { ReturnDistanceCache } from "./pathfinder";
-import { type TierConfig, type SolverConfig, PRO_TIER } from "./tier-config";
+import { type TierConfig, type SolverConfig, FULL_CONFIG } from "./solver-config";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -606,7 +606,7 @@ export async function solve(
   targetDistanceKm: number,
   targetElevationM: number = 0,
   nodeElevation: Map<string, number> = new Map(),
-  tierConfig: TierConfig = PRO_TIER
+  tierConfig: TierConfig = FULL_CONFIG
 ): Promise<SolverPath[]> {
   const { solverConfigs, maxIterations, earlyK, lateK, maxCandidates, deduplicationMode } = tierConfig;
   const allPaths: SolverPath[] = [];

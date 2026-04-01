@@ -1,5 +1,5 @@
 import type { Coordinate, RouteCandidate } from "../types";
-import type { TierConfig } from "./tier-config";
+import type { TierConfig } from "./solver-config";
 
 export type WorkerRequest =
   | {

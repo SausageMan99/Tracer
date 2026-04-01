@@ -1,4 +1,4 @@
-// ── TierConfig: parameterized solver configuration per subscription tier ──────
+// ── Solver configurations — no subscription tiers, just complexity levels ──────
 
 export interface SolverConfig {
   readonly beamWidth: number;
@@ -16,20 +16,28 @@ export interface TierConfig {
   readonly deduplicationMode: "distance" | "jaccard";
 }
 
-export const FREE_TIER: TierConfig = {
+/**
+ * Light config — runs in the browser Web Worker.
+ * Used for routes ≤ 25 km and ≤ 600 m D+.
+ */
+export const LIGHT_CONFIG: TierConfig = {
   solverConfigs: [
-    { beamWidth: 20, temperature: 0.25, seedBearing: 0 },
-    { beamWidth: 20, temperature: 0.25, seedBearing: 180 },
+    { beamWidth: 30, temperature: 0.25, seedBearing: 0 },
+    { beamWidth: 30, temperature: 0.25, seedBearing: 180 },
   ],
   maxIterations: 800,
   earlyK: 2,
   lateK: 1,
-  enableFullScenic: false,
-  maxCandidates: 1,
-  deduplicationMode: "distance",
+  enableFullScenic: true,
+  maxCandidates: 2,
+  deduplicationMode: "jaccard",
 };
 
-export const PRO_TIER: TierConfig = {
+/**
+ * Full config — runs server-side.
+ * Used for heavy routes (> 25 km or > 600 m D+).
+ */
+export const FULL_CONFIG: TierConfig = {
   solverConfigs: [
     { beamWidth: 60, temperature: 0.2,  seedBearing: 0 },
     { beamWidth: 40, temperature: 0.3,  seedBearing: 72 },

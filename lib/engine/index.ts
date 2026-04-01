@@ -11,8 +11,8 @@ import { FilesystemCache } from "./adapters/filesystem-cache";
 import { DirectFetcher } from "./adapters/direct-fetcher";
 import type { CacheAdapter } from "./adapters/cache-adapter";
 import type { DataFetcher } from "./adapters/data-fetcher";
-import type { TierConfig } from "./tier-config";
-import { PRO_TIER } from "./tier-config";
+import type { TierConfig } from "./solver-config";
+import { FULL_CONFIG } from "./solver-config";
 import { haversineKm } from "./utils";
 
 const defaultCache = new FilesystemCache(
@@ -23,7 +23,7 @@ const defaultFetcher = new DirectFetcher();
 
 export async function generateRouteV2(
   request: RouteRequest,
-  tierConfig: TierConfig = PRO_TIER,
+  tierConfig: TierConfig = FULL_CONFIG,
   cache: CacheAdapter = defaultCache,
   fetcher: DataFetcher = defaultFetcher
 ): Promise<GeneratedRoute> {

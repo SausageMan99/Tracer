@@ -12,7 +12,7 @@ import { create } from "zustand";
 import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
 import { SESSION_PROFILES, PROFILES_BY_ID } from "./session-profiles";
 import { RouteWorkerClient } from "./engine/worker-client";
-import { FREE_TIER } from "./engine/tier-config";
+import { LIGHT_CONFIG } from "./engine/solver-config";
 
 // ── Module-level worker client singleton ──────────────────────────────────────
 // Worker instances are not serialisable, so this lives outside the store state.
@@ -171,7 +171,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           targetDistanceKm: state.targetDistanceKm,
           targetElevationM: state.targetElevationM,
           profileId: state.selectedProfileId,
-          tierConfig: FREE_TIER,
+          tierConfig: LIGHT_CONFIG,
           scenicMode: state.scenicMode,
         },
         (stage, percent) => set({ generationProgress: { stage, percent } })

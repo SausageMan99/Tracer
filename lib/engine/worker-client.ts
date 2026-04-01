@@ -1,6 +1,6 @@
 import type { WorkerRequest, WorkerResponse } from "./worker-types";
 import type { RouteCandidate, Coordinate } from "../types";
-import type { TierConfig } from "./tier-config";
+import type { TierConfig } from "./solver-config";
 
 type ProgressCallback = (stage: string, percent: number) => void;
 
