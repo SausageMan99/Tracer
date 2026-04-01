@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getUserTier } from "@/lib/db";
 import { generateRouteV2 } from "@/lib/engine";
-import { PRO_TIER } from "@/lib/engine/tier-config";
+import { FULL_CONFIG } from "@/lib/engine/solver-config";
 import { FilesystemCache } from "@/lib/engine/adapters/filesystem-cache";
 import { DirectFetcher } from "@/lib/engine/adapters/direct-fetcher";
 import * as path from "path";
@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const result = await generateRouteV2(body, PRO_TIER, cache, fetcher);
+    const result = await generateRouteV2(body, FULL_CONFIG, cache, fetcher);
     return NextResponse.json(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
