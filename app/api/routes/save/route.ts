@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getUserTier, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,15 +25,6 @@ export async function POST(request: NextRequest) {
   }
 
   const userId = session.user.id;
-
-  // Tier gate — only Pro users can save routes
-  const tier = await getUserTier(userId);
-  if (tier !== "pro") {
-    return NextResponse.json(
-      { success: false, error: "La sauvegarde des itinéraires est réservée aux abonnés Pro." },
-      { status: 403 },
-    );
-  }
 
   let body: Record<string, unknown>;
   try {

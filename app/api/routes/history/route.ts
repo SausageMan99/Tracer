@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { getUserTier, sql } from "@/lib/db";
+import { sql } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -20,15 +20,6 @@ export async function GET(request: NextRequest) {
   }
 
   const userId = session.user.id;
-
-  // Tier gate — only Pro users can access route history
-  const tier = await getUserTier(userId);
-  if (tier !== "pro") {
-    return NextResponse.json(
-      { success: false, error: "L'historique des itinéraires est réservé aux abonnés Pro." },
-      { status: 403 },
-    );
-  }
 
   const searchParams = request.nextUrl.searchParams;
 
