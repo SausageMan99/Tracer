@@ -7,9 +7,6 @@ import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/services/feedback-st
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import ScoreRing from "@/components/ui/ScoreRing";
 import WaitlistForm from "@/components/ui/WaitlistForm";
-import { ProBadge } from "@/components/ui/ProBadge";
-import { UpgradePrompt } from "@/components/ui/UpgradePrompt";
-
 import { formatDuration } from "@/lib/utils/format";
 
 // ── Slope legend ──────────────────────────────────────────────────────────────
@@ -100,15 +97,11 @@ export default function RouteResult() {
     clearRoute,
     targetDistanceKm,
     targetElevationM,
-    userTier,
   } = useAppStore();
-
-  const isFree = userTier === "free";
 
   const [feedbackCount, setFeedbackCount] = useState(0);
   const [showWaitlistWidget, setShowWaitlistWidget] = useState(false);
   const [waitlistDismissed, setWaitlistDismissed] = useState(false);
-  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   useEffect(() => {
     setFeedbackCount(loadFeedbacks().length);
@@ -132,16 +125,11 @@ export default function RouteResult() {
 
   const handleDownloadGPX = useCallback(() => {
     if (!currentRoute) return;
-    if (isFree) {
-      setShowUpgradePrompt(true);
-      return;
-    }
     downloadGPX(currentRoute);
-    // Show waitlist widget after first download
     if (!waitlistDismissed) {
       setShowWaitlistWidget(true);
     }
-  }, [currentRoute, isFree, waitlistDismissed]);
+  }, [currentRoute, waitlistDismissed]);
 
   if (status === "error") {
     return (
@@ -188,10 +176,6 @@ export default function RouteResult() {
 
   return (
     <div className="flex flex-col pb-6">
-      {showUpgradePrompt && (
-        <UpgradePrompt onClose={() => setShowUpgradePrompt(false)} />
-      )}
-
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div
         className="px-4 md:px-6"
@@ -280,54 +264,6 @@ export default function RouteResult() {
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
           />
         </div>
-
-        {/* ── Pro conversion hook ──────────────────────────────────────────── */}
-        {isFree && (
-          <div
-            style={{
-              marginTop: "16px",
-              padding: "12px 16px",
-              background: "rgba(124,179,66,0.06)",
-              border: "1px solid rgba(124,179,66,0.2)",
-              borderRadius: "2px",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "10px",
-            }}
-          >
-            <p
-              style={{
-                fontFamily: "var(--font-inter), sans-serif",
-                fontSize: "12px",
-                color: "var(--text-secondary, #9ca3af)",
-                margin: 0,
-                lineHeight: 1.5,
-              }}
-            >
-              3 parcours plus scéniques trouvés. Débloquer avec Pro.
-            </p>
-            <button
-              onClick={() => setShowUpgradePrompt(true)}
-              style={{
-                flexShrink: 0,
-                padding: "6px 12px",
-                background: "var(--accent-lime, #7CB342)",
-                color: "var(--bg-deep, #0A0D0C)",
-                border: "none",
-                borderRadius: "2px",
-                fontFamily: "var(--font-syne), sans-serif",
-                fontSize: "10px",
-                fontWeight: 700,
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-              }}
-            >
-              Voir
-            </button>
-          </div>
-        )}
 
         {/* ── Slope legend ─────────────────────────────────────────────────── */}
         <div
@@ -477,7 +413,6 @@ export default function RouteResult() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
             </svg>
             TÉLÉCHARGER GPX
-            {isFree && <ProBadge />}
           </button>
 
           <button
