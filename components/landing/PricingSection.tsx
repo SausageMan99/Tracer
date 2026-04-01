@@ -2,20 +2,14 @@
 
 import Link from "next/link";
 
-const FREE_FEATURES = [
+const FEATURES = [
   "Parcours illimités",
   "4 sports (trail, route, gravel, VTT)",
   "14 profils de session",
   "Carte interactive",
   "Export GPX",
-] as const;
-
-const PRO_FEATURES = [
-  "Tout ce qui est gratuit",
   "Routes scéniques optimisées",
-  "Multi-parcours simultanés",
-  "Historique des parcours",
-  "Support prioritaire",
+  "Moteur haute qualité (5 directions, 6 variantes)",
 ] as const;
 
 export default function PricingSection() {
@@ -27,7 +21,7 @@ export default function PricingSection() {
         borderTop: "1px solid #d4c9b8",
       }}
     >
-      <div style={{ maxWidth: "800px", margin: "0 auto" }}>
+      <div style={{ maxWidth: "560px", margin: "0 auto" }}>
         <p
           style={{
             fontFamily: "var(--font-body)",
@@ -43,228 +37,98 @@ export default function PricingSection() {
 
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "2px",
+            background: "#f7f3ed",
+            padding: "36px 32px",
+            border: "1px solid #d4c9b8",
+            display: "flex",
+            flexDirection: "column",
+            gap: "24px",
           }}
         >
-          {/* Free plan */}
-          <div
-            style={{
-              background: "#f7f3ed",
-              padding: "36px 32px",
-              border: "1px solid #d4c9b8",
-              display: "flex",
-              flexDirection: "column",
-              gap: "24px",
-            }}
-          >
-            <div>
-              <h3
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  fontSize: "clamp(22px, 3vw, 30px)",
-                  fontStyle: "italic",
-                  color: "#3d3529",
-                  margin: "0 0 8px 0",
-                }}
-              >
-                Gratuit
-              </h3>
-              <p
-                style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "12px",
-                  color: "#a39683",
-                  margin: 0,
-                }}
-              >
-                pour toujours
-              </p>
-            </div>
-
-            <ul
+          <div>
+            <h3
               style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-                flex: 1,
+                fontFamily: "var(--font-heading)",
+                fontSize: "clamp(22px, 3vw, 30px)",
+                fontStyle: "italic",
+                color: "#3d3529",
+                margin: "0 0 8px 0",
               }}
             >
-              {FREE_FEATURES.map((feature) => (
-                <li
-                  key={feature}
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "13px",
-                    color: "#7a6e5d",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <span
-                    style={{
-                      color: "#5a7247",
-                      fontWeight: 700,
-                      fontSize: "16px",
-                      lineHeight: 1,
-                      flexShrink: 0,
-                    }}
-                    aria-hidden="true"
-                  >
-                    ✓
-                  </span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-
-            <Link
-              href="/app"
+              Gratuit
+            </h3>
+            <p
               style={{
                 fontFamily: "var(--font-body)",
-                fontSize: "13px",
-                fontWeight: 700,
-                letterSpacing: "0.05em",
-                color: "#3d3529",
-                textDecoration: "none",
-                border: "1px solid #d4c9b8",
-                padding: "14px 24px",
-                display: "block",
-                textAlign: "center",
-                minHeight: "44px",
-                lineHeight: 1,
+                fontSize: "12px",
+                color: "#a39683",
+                margin: 0,
               }}
             >
-              Commencer gratuitement
-            </Link>
+              pour toujours — tout inclus
+            </p>
           </div>
 
-          {/* Pro plan */}
-          <div
+          <ul
             style={{
-              background: "#3d3529",
-              padding: "36px 32px",
-              border: "1px solid #3d3529",
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
               display: "flex",
               flexDirection: "column",
-              gap: "24px",
+              gap: "12px",
+              flex: 1,
             }}
           >
-            <div>
-              <h3
-                style={{
-                  fontFamily: "var(--font-heading)",
-                  fontSize: "clamp(22px, 3vw, 30px)",
-                  fontStyle: "italic",
-                  color: "#f2ece3",
-                  margin: "0 0 8px 0",
-                }}
-              >
-                Pro
-              </h3>
-              <p
+            {FEATURES.map((feature) => (
+              <li
+                key={feature}
                 style={{
                   fontFamily: "var(--font-body)",
-                  fontSize: "24px",
-                  fontWeight: 700,
-                  color: "#f2ece3",
-                  margin: "0 0 4px 0",
+                  fontSize: "13px",
+                  color: "#7a6e5d",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  lineHeight: 1.4,
                 }}
               >
-                8,99€
                 <span
                   style={{
-                    fontSize: "13px",
-                    fontWeight: 400,
-                    color: "#8fa87e",
-                    marginLeft: "4px",
+                    color: "#5a7247",
+                    fontWeight: 700,
+                    fontSize: "16px",
+                    lineHeight: 1,
+                    flexShrink: 0,
                   }}
+                  aria-hidden="true"
                 >
-                  /mois
+                  ✓
                 </span>
-              </p>
-              <p
-                style={{
-                  fontFamily: "var(--font-body)",
-                  fontSize: "11px",
-                  color: "#8fa87e",
-                  margin: 0,
-                }}
-              >
-                ou 79,99€/an (2 mois offerts)
-              </p>
-            </div>
+                {feature}
+              </li>
+            ))}
+          </ul>
 
-            <ul
-              style={{
-                listStyle: "none",
-                padding: 0,
-                margin: 0,
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-                flex: 1,
-              }}
-            >
-              {PRO_FEATURES.map((feature) => (
-                <li
-                  key={feature}
-                  style={{
-                    fontFamily: "var(--font-body)",
-                    fontSize: "13px",
-                    color: "#f2ece3",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "10px",
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <span
-                    style={{
-                      color: "#8fa87e",
-                      fontWeight: 700,
-                      fontSize: "16px",
-                      lineHeight: 1,
-                      flexShrink: 0,
-                    }}
-                    aria-hidden="true"
-                  >
-                    ✓
-                  </span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-
-            <Link
-              href="/auth/signin?callbackUrl=%2Fapp%3Fupgrade%3Dpro"
-              style={{
-                fontFamily: "var(--font-body)",
-                fontSize: "13px",
-                fontWeight: 700,
-                letterSpacing: "0.05em",
-                color: "#3d3529",
-                background: "#f2ece3",
-                border: "none",
-                padding: "14px 24px",
-                display: "block",
-                width: "100%",
-                textAlign: "center",
-                minHeight: "44px",
-                cursor: "pointer",
-                lineHeight: 1,
-                textDecoration: "none",
-              }}
-            >
-              Passer Pro
-            </Link>
-          </div>
+          <Link
+            href="/app"
+            style={{
+              fontFamily: "var(--font-body)",
+              fontSize: "13px",
+              fontWeight: 700,
+              letterSpacing: "0.05em",
+              color: "#3d3529",
+              textDecoration: "none",
+              border: "1px solid #d4c9b8",
+              padding: "14px 24px",
+              display: "block",
+              textAlign: "center",
+              minHeight: "44px",
+              lineHeight: 1,
+            }}
+          >
+            Commencer gratuitement
+          </Link>
         </div>
       </div>
     </section>
