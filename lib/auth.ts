@@ -36,10 +36,12 @@ export const authConfig: NextAuthConfig = {
   },
 
   providers: [
-    Nodemailer({
-      server: process.env.EMAIL_SERVER,
-      from: process.env.EMAIL_FROM,
-    }),
+    ...(process.env.EMAIL_SERVER
+      ? [Nodemailer({
+          server: process.env.EMAIL_SERVER,
+          from: process.env.EMAIL_FROM,
+        })]
+      : []),
 
     Google({
       clientId: process.env.GOOGLE_CLIENT_ID,
