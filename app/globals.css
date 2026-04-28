@@ -5,35 +5,81 @@
 /* ── TrailForge Design Tokens ─────────────────────────────────────────────── */
 
 :root {
-  --bg-deep:      #0A0D0C;
-  --bg-surface:   #0D1410;
-  --bg-elevated:  #141C17;
-  --border:       #2A3D30;
-  --text-primary: #E8EDE9;
-  --text-muted:   #8FA898;
-  --accent-moss:  #4A7C59;
-  --accent-sage:  #81C784;
-  --accent-lime:  #7CB342;
-  --accent-amber: #D4A843;
-  --accent-trail: #C17A3A;
-  --gradient-hero: linear-gradient(160deg, #080C0A 0%, #0F1F12 50%, #080C0A 100%);
-  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  /* Legacy compatibility */
-  --primary:       #7CB342;
-  --font-inter:    "Inter", sans-serif;
-  --font-syne:     "Syne", sans-serif;
+  /* Handcrafted Trail palette (landing page) */
+  --bg-parchment:          #f2ece3;
+  --bg-warm:               #e8e0d4;
+  --bg-deep:               #3d3529;
+  --bg-surface:            #f7f3ed;
+  --border:                #d4c9b8;
+  --text-primary:          #3d3529;
+  --text-muted:            #7a6e5d;
+  --text-light:            #a39683;
+  --accent-forest:         #5a7247;
+  --accent-forest-light:   #6d8a58;
+  --accent-moss:           #8fa87e;
+  --accent-trail:          #c17a3a;
+
+  /* App UI tokens (dark theme — map + sidebar) */
+  --app-bg-deep:           #0A0D0C;
+  --app-bg-surface:        #0D1410;
+  --app-bg-elevated:       #141C17;
+  --app-border:            #2A3D30;
+  --app-text-primary:      #E8EDE9;
+  --app-text-muted:        #8FA898;
+  --app-accent-lime:       #7CB342;
+  --app-accent-sage:       #81C784;
+  --app-accent-moss:       #4A7C59;
+  --app-accent-amber:      #D4A843;
+
+  /* Typography */
+  --font-heading:          "Georgia", "Times New Roman", serif;
+  --font-body:             "JetBrains Mono", "Courier New", monospace;
+  --font-ui:               "Inter", system-ui, sans-serif;
+
+  /* Legacy aliases — keep old token names resolving for app UI components.
+     The landing page (Task 16 rewrite) will switch to --bg-parchment etc.
+     For now the app sidebar/map/forms still use these token names. */
+  --bg-deep:               var(--app-bg-deep);
+  --bg-surface:            var(--app-bg-surface);
+  --bg-elevated:           var(--app-bg-elevated);
+  --border:                var(--app-border);
+  --text-primary:          var(--app-text-primary);
+  --text-muted:            var(--app-text-muted);
+  --accent-moss:           var(--app-accent-moss);
+  --accent-lime:           var(--app-accent-lime);
+  --accent-sage:           var(--app-accent-sage);
+  --accent-amber:          var(--app-accent-amber);
+  /* Legacy font aliases — Syne/Playfair removed, map to Inter/JetBrains */
+  --font-syne:             var(--font-inter);
+  --font-playfair:         var(--font-jetbrains);
+
+  --ease-out-expo:         cubic-bezier(0.16, 1, 0.3, 1);
+  --primary:               #7CB342;
+  --gradient-hero:         linear-gradient(160deg, #080C0A 0%, #0F1F12 50%, #080C0A 100%);
+}
+
+/* ── App UI context — dark theme ──────────────────────────────────────────── */
+
+.app-ui {
+  --bg-deep:      var(--app-bg-deep);
+  --bg-surface:   var(--app-bg-surface);
+  --bg-elevated:  var(--app-bg-elevated);
+  --border:       var(--app-border);
+  --text-primary: var(--app-text-primary);
+  --text-muted:   var(--app-text-muted);
+  --accent-moss:  var(--app-accent-moss);
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 
 html {
-  background-color: var(--bg-deep);
-  color: var(--text-primary);
+  background-color: var(--app-bg-deep);
+  color: var(--app-text-primary);
   overflow-x: clip;
 }
 
 body {
-  font-family: var(--font-inter), sans-serif;
+  font-family: var(--font-ui), sans-serif;
   overflow-x: clip;
 }
 
@@ -62,7 +108,7 @@ input[type="range"].trailforge-slider {
 
 input[type="range"].trailforge-slider::-webkit-slider-runnable-track {
   height: 2px;
-  background: var(--bg-elevated);
+  background: var(--app-bg-elevated);
   border-radius: 0;
 }
 
@@ -72,7 +118,7 @@ input[type="range"].trailforge-slider::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-lime);
+  background: var(--app-accent-lime);
   margin-top: -6px;
   cursor: pointer;
   transition: transform 0.15s var(--ease-out-expo);
@@ -85,7 +131,7 @@ input[type="range"].trailforge-slider::-webkit-slider-thumb:hover {
 
 input[type="range"].trailforge-slider::-moz-range-track {
   height: 2px;
-  background: var(--bg-elevated);
+  background: var(--app-bg-elevated);
   border-radius: 0;
 }
 
@@ -93,13 +139,13 @@ input[type="range"].trailforge-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-lime);
+  background: var(--app-accent-lime);
   border: none;
   cursor: pointer;
 }
 
 input[type="range"].trailforge-slider:disabled::-webkit-slider-thumb {
-  background: var(--accent-moss);
+  background: var(--app-accent-moss);
   opacity: 0.5;
   box-shadow: none;
 }
@@ -108,7 +154,7 @@ input[type="range"].trailforge-slider:disabled::-webkit-slider-thumb {
 
 input[type="range"].dark-slider::-webkit-slider-runnable-track {
   height: 2px;
-  background: var(--bg-elevated);
+  background: var(--app-bg-elevated);
 }
 input[type="range"].dark-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -116,24 +162,24 @@ input[type="range"].dark-slider::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-lime);
+  background: var(--app-accent-lime);
   margin-top: -6px;
   cursor: pointer;
 }
 input[type="range"].dark-slider::-moz-range-track {
   height: 2px;
-  background: var(--bg-elevated);
+  background: var(--app-bg-elevated);
 }
 input[type="range"].dark-slider::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  background: var(--accent-lime);
+  background: var(--app-accent-lime);
   border: none;
   cursor: pointer;
 }
 
-/* ── Scroll reveal ────────────────────────────────────────────────────────── */
+/* ── Scroll reveal (pure CSS) ─────────────────────────────────────────────── */
 
 .reveal-up {
   opacity: 0;
@@ -237,13 +283,5 @@ input[type="range"].dark-slider::-moz-range-thumb {
 @media (max-width: 767px) {
   .how-step-grid {
     grid-template-columns: 1fr !important;
-  }
-}
-
-/* ── Custom cursor — hide default on landing page ────────────────────────── */
-
-@media (hover: hover) {
-  .custom-cursor * {
-    cursor: none !important;
   }
 }

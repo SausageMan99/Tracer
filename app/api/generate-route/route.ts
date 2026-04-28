@@ -10,18 +10,33 @@
  * - 400 invalid body or unknown profile
  * - 422 NO_ROAD_NETWORK / IMPOSSIBLE_ELEVATION / GEOCODING_FAILED
  * - 429 rate limited
+ * - 504 generation timeout
  * - 500 unexpected error
  *
  * All errors return a `GenerateRouteError` JSON body with `success: false`,
  * a human-readable French `error` message, and a machine-readable `errorCode`.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { generateRouteV2 } from "@/lib/engine";
 import { generateRoute } from "@/lib/route-generator-legacy";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
-import { createRateLimiter } from "@/lib/rate-limiter";
+import { createRateLimiter } from "@/lib/services/rate-limiter";
 import { RouteGenerationError } from "@/lib/errors";
-import type { GenerateRouteRequest, GenerateRouteError } from "@/lib/types";
+import { withTimeout, TimeoutError } from "@/lib/utils/with-timeout";
+import type { GenerateRouteError } from "@/lib/types";
+
+// ── Request validation ──────────────────────────────────────────────────────
+
+const GenerateRouteSchema = z.object({
+  address: z.string().trim().min(1, "Adresse requise").max(500),
+  profileId: z.string().min(1),
+  targetDistanceKm: z.number().finite().positive(),
+  targetElevationM: z.number().finite().min(0),
+  scenicMode: z.boolean().optional(),
+  waypoints: z.array(z.string().trim().min(1)).max(5).optional(),
+  endAddress: z.string().trim().min(1).max(500).optional(),
+});
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 
@@ -38,6 +53,8 @@ const NO_ROAD_NETWORK_MESSAGES: Record<string, string> = {
 const DEFAULT_NO_ROAD_NETWORK_MSG =
   "Aucun réseau routier détecté à cet endroit. Essayez un autre point de départ.";
 
+const GENERATION_TIMEOUT_MS = 45_000;
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -50,10 +67,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: Partial<GenerateRouteRequest>;
+  let rawBody: unknown;
 
   try {
-    body = await req.json();
+    rawBody = await req.json();
   } catch {
     return NextResponse.json<GenerateRouteError>(
       { success: false, error: "Corps de requête invalide.", errorCode: "UNKNOWN" },
@@ -61,18 +78,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Validate required fields
-  if (
-    !body.address?.trim() ||
-    !body.profileId ||
-    typeof body.targetDistanceKm !== "number" ||
-    typeof body.targetElevationM !== "number"
-  ) {
+  const parsed = GenerateRouteSchema.safeParse(rawBody);
+  if (!parsed.success) {
     return NextResponse.json<GenerateRouteError>(
       { success: false, error: "Paramètres manquants ou invalides.", errorCode: "UNKNOWN" },
       { status: 400 }
     );
   }
+
+  const body = parsed.data;
 
   const profile = PROFILES_BY_ID.get(body.profileId);
   if (!profile) {
@@ -84,7 +98,6 @@ export async function POST(req: NextRequest) {
 
   // Validate numeric bounds against profile ranges
   if (
-    !Number.isFinite(body.targetDistanceKm) ||
     body.targetDistanceKm < profile.distanceRange.min ||
     body.targetDistanceKm > profile.distanceRange.max
   ) {
@@ -99,7 +112,6 @@ export async function POST(req: NextRequest) {
   }
 
   if (
-    !Number.isFinite(body.targetElevationM) ||
     body.targetElevationM < profile.elevationRange.min ||
     body.targetElevationM > profile.elevationRange.max
   ) {
@@ -131,21 +143,37 @@ export async function POST(req: NextRequest) {
       (routeRequest.waypoints?.length ?? 0) > 0 || !!routeRequest.endAddress;
 
     if (hasWaypoints) {
-      route = await generateRoute(routeRequest);
+      route = await withTimeout(generateRoute(routeRequest), GENERATION_TIMEOUT_MS);
     } else {
       try {
-        route = await generateRouteV2(routeRequest);
+        route = await withTimeout(generateRouteV2(routeRequest), GENERATION_TIMEOUT_MS);
       } catch (v2Err) {
+        // Don't fallback on timeout — the legacy engine would likely time out too
+        if (v2Err instanceof TimeoutError) {
+          throw v2Err;
+        }
         console.warn(
           "[generate-route] V2 engine failed, falling back to legacy:",
           v2Err instanceof Error ? v2Err.message : v2Err
         );
-        route = await generateRoute(routeRequest);
+        route = await withTimeout(generateRoute(routeRequest), GENERATION_TIMEOUT_MS);
       }
     }
 
     return NextResponse.json({ success: true, route });
   } catch (err) {
+    // Timeout errors → 504
+    if (err instanceof TimeoutError) {
+      return NextResponse.json<GenerateRouteError>(
+        {
+          success: false,
+          errorCode: "UNKNOWN",
+          error: "La génération a pris trop de temps. Essayez une distance plus courte ou un autre point de départ.",
+        },
+        { status: 504 }
+      );
+    }
+
     // Typed route generation errors
     if (err instanceof RouteGenerationError) {
       return mapRouteError(err);

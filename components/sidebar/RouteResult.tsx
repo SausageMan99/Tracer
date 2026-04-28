@@ -3,19 +3,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { useAppStore } from "@/lib/store";
 import { downloadGPX } from "@/lib/gpx-export";
-import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/feedback-store";
+import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/services/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import ScoreRing from "@/components/ui/ScoreRing";
 import WaitlistForm from "@/components/ui/WaitlistForm";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  if (h > 0) return `${h}h${m.toString().padStart(2, "0")}`;
-  return `${m} min`;
-}
+import { formatDuration } from "@/lib/utils/format";
 
 // ── Slope legend ──────────────────────────────────────────────────────────────
 
@@ -134,7 +126,6 @@ export default function RouteResult() {
   const handleDownloadGPX = useCallback(() => {
     if (!currentRoute) return;
     downloadGPX(currentRoute);
-    // Show waitlist widget after first download
     if (!waitlistDismissed) {
       setShowWaitlistWidget(true);
     }
@@ -185,7 +176,6 @@ export default function RouteResult() {
 
   return (
     <div className="flex flex-col pb-6">
-
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div
         className="px-4 md:px-6"

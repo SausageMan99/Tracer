@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { createRateLimiter } from "@/lib/rate-limiter";
+import { createRateLimiter } from "@/lib/services/rate-limiter";
 
 describe("createRateLimiter", () => {
   const limiters: ReturnType<typeof createRateLimiter>[] = [];

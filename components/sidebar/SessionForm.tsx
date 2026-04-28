@@ -1,18 +1,13 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import {
   PROFILES_BY_ID,
   PROFILES_BY_SPORT,
   SPORT_LABELS,
 } from "@/lib/session-profiles";
-import type {
-  GenerateRouteError,
-  GenerateRouteRequest,
-  GenerateRouteResponse,
-  Sport,
-} from "@/lib/types";
+import type { Sport } from "@/lib/types";
 import AddressInput from "@/components/sidebar/AddressInput";
 
 // ── Sport list ────────────────────────────────────────────────────────────────
@@ -73,7 +68,15 @@ const SPORT_ICONS: Record<Sport, (cls: string) => React.ReactElement> = {
 
 // ── Loading steps ─────────────────────────────────────────────────────────────
 
-const LOADING_STEPS = ["ANALYSE DU TERRAIN...", "CALCUL DES PENTES...", "OPTIMISATION...", "FINALISATION..."];
+const STAGE_LABELS: Record<string, string> = {
+  graph:       "CHARGEMENT DE LA CARTE...",
+  elevation:   "ANALYSE DU RELIEF...",
+  scoring:     "ÉVALUATION DES CHEMINS...",
+  solving:     "RECHERCHE DU MEILLEUR PARCOURS...",
+  postprocess: "FINALISATION...",
+};
+
+const DEFAULT_LOADING_LABEL = "GÉNÉRATION EN COURS...";
 
 // ── Chip labels ───────────────────────────────────────────────────────────────
 
@@ -133,41 +136,22 @@ function Divider() {
 
 export default function SessionForm() {
   const {
-    address,          setAddress,
-    selectedProfileId, setProfileId,
-    targetDistanceKm,  setTargetDistance,
-    targetElevationM,  setTargetElevation,
+    address,              setAddress,
+    selectedProfileId,    setProfileId,
+    targetDistanceKm,     setTargetDistance,
+    targetElevationM,     setTargetElevation,
     status,
-    setLoading,        setSuccess,        setError,
     errorMessage,
-    scenicMode,        setScenicMode,
+    scenicMode,           setScenicMode,
     setMapCenter,
     setSidebarOpen,
+    generationProgress,
+    generateRoute,
   } = useAppStore();
 
   const [selectedSport, setSelectedSport] = useState<Sport>("running");
-  const [stepIndex, setStepIndex] = useState(0);
-  const [progressPct, setProgressPct] = useState(0);
 
   const isLoading = status === "loading";
-
-  // Loading step animation — never reaches last step on timer alone;
-  // caps at step 2 ("OPTIMISATION...") with progress at 80%.
-  // The final step only appears when the API actually responds.
-  useEffect(() => {
-    if (!isLoading) { setStepIndex(0); setProgressPct(0); return; }
-    const pcts = [15, 45, 70, 80];
-    const delays = [0, 2000, 4500, 8000]; // ms after loading starts
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    // Cap at step 2 on timer — step 3 only via slower timeout
-    for (let step = 1; step < LOADING_STEPS.length; step++) {
-      timers.push(setTimeout(() => {
-        setStepIndex(step);
-        setProgressPct(pcts[step]);
-      }, delays[step]));
-    }
-    return () => timers.forEach(clearTimeout);
-  }, [isLoading]);
 
   const currentProfile = PROFILES_BY_ID.get(selectedProfileId);
 
@@ -218,37 +202,38 @@ export default function SessionForm() {
 
   const handleGenerate = useCallback(async () => {
     if (!address.trim() || !currentProfile || isLoading) return;
-    setLoading();
+
+    // Set loading state immediately so the UI responds before geocoding
+    useAppStore.getState().setLoading();
 
     // Close sidebar on mobile when generating
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setSidebarOpen(false);
     }
 
-    const body: GenerateRouteRequest & { scenicMode?: boolean } = {
-      address: address.trim(),
-      profileId: selectedProfileId,
-      targetDistanceKm,
-      targetElevationM,
-      scenicMode: scenicMode || undefined,
-    };
-
     try {
-      const res = await fetch("/api/generate-route", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data: GenerateRouteResponse | GenerateRouteError = await res.json();
-      if (data.success) {
-        setSuccess(data.route);
-      } else {
-        setError(data.error);
+      // Geocode address in the main thread first
+      const geocodeResp = await fetch(
+        `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(address.trim())}.json?access_token=${process.env.NEXT_PUBLIC_MAPBOX_TOKEN}&limit=1`
+      );
+      const geocodeData = await geocodeResp.json();
+      if (!geocodeData.features?.length) {
+        throw new Error("Adresse introuvable");
       }
-    } catch {
-      setError("Erreur réseau. Vérifiez votre connexion et réessayez.");
+      const [lng, lat] = geocodeData.features[0].center as [number, number];
+      const center = { lat, lng };
+
+      // Generate route (store dispatches to server or Web Worker based on distance/elevation)
+      await generateRoute(center);
+    } catch (e) {
+      // Handle geocoding errors; worker errors are handled by the store action
+      if (e instanceof Error && e.message === "Adresse introuvable") {
+        useAppStore.getState().setError("Adresse introuvable. Vérifiez le nom de la ville ou de l'adresse.");
+      } else if (useAppStore.getState().status !== "error") {
+        useAppStore.getState().setError("Erreur réseau. Vérifiez votre connexion et réessayez.");
+      }
     }
-  }, [address, currentProfile, isLoading, selectedProfileId, setError, setLoading, setSuccess, targetDistanceKm, targetElevationM, scenicMode, setSidebarOpen]);
+  }, [address, currentProfile, isLoading, setSidebarOpen, generateRoute]);
 
   // Slider ranges
   const distMin = currentProfile?.distanceRange.min ?? 5;
@@ -668,12 +653,16 @@ export default function SessionForm() {
                 left: 0,
                 height: "2px",
                 background: "var(--accent-lime)",
-                width: `${progressPct}%`,
+                width: `${generationProgress?.percent ?? 5}%`,
                 transition: "width 0.6s var(--ease-out-expo)",
               }}
             />
           )}
-          {isLoading ? LOADING_STEPS[stepIndex] : "GÉNÉRER →"}
+          {isLoading
+            ? (generationProgress
+                ? (STAGE_LABELS[generationProgress.stage] ?? DEFAULT_LOADING_LABEL)
+                : DEFAULT_LOADING_LABEL)
+            : "GÉNÉRER →"}
         </button>
 
         {status === "error" && (

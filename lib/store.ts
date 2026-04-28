@@ -9,8 +9,19 @@
  * first session profile (running endurance) pre-selected.
  */
 import { create } from "zustand";
-import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
-import { SESSION_PROFILES } from "./session-profiles";
+import type { AppState, AppStatus, Coordinate, GeneratedRoute, GenerateRouteResponse, GenerateRouteError } from "./types";
+import { SESSION_PROFILES, PROFILES_BY_ID } from "./session-profiles";
+import { RouteWorkerClient } from "./engine/worker-client";
+import { LIGHT_CONFIG } from "./engine/solver-config";
+import { isHeavyRoute } from "./engine/dispatch-config";
+
+// ── Module-level worker client singleton ──────────────────────────────────────
+// Worker instances are not serialisable, so this lives outside the store state.
+let workerClient: RouteWorkerClient | null = null;
+function getWorkerClient(): RouteWorkerClient {
+  if (!workerClient) workerClient = new RouteWorkerClient();
+  return workerClient;
+}
 
 /**
  * Full store interface: serialisable state from `AppState` plus all
@@ -67,6 +78,17 @@ interface AppStore extends AppState {
   setSidebarOpen: (open: boolean) => void;
   /** Toggle sidebar open/closed */
   toggleSidebar: () => void;
+  /**
+   * Real-time generation progress from the Web Worker.
+   * `null` when not loading; populated with stage label and 0–100 percent
+   * during client-side route generation.
+   */
+  generationProgress: { stage: string; percent: number } | null;
+  /**
+   * Generate a route, dispatching to the server for heavy routes and the
+   * Web Worker for light ones. Accepts a pre-geocoded coordinate.
+   */
+  generateRoute: (center: Coordinate) => Promise<void>;
 }
 
 const defaultProfile = SESSION_PROFILES[0];
@@ -91,10 +113,11 @@ const initialState: AppState = {
  * // In any Client Component
  * const { status, currentRoute, setLoading } = useAppStore();
  */
-export const useAppStore = create<AppStore>((set) => ({
+export const useAppStore = create<AppStore>((set, get) => ({
   ...initialState,
   scenicMode: false,
   hoveredRouteProgress: null,
+  generationProgress: null,
 
   setAddress: (address) => set({ address }),
   setProfileId: (selectedProfileId) => set({ selectedProfileId }),
@@ -135,4 +158,70 @@ export const useAppStore = create<AppStore>((set) => ({
   sidebarOpen: false,
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
+
+  generateRoute: async (center: Coordinate) => {
+    const state = get();
+    set({ status: "loading", generationProgress: null, errorMessage: null });
+
+    try {
+      let generatedRoute: GeneratedRoute;
+
+      if (isHeavyRoute(state.targetDistanceKm, state.targetElevationM)) {
+        // Heavy route — server-side with FULL_CONFIG
+        let res: Response;
+        try {
+          res = await fetch("/api/generate-route", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: state.address,
+              profileId: state.selectedProfileId,
+              targetDistanceKm: state.targetDistanceKm,
+              targetElevationM: state.targetElevationM,
+              scenicMode: state.scenicMode || undefined,
+            }),
+          });
+        } catch {
+          throw new Error("Serveur inaccessible. Vérifiez votre connexion.");
+        }
+        // The server geocodes the address independently — it cannot accept
+        // a pre-resolved coordinate. The `center` param (already geocoded
+        // client-side) is only used for the light/worker path below.
+        const data = await res.json() as GenerateRouteResponse | GenerateRouteError;
+        if (!data.success) {
+          throw new Error(data.error ?? "Erreur lors de la génération du parcours.");
+        }
+        generatedRoute = data.route;
+      } else {
+        // Light route — client-side Web Worker with LIGHT_CONFIG
+        const routes = await getWorkerClient().generate(
+          {
+            center,
+            targetDistanceKm: state.targetDistanceKm,
+            targetElevationM: state.targetElevationM,
+            profileId: state.selectedProfileId,
+            tierConfig: LIGHT_CONFIG,
+            scenicMode: state.scenicMode,
+          },
+          (stage, percent) => set({ generationProgress: { stage, percent } })
+        );
+        if (routes.length === 0) throw new Error("Aucun parcours trouvé.");
+        const profile = PROFILES_BY_ID.get(state.selectedProfileId)!;
+        generatedRoute = { best: routes[0], candidates: routes, startCoordinate: center, profile };
+      }
+
+      set({
+        status: "success",
+        currentRoute: generatedRoute,
+        candidateIndex: 0,
+        generationProgress: null,
+      });
+    } catch (e) {
+      set({
+        status: "error",
+        errorMessage: e instanceof Error ? e.message : "La génération du parcours a échoué.",
+        generationProgress: null,
+      });
+    }
+  },
 }));

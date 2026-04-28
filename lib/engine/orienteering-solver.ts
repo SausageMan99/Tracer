@@ -1,44 +1,39 @@
 import type { EnrichedGraph, SolverPath } from "../types";
-import { haversineKm } from "../route-generator-legacy";
+import { haversineKm } from "./utils";
 import { ReturnDistanceCache } from "./pathfinder";
+import { type TierConfig, type SolverConfig, FULL_CONFIG } from "./solver-config";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface BeamState {
-  nodeIds: string[];
-  edgeIds: string[];
-  edgeVisits: Map<string, number>;
+  parent: BeamState | null;
+  lastNodeId: string;
+  lastEdgeId: string | null;
+  lastEdgeKey: string | null;
   currentNodeId: string;
   lastFrom: string | null;
   distanceKm: number;
   totalScore: number;
   cumulativeAscentM: number;
   cumulativeDescentM: number;
-}
-
-interface SolverConfig {
-  beamWidth: number;
-  temperature: number;
-  seedBearing: number;
-  expansionFactor: number;
+  depth: number;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const SOLVER_CONFIGS: SolverConfig[] = [
-  { beamWidth: 60, temperature: 0.2,  seedBearing: 0,   expansionFactor: 3 },
-  { beamWidth: 40, temperature: 0.3,  seedBearing: 72,  expansionFactor: 3 },
-  { beamWidth: 80, temperature: 0.15, seedBearing: 144, expansionFactor: 3 },
-  { beamWidth: 50, temperature: 0.25, seedBearing: 216, expansionFactor: 3 },
-  { beamWidth: 70, temperature: 0.2,  seedBearing: 288, expansionFactor: 3 },
-];
-
-const MAX_ITERATIONS = 2000;
-const DISTANCE_TOLERANCE = 0.15;
 const CLOSE_ENOUGH_KM = 0.2;
 const MAX_EDGE_REVISITS = 1;
 const REVISIT_PENALTY = 0.15;
 const ROAD_DISTANCE_FACTOR = 1.4;
+
+/**
+ * Adaptive distance tolerance: tighter for longer routes where ±15% is too loose.
+ */
+export function getDistanceTolerance(targetKm: number): number {
+  if (targetKm <= 10) return 0.15;  // ±15% for short routes
+  if (targetKm <= 30) return 0.12;  // ±12% for medium
+  if (targetKm <= 60) return 0.10;  // ±10% for long
+  return 0.08;                       // ±8% for very long
+}
 
 // ── Utility functions ────────────────────────────────────────────────────────
 
@@ -58,6 +53,33 @@ function normalizeAngle(angle: number): number {
   let a = angle % 360;
   if (a < 0) a += 360;
   return a > 180 ? a - 360 : a;
+}
+
+/**
+ * Walk the parent chain to check if an edge has been visited at all.
+ * Short-circuits on first match → O(1) best case, O(depth) worst case.
+ */
+function hasVisitedEdge(state: BeamState, edgeKey: string): boolean {
+  let current: BeamState | null = state;
+  while (current) {
+    if (current.lastEdgeKey === edgeKey) return true;
+    current = current.parent;
+  }
+  return false;
+}
+
+/**
+ * Walk the parent chain to count how many times an edge has been visited.
+ * Used for dead-end escape where exact count matters.
+ */
+function countEdgeVisits(state: BeamState, edgeKey: string): number {
+  let count = 0;
+  let current: BeamState | null = state;
+  while (current) {
+    if (current.lastEdgeKey === edgeKey) count++;
+    current = current.parent;
+  }
+  return count;
 }
 
 /**
@@ -111,6 +133,24 @@ function softmaxSelectMultiple(
   }
 
   return selected;
+}
+
+// ── Path reconstruction (linked-list → arrays) ──────────────────────────────
+
+function reconstructPath(state: BeamState): { nodeIds: string[]; edgeIds: string[] } {
+  const nodeIds = new Array<string>(state.depth + 1);
+  const edgeIds = new Array<string>(state.depth);
+  let current: BeamState | null = state;
+  let i = state.depth;
+  while (current) {
+    nodeIds[i] = current.lastNodeId;
+    if (current.lastEdgeId) {
+      edgeIds[i - 1] = current.lastEdgeId;
+    }
+    i--;
+    current = current.parent;
+  }
+  return { nodeIds, edgeIds };
 }
 
 // ── Diverse beam selection (farthest-point sampling) ─────────────────────────
@@ -187,11 +227,15 @@ function solveWithConfig(
   targetDistanceKm: number,
   targetElevationM: number,
   nodeElevation: Map<string, number>,
-  config: SolverConfig
+  config: SolverConfig,
+  earlyK: number,
+  lateK: number,
+  maxIterations: number
 ): SolverPath[] {
   const { beamWidth, temperature, seedBearing } = config;
-  const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
-  const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
+  const tolerance = getDistanceTolerance(targetDistanceKm);
+  const maxDist = targetDistanceKm * (1 + tolerance);
+  const minDist = targetDistanceKm * (1 - tolerance);
   const startNode = graph.nodes.get(startNodeId);
   if (!startNode) return [];
 
@@ -200,21 +244,23 @@ function solveWithConfig(
 
   let beam: BeamState[] = [
     {
-      nodeIds: [startNodeId],
-      edgeIds: [],
-      edgeVisits: new Map(),
+      parent: null,
+      lastNodeId: startNodeId,
+      lastEdgeId: null,
+      lastEdgeKey: null,
       currentNodeId: startNodeId,
       lastFrom: null,
       distanceKm: 0,
       totalScore: 0,
       cumulativeAscentM: 0,
       cumulativeDescentM: 0,
+      depth: 0,
     },
   ];
 
   const validPaths: SolverPath[] = [];
 
-  for (let iter = 0; iter < MAX_ITERATIONS && beam.length > 0; iter++) {
+  for (let iter = 0; iter < maxIterations && beam.length > 0; iter++) {
     const nextBeam: BeamState[] = [];
 
     for (const state of beam) {
@@ -223,10 +269,8 @@ function solveWithConfig(
 
       const progress = state.distanceKm / targetDistanceKm;
 
-      // Determine expansion factor: K=3 in first 60%, K=2 after
-      const k = progress < 0.6
-        ? config.expansionFactor
-        : Math.max(2, config.expansionFactor - 1);
+      // Determine expansion factor: earlyK in first 60%, lateK after
+      const k = progress < 0.6 ? earlyK : lateK;
 
       // Find candidate edges (with visited-edge relaxation)
       const allEdges = currentNode.edges
@@ -235,7 +279,7 @@ function solveWithConfig(
 
       const unvisitedEdges = allEdges.filter((e) => {
         const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
-        return (state.edgeVisits.get(key) ?? 0) === 0;
+        return !hasVisitedEdge(state, key);
       });
 
       // Dead-end escape: allow revisits if no unvisited edges
@@ -243,7 +287,7 @@ function solveWithConfig(
         ? unvisitedEdges
         : allEdges.filter((e) => {
             const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
-            return (state.edgeVisits.get(key) ?? 0) < MAX_EDGE_REVISITS;
+            return countEdgeVisits(state, key) < MAX_EDGE_REVISITS;
           });
 
       if (candidateEdges.length === 0) continue;
@@ -294,8 +338,7 @@ function solveWithConfig(
 
         // 1.3 Revisit penalty
         const edgeKey = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
-        const visits = state.edgeVisits.get(edgeKey) ?? 0;
-        if (visits > 0) {
+        if (hasVisitedEdge(state, edgeKey)) {
           score *= REVISIT_PENALTY;
         }
 
@@ -323,19 +366,30 @@ function solveWithConfig(
           score *= 0.5 + 0.5 * closingFactor;
         }
 
-        // 2.3 Gradient-aware edge selection bias (after 60%)
-        if (progress > 0.6 && targetElevationM > 0) {
+        // 2.3 Gradient-aware edge selection bias (progressive from 20% onward)
+        if (progress > 0.2 && targetElevationM > 0) {
           const fromElev = nodeElevation.get(edge.from) ?? 0;
           const toElev = nodeElevation.get(edge.to) ?? 0;
           const elevDelta = toElev - fromElev;
           const expectedAscent = targetElevationM * progress;
           const isUphill = elevDelta > 0;
 
+          // Progressive weight: 0.5x at 20% progress → 1.5x at 80%+
+          const elevWeight = 0.5 + Math.min(1.0, progress) * 1.0;
+
           if (isUphill) {
-            if (state.cumulativeAscentM < expectedAscent) {
-              score *= 1.3; // Under budget → prefer uphill
-            } else if (state.cumulativeAscentM > expectedAscent * 1.2) {
-              score *= 0.5; // Over budget → penalize uphill
+            if (state.cumulativeAscentM < expectedAscent * 0.8) {
+              // Under budget → boost uphill proportionally to deficit
+              const deficit = (expectedAscent - state.cumulativeAscentM) / Math.max(targetElevationM, 1);
+              score *= 1 + deficit * elevWeight * 0.5;
+            } else if (state.cumulativeAscentM > expectedAscent * 1.3) {
+              // Over budget → penalize uphill
+              score *= Math.max(0.3, 1 - elevWeight * 0.3);
+            }
+          } else if (elevDelta < -5) {
+            // Downhill: prefer when over D+ budget
+            if (state.cumulativeAscentM > expectedAscent * 1.3) {
+              score *= 1.2;
             }
           }
         }
@@ -365,9 +419,10 @@ function solveWithConfig(
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM && state.distanceKm >= minDist) {
+            const { nodeIds, edgeIds } = reconstructPath(state);
             validPaths.push({
-              nodeIds: state.nodeIds,
-              edgeIds: state.edgeIds,
+              nodeIds,
+              edgeIds,
               totalScore: state.totalScore,
               distanceKm: state.distanceKm,
             });
@@ -376,19 +431,19 @@ function solveWithConfig(
         }
 
         const edgeKey = undirectedEdgeKey(selectedEdge.from, selectedEdge.to, selectedEdge.osmWayId);
-        const newEdgeVisits = new Map(state.edgeVisits);
-        newEdgeVisits.set(edgeKey, (newEdgeVisits.get(edgeKey) ?? 0) + 1);
 
         const newState: BeamState = {
-          nodeIds: [...state.nodeIds, selectedEdge.to],
-          edgeIds: [...state.edgeIds, selectedEdge.id],
-          edgeVisits: newEdgeVisits,
+          parent: state,
+          lastNodeId: selectedEdge.to,
+          lastEdgeId: selectedEdge.id,
+          lastEdgeKey: edgeKey,
           currentNodeId: selectedEdge.to,
           lastFrom: state.currentNodeId,
           distanceKm: newDist,
           totalScore: state.totalScore + selectedEdge.score * selectedEdge.lengthKm,
           cumulativeAscentM: newAscent,
           cumulativeDescentM: newDescent,
+          depth: state.depth + 1,
         };
 
         const newProgress = newDist / targetDistanceKm;
@@ -408,9 +463,10 @@ function solveWithConfig(
               // Close loop via A* return path
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath) {
+                const { nodeIds, edgeIds } = reconstructPath(newState);
                 validPaths.push({
-                  nodeIds: [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
-                  edgeIds: [...newState.edgeIds, ...returnPath.edgeIds],
+                  nodeIds: [...nodeIds, ...returnPath.nodeIds.slice(1)],
+                  edgeIds: [...edgeIds, ...returnPath.edgeIds],
                   totalScore: newState.totalScore,
                   distanceKm: newDist + returnPath.distanceKm,
                 });
@@ -422,9 +478,10 @@ function solveWithConfig(
             if (newProgress >= 0.85) {
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
+                const { nodeIds, edgeIds } = reconstructPath(newState);
                 validPaths.push({
-                  nodeIds: [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
-                  edgeIds: [...newState.edgeIds, ...returnPath.edgeIds],
+                  nodeIds: [...nodeIds, ...returnPath.nodeIds.slice(1)],
+                  edgeIds: [...edgeIds, ...returnPath.edgeIds],
                   totalScore: newState.totalScore,
                   distanceKm: newDist + returnPath.distanceKm,
                 });
@@ -442,9 +499,10 @@ function solveWithConfig(
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM) {
+            const { nodeIds, edgeIds } = reconstructPath(newState);
             validPaths.push({
-              nodeIds: newState.nodeIds,
-              edgeIds: newState.edgeIds,
+              nodeIds,
+              edgeIds,
               totalScore: newState.totalScore,
               distanceKm: newState.distanceKm,
             });
@@ -458,6 +516,27 @@ function solveWithConfig(
 
     // Keep top beamWidth states using diverse beam selection
     beam = diverseBeamSelect(nextBeam, beamWidth, targetDistanceKm, targetElevationM, graph);
+  }
+
+  // Fallback: if no valid paths found, try to close the best remaining beam states
+  if (validPaths.length === 0 && beam.length > 0) {
+    const fallbackMinDist = minDist * 0.8;
+    const fallbackMaxDist = maxDist * 1.2;
+    for (const state of beam) {
+      const returnPath = returnCache.getPath(graph, state.currentNodeId, startNodeId);
+      if (returnPath) {
+        const totalDist = state.distanceKm + returnPath.distanceKm;
+        if (totalDist >= fallbackMinDist && totalDist <= fallbackMaxDist) {
+          const { nodeIds, edgeIds } = reconstructPath(state);
+          validPaths.push({
+            nodeIds: [...nodeIds, ...returnPath.nodeIds.slice(1)],
+            edgeIds: [...edgeIds, ...returnPath.edgeIds],
+            totalScore: state.totalScore,
+            distanceKm: totalDist,
+          });
+        }
+      }
+    }
   }
 
   return validPaths;
@@ -496,6 +575,29 @@ function deduplicatePaths(paths: SolverPath[], threshold = 0.6): SolverPath[] {
   return kept;
 }
 
+/**
+ * Simple deduplication by distance similarity (free tier).
+ * Two routes are considered duplicates if their distances are within 5% of each other.
+ */
+function deduplicateByDistance(paths: SolverPath[], toleranceFraction = 0.05): SolverPath[] {
+  if (paths.length <= 1) return paths;
+
+  const kept: SolverPath[] = [paths[0]];
+
+  for (let i = 1; i < paths.length; i++) {
+    const candidate = paths[i];
+    const isDuplicate = kept.some(
+      (existing) =>
+        Math.abs(candidate.distanceKm - existing.distanceKm) / Math.max(existing.distanceKm, 0.001) < toleranceFraction
+    );
+    if (!isDuplicate) {
+      kept.push(candidate);
+    }
+  }
+
+  return kept;
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 export async function solve(
@@ -503,17 +605,34 @@ export async function solve(
   startNodeId: string,
   targetDistanceKm: number,
   targetElevationM: number = 0,
-  nodeElevation: Map<string, number> = new Map()
+  nodeElevation: Map<string, number> = new Map(),
+  tierConfig: TierConfig = FULL_CONFIG
 ): Promise<SolverPath[]> {
-  const results = SOLVER_CONFIGS.map((config) =>
-    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config)
-  );
+  const { solverConfigs, maxIterations, earlyK, lateK, maxCandidates, deduplicationMode } = tierConfig;
+  const allPaths: SolverPath[] = [];
 
-  const allPaths = results.flat();
+  for (const config of solverConfigs) {
+    const paths = solveWithConfig(
+      graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation,
+      config, earlyK, lateK, maxIterations
+    );
+    allPaths.push(...paths);
+
+    // Early stop: if we have enough diverse paths, skip remaining configs
+    const sorted = [...allPaths].sort((a, b) => b.totalScore - a.totalScore);
+    const deduped = deduplicationMode === "jaccard"
+      ? deduplicatePaths(sorted)
+      : deduplicateByDistance(sorted);
+    if (deduped.length >= maxCandidates) break;
+  }
 
   // Sort by totalScore descending
   allPaths.sort((a, b) => b.totalScore - a.totalScore);
 
-  // 4.2 Geometric deduplication
-  return deduplicatePaths(allPaths);
+  // Deduplication based on tier mode
+  const deduped = deduplicationMode === "jaccard"
+    ? deduplicatePaths(allPaths)
+    : deduplicateByDistance(allPaths);
+
+  return deduped.slice(0, maxCandidates);
 }

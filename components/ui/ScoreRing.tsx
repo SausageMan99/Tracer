@@ -1,34 +1,26 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { gsap } from "gsap";
 
 interface ScoreRingProps {
-  /** Score 0–100 */
   score: number;
-  /** Ring diameter in px */
   size?: number;
-  /** Ring stroke color */
   color?: string;
-  /** Track color (background ring) */
   trackColor?: string;
-  /** Stroke width */
   strokeWidth?: number;
   className?: string;
 }
 
 /**
  * SVG circular progress ring.
- * Animates from 0 to `score` on mount.
- *
- * @example
- * <ScoreRing score={87} size={80} color="var(--accent-lime)" />
+ * Animates from 0 to `score` on mount using IntersectionObserver + rAF.
+ * GSAP dependency removed.
  */
 export default function ScoreRing({
   score,
   size = 80,
-  color = "var(--accent-lime)",
-  trackColor = "var(--bg-elevated)",
+  color = "var(--app-accent-lime)",
+  trackColor = "var(--app-bg-elevated)",
   strokeWidth = 3,
   className = "",
 }: ScoreRingProps) {
@@ -49,35 +41,35 @@ export default function ScoreRing({
       ([entry]) => {
         if (entry.isIntersecting && !hasRun.current) {
           hasRun.current = true;
-          const target = ((100 - score) / 100) * circumference;
-          gsap.to(el, {
-            strokeDashoffset: target,
-            duration: 1.2,
-            ease: "power2.out",
-          });
-          // Also animate the text number
-          if (textRef.current) {
-            const obj = { val: 0 };
-            gsap.to(obj, {
-              val: score,
-              duration: 1.2,
-              ease: "power2.out",
-              onUpdate: () => {
-                if (textRef.current) {
-                  textRef.current.textContent = `${Math.round(obj.val)}%`;
-                }
-              },
-            });
+          const duration = 1200;
+          const start = performance.now();
+          const targetOffset = ((100 - score) / 100) * circumference;
+
+          function tick(now: number) {
+            const elapsed = now - start;
+            const progress = Math.min(elapsed / duration, 1);
+            // ease out quad
+            const eased = 1 - (1 - progress) * (1 - progress);
+            const currentOffset = circumference - eased * (circumference - targetOffset);
+            if (progressRef.current) {
+              progressRef.current.style.strokeDashoffset = String(currentOffset);
+            }
+            if (textRef.current) {
+              textRef.current.textContent = `${Math.round(eased * score)}%`;
+            }
+            if (progress < 1) requestAnimationFrame(tick);
           }
+
+          requestAnimationFrame(tick);
           observer.disconnect();
         }
       },
       { threshold: 0.5 }
     );
+
     observer.observe(el);
     return () => observer.disconnect();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [score]);
+  }, [score, circumference]);
 
   return (
     <svg
@@ -88,14 +80,12 @@ export default function ScoreRing({
       role="img"
       aria-label={`Score: ${score}%`}
     >
-      {/* Track */}
       <circle
         cx={cx} cy={cy} r={r}
         fill="none"
         stroke={trackColor}
         strokeWidth={strokeWidth}
       />
-      {/* Progress */}
       <circle
         ref={progressRef}
         cx={cx} cy={cy} r={r}
@@ -107,7 +97,6 @@ export default function ScoreRing({
         strokeDashoffset={circumference}
         transform={`rotate(-90 ${cx} ${cy})`}
       />
-      {/* Label */}
       <text
         ref={textRef}
         x={cx} y={cy}
@@ -115,7 +104,7 @@ export default function ScoreRing({
         dominantBaseline="central"
         fill={color}
         fontSize={size * 0.2}
-        fontFamily="var(--font-jetbrains), monospace"
+        fontFamily="var(--font-body), monospace"
         fontWeight="500"
       >
         0%

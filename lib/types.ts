@@ -414,6 +414,12 @@ export interface OverpassElement {
   id: number;
   /** OSM tags — may include `highway`, `surface`, `route`, `natural`, etc. */
   tags?: Record<string, string>;
+  /** Latitude for node elements */
+  lat?: number;
+  /** Longitude for node elements */
+  lon?: number;
+  /** Ordered list of node IDs for way elements */
+  nodes?: number[];
 }
 
 /**

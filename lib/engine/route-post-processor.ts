@@ -6,12 +6,8 @@ import type {
   SessionProfile,
   SolverPath,
 } from "../types";
-import {
-  fetchElevations,
-  computeAscent,
-  scoreRoute,
-  computeLoopScore,
-} from "../route-generator-legacy";
+import { computeAscent, scoreRoute, computeLoopScore } from "./utils";
+import type { DataFetcher } from "./adapters/data-fetcher";
 
 const MAX_ROUTE_POINTS = 200;
 
@@ -30,7 +26,8 @@ function subsampleValues(values: number[], totalLength: number, max: number): nu
 function estimateDuration(
   distanceKm: number,
   ascendM: number,
-  sport: string
+  sport: string,
+  durationMultiplier: number = 1.0
 ): number {
   // Sport-specific pace in min/km (flat equivalent)
   let baseMinPerKm: number;
@@ -49,7 +46,7 @@ function estimateDuration(
     ? (ascendM / 100) * 10
     : (ascendM / 100) * 6;
 
-  return (distanceKm * baseMinPerKm + climbPenalty) * 60;
+  return (distanceKm * baseMinPerKm + climbPenalty) * 60 * durationMultiplier;
 }
 
 export async function postProcess(
@@ -59,20 +56,32 @@ export async function postProcess(
   profile: SessionProfile,
   targetDistanceKm: number,
   targetElevationM: number,
-  nodeElevation: Map<string, number> = new Map()
+  nodeElevation: Map<string, number> = new Map(),
+  fetcher: DataFetcher,
+  maxCandidates: number = 6
 ): Promise<RouteCandidate[]> {
   if (paths.length === 0) return [];
 
-  // Take top 6 paths
-  const topPaths = paths.slice(0, 6);
+  // Take top maxCandidates paths
+  const topPaths = paths.slice(0, maxCandidates);
 
   const candidates: RouteCandidate[] = await Promise.all(
     topPaths.map(async (solverPath) => {
-      // Reconstruct coordinates from nodeIds
-      const fullCoords: Coordinate[] = solverPath.nodeIds
-        .map((nid) => graph.nodes.get(nid))
-        .filter((n): n is NonNullable<typeof n> => n != null)
-        .map((n) => ({ lat: n.lat, lng: n.lng }));
+      // Reconstruct coordinates from nodeIds, keeping elevation aligned
+      const paired = solverPath.nodeIds
+        .map((nid) => ({ nid, node: graph.nodes.get(nid) }))
+        .filter(
+          (p): p is { nid: string; node: NonNullable<typeof p.node> } =>
+            p.node != null
+        );
+
+      const fullCoords: Coordinate[] = paired.map((p) => ({
+        lat: p.node.lat,
+        lng: p.node.lng,
+      }));
+      const fullElevations = paired.map(
+        (p) => nodeElevation.get(p.nid) ?? 0
+      );
 
       // Subsample to ≤200 points
       const sampled = subsampleCoords(fullCoords, MAX_ROUTE_POINTS);
@@ -80,17 +89,14 @@ export async function postProcess(
       // Build elevations from pre-fetched nodeElevation map, fall back to API
       let elevations: number[];
       if (nodeElevation.size > 0) {
-        // Look up elevation for each sampled coordinate by matching back to closest node
-        elevations = solverPath.nodeIds.length === fullCoords.length
-          ? subsampleValues(
-              solverPath.nodeIds.map((nid) => nodeElevation.get(nid) ?? 0),
-              fullCoords.length,
-              sampled.length
-            )
-          : sampled.map(() => 0);
+        elevations = subsampleValues(
+          fullElevations,
+          fullCoords.length,
+          sampled.length
+        );
       } else {
         try {
-          elevations = await fetchElevations(sampled);
+          elevations = await fetcher.fetchElevations(sampled);
         } catch {
           elevations = sampled.map(() => 0);
         }
@@ -112,7 +118,8 @@ export async function postProcess(
         profile.sport
       );
 
-      const loopScore = computeLoopScore(points, startCoordinate);
+      const routeStart = fullCoords[0] ?? startCoordinate;
+      const loopScore = computeLoopScore(points, routeStart);
 
       // Build geometry from full coords
       const geometry: RouteCandidate["geometry"] = {

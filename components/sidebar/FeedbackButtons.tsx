@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { GeneratedRoute } from "@/lib/types";
-import { saveFeedback, type RouteFeedback } from "@/lib/feedback-store";
+import { saveFeedback, type RouteFeedback } from "@/lib/services/feedback-store";
 import { useAppStore } from "@/lib/store";
 
 interface FeedbackButtonsProps {
