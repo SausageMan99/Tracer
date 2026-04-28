@@ -103,10 +103,14 @@ cp .env.example .env.local
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Yes | Mapbox GL JS public token (starts with `pk.`) |
-| `GRAPHHOPPER_API_KEY` | Yes | GraphHopper Directions API key |
-| `ORS_API_KEY` | Yes | OpenRouteService API key |
+| `GRAPHHOPPER_API_KEY` | Yes | GraphHopper Directions API key, used by the legacy fallback engine |
+| `ORS_API_KEY` | Recommended | OpenRouteService API key for cycling profiles and legacy fallback |
+| `ADMIN_SECRET` | Optional | Bearer token for admin feedback export via `GET /api/feedback` |
+| `GROWTHBOOK_API_HOST` | Optional | GrowthBook API host, defaults to `https://cdn.growthbook.io` in `.env.example` |
+| `GROWTHBOOK_CLIENT_KEY` | Optional | GrowthBook SDK client key for precomputed flag routes |
+| `FLAGS_SECRET` | Optional | Secret required by the Flags SDK when precomputing `/[code]` permutations |
 
-No other variables are required. Open-Meteo and Overpass are used without authentication.
+Open-Meteo and Overpass are used without authentication. If GrowthBook variables are empty, the app still builds; feature-flag permutation pages are simply skipped locally.
 
 ### 3. Start the development server
 

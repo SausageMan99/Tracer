@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { scoreRoute, computeAscent, haversineKm } from "@/lib/route-generator-legacy";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import { generateGPX } from "@/lib/gpx-export";
-import type { GeneratedRoute, RoutePoint, SessionProfile } from "@/lib/types";
+import type { GeneratedRoute, RoutePoint } from "@/lib/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -31,8 +31,14 @@ export function generateGPX(route: GeneratedRoute): string {
   const trkpts = coords
     .map((coord, i) => {
       const time = new Date(now.getTime() + i * msPerPoint);
+      const elevation = best.points[i]?.elevation;
+      const eleTag = Number.isFinite(elevation)
+        ? `        <ele>${elevation!.toFixed(1)}</ele>\n`
+        : "";
+
       return (
         `      <trkpt lat="${coord[1].toFixed(7)}" lon="${coord[0].toFixed(7)}">\n` +
+        eleTag +
         `        <time>${time.toISOString()}</time>\n` +
         `      </trkpt>`
       );
