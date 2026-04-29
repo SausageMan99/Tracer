@@ -7,6 +7,7 @@ import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import ScoreRing from "@/components/ui/ScoreRing";
 import WaitlistForm from "@/components/ui/WaitlistForm";
+import { translateQualityWarning } from "@/lib/route-quality-copy";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -176,6 +177,9 @@ export default function RouteResult() {
 
   const { best, candidates, profile } = currentRoute;
   const matchPercent = Math.round(best.totalScore * 100);
+  const qualityWarnings = (best.quality?.warnings ?? [])
+    .map(translateQualityWarning)
+    .filter((warning): warning is NonNullable<typeof warning> => warning != null);
   const total = candidates.length;
 
   return (
@@ -269,6 +273,45 @@ export default function RouteResult() {
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>}
           />
         </div>
+
+        {qualityWarnings.length > 0 && (
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "12px 14px",
+              background: "rgba(245,158,11,0.08)",
+              border: "1px solid rgba(245,158,11,0.24)",
+              borderRadius: "2px",
+            }}
+            aria-label="Compromis qualité du parcours"
+          >
+            <p
+              style={{
+                fontFamily: "var(--font-syne), sans-serif",
+                fontSize: "10px",
+                fontWeight: 700,
+                letterSpacing: "0.18em",
+                color: "#fbbf24",
+                textTransform: "uppercase",
+                marginBottom: "8px",
+              }}
+            >
+              Compromis détectés
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {qualityWarnings.map((warning) => (
+                <div key={warning.label} style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                  <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
+                    {warning.label}
+                  </span>
+                  <span style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.4 }}>
+                    {warning.description}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* ── Slope legend ─────────────────────────────────────────────────── */}
         <div

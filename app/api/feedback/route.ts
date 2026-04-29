@@ -3,6 +3,7 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { createRateLimiter } from "@/lib/rate-limiter";
 import { anonymizeIp } from "@/lib/privacy";
+import { sanitizeFeedbackReasons } from "@/lib/feedback-reasons";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const FEEDBACKS_FILE = path.join(DATA_DIR, "feedbacks.json");
@@ -22,6 +23,11 @@ function isValidFeedback(body: Record<string, unknown>): boolean {
   if (typeof body.actualDistanceKm !== "number") return false;
   if (typeof body.actualElevationM !== "number") return false;
   if (typeof body.algorithmicScore !== "number") return false;
+  if (body.reasons !== undefined && !Array.isArray(body.reasons)) return false;
+  if (
+    Array.isArray(body.reasons) &&
+    sanitizeFeedbackReasons(body.reasons).length !== body.reasons.length
+  ) return false;
   return true;
 }
 
@@ -72,7 +78,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const feedbacks = await loadFeedbacksFromDisk();
-    const updated = [...feedbacks, { ...body, timestamp: Date.now(), ipHash: anonymizeIp(ip) }];
+    const sanitizedFeedback = {
+      ...body,
+      reasons: sanitizeFeedbackReasons(body.reasons),
+      timestamp: Date.now(),
+      ipHash: anonymizeIp(ip),
+    };
+    const updated = [...feedbacks, sanitizedFeedback];
     await saveFeedbacksToDisk(updated);
   } catch (err) {
     console.error("[feedback] Failed to save:", err);

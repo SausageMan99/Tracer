@@ -10,6 +10,8 @@
  * The export function downloads the full dataset for offline ML training.
  */
 
+import type { FeedbackReason } from "./feedback-reasons";
+
 const STORAGE_KEY = "trailforge-feedbacks";
 
 /**
@@ -26,6 +28,8 @@ export interface RouteFeedback {
   timestamp: number;
   /** User rating: thumbs up or thumbs down */
   rating: "positive" | "negative";
+  /** Whitelisted reason codes selected by the user; no free text / PII */
+  reasons?: FeedbackReason[];
   /** Session type of the profile used (e.g. `"endurance"`, `"seuil_lactique"`) */
   sessionType: string;
   /** Sport used for generation (e.g. `"running"`, `"cycling_road"`) */
