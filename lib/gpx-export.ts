@@ -45,16 +45,20 @@ export function generateGPX(route: GeneratedRoute): string {
     })
     .join("\n");
 
+  const qualityExtensions = buildQualityExtensions(best.quality);
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1"
-  creator="Tracer"
+  creator="TrailForge"
   xmlns="http://www.topografix.com/GPX/1/1"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:trailforge="https://trailforge.app/gpx/extensions/1"
   xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
   <metadata>
     <name>${escapeXml(profile.name)} - ${best.distanceKm.toFixed(1)}km</name>
-    <desc>Généré par Tracer. Sport: ${escapeXml(profile.sport)}. D+: ${best.ascendM.toFixed(0)}m</desc>
-    <time>${now.toISOString()}</time>
+    <desc>Généré par TrailForge. Sport: ${escapeXml(profile.sport)}. D+: ${best.ascendM.toFixed(0)}m</desc>
+    <keywords>TrailForge,GPX,${escapeXml(profile.sport)}</keywords>
+    <time>${now.toISOString()}</time>${qualityExtensions}
   </metadata>
   <trk>
     <name>${escapeXml(profile.name)}</name>
@@ -93,6 +97,29 @@ export function downloadGPX(route: GeneratedRoute): void {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function buildQualityExtensions(quality: GeneratedRoute["best"]["quality"]): string {
+  if (!quality) return "";
+
+  const warnings = quality.warnings ?? [];
+  const warningTags = warnings
+    .map((warning) => `        <trailforge:warning>${escapeXml(warning)}</trailforge:warning>`)
+    .join("\n");
+
+  return `
+    <extensions>
+      <trailforge:quality>
+        <trailforge:productionScore>${formatMetric(quality.productionScore)}</trailforge:productionScore>
+        <trailforge:loopClosureKm>${formatMetric(quality.loopGapKm)}</trailforge:loopClosureKm>
+        <trailforge:busyRoadRatio>${formatMetric(quality.busyRoadRatio)}</trailforge:busyRoadRatio>
+        <trailforge:naturalWayRatio>${formatMetric(quality.trailRatio)}</trailforge:naturalWayRatio>${warningTags ? `\n${warningTags}` : ""}
+      </trailforge:quality>
+    </extensions>`;
+}
+
+function formatMetric(value: number | undefined): string {
+  return Number.isFinite(value) ? value!.toFixed(2) : "0.00";
 }
 
 /**

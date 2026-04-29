@@ -116,6 +116,31 @@ describe("generateGPX", () => {
     expect(gpx.trim()).toMatch(/^<\?xml/);
     expect(gpx.trim()).toMatch(/<\/gpx>\s*$/);
   });
+
+  it("brands the GPX as TrailForge and embeds route quality metadata", () => {
+    const route = mockGeneratedRoute(10);
+    route.best.quality = {
+      distanceErrorPct: 0.02,
+      elevationErrorPct: 0.08,
+      loopGapKm: 0.12,
+      busyRoadRatio: 0.03,
+      trailRatio: 0.41,
+      restrictedAccessRatio: 0,
+      onewayViolationRatio: 0,
+      repeatEdgeRatio: 0.01,
+      intersectionDensityPerKm: 4,
+      productionScore: 0.82,
+      warnings: ["DISTANCE_OFF_TARGET"],
+    };
+
+    const gpx = generateGPX(route);
+
+    expect(gpx).toContain('creator="TrailForge"');
+    expect(gpx).toContain("<keywords>TrailForge,GPX,running</keywords>");
+    expect(gpx).toContain("<trailforge:productionScore>0.82</trailforge:productionScore>");
+    expect(gpx).toContain("<trailforge:naturalWayRatio>0.41</trailforge:naturalWayRatio>");
+    expect(gpx).toContain("<trailforge:warning>DISTANCE_OFF_TARGET</trailforge:warning>");
+  });
 });
 
 // ─── Test 4: Haversine distance formula ──────────────────────────────────────

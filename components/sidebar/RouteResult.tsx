@@ -8,6 +8,7 @@ import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import ScoreRing from "@/components/ui/ScoreRing";
 import WaitlistForm from "@/components/ui/WaitlistForm";
 import { translateQualityWarning } from "@/lib/route-quality-copy";
+import { buildWatchExportGuide } from "@/lib/watch-export";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -180,6 +181,7 @@ export default function RouteResult() {
   const qualityWarnings = (best.quality?.warnings ?? [])
     .map(translateQualityWarning)
     .filter((warning): warning is NonNullable<typeof warning> => warning != null);
+  const watchExportGuide = buildWatchExportGuide(profile);
   const total = candidates.length;
 
   return (
@@ -462,6 +464,45 @@ export default function RouteResult() {
             </svg>
             TÉLÉCHARGER GPX
           </button>
+
+          <div
+            style={{
+              padding: "12px 14px",
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: "2px",
+            }}
+            aria-label="Guide d'export vers montre ou compteur"
+          >
+            <p
+              style={{
+                fontFamily: "var(--font-syne), sans-serif",
+                fontSize: "10px",
+                fontWeight: 700,
+                letterSpacing: "0.18em",
+                color: "var(--text-primary)",
+                textTransform: "uppercase",
+                marginBottom: "6px",
+              }}
+            >
+              {watchExportGuide.title}
+            </p>
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "10px" }}>
+              {watchExportGuide.description}
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {watchExportGuide.targets.map((target) => (
+                <details key={target.id} style={{ borderTop: "1px solid var(--border)", paddingTop: "6px" }}>
+                  <summary style={{ cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
+                    {target.label}
+                  </summary>
+                  <p style={{ marginTop: "4px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                    {target.primaryAction}
+                  </p>
+                </details>
+              ))}
+            </div>
+          </div>
 
           <button
             onClick={clearRoute}
