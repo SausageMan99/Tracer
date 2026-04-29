@@ -4,6 +4,7 @@ import {
   benchmarkToRequest,
   summarizeBenchmarkResult,
 } from "@/lib/route-benchmarks";
+import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 describe("route production benchmarks", () => {
   it("covers the critical Reddit/product regression cases", () => {
@@ -15,6 +16,30 @@ describe("route production benchmarks", () => {
     expect(ids).toContain("nanterre-east-avoid-highways");
     expect(ids).toContain("rennes-saint-malo-road-bike");
     expect(ids).toContain("mtb-40k-oneway-safety");
+  });
+
+  it("keeps benchmark ids unique and linked to valid session profiles", () => {
+    const ids = BENCHMARK_CASES.map((benchmark) => benchmark.id);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    for (const benchmark of BENCHMARK_CASES) {
+      expect(PROFILES_BY_ID.has(benchmark.profileId)).toBe(true);
+      expect(benchmark.targetDistanceKm).toBeGreaterThan(0);
+      expect(benchmark.targetElevationM).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it("keeps every benchmark threshold actionable", () => {
+    for (const benchmark of BENCHMARK_CASES) {
+      expect(benchmark.thresholds.distanceToleranceRatio).toBeGreaterThan(0);
+      expect(benchmark.thresholds.distanceToleranceRatio).toBeLessThanOrEqual(0.15);
+      expect(benchmark.thresholds.elevationToleranceM).toBeGreaterThan(0);
+      expect(benchmark.thresholds.minProductionScore).toBeGreaterThanOrEqual(0.65);
+      expect(benchmark.thresholds.minProductionScore).toBeLessThanOrEqual(0.9);
+      expect(benchmark.thresholds.maxLoopClosureKm).toBeGreaterThan(0);
+      expect(benchmark.thresholds.maxBusyRoadRatio).toBeGreaterThanOrEqual(0);
+      expect(benchmark.thresholds.maxBusyRoadRatio).toBeLessThanOrEqual(0.15);
+    }
   });
 
   it("converts a benchmark into the public generate-route request contract", () => {
@@ -49,6 +74,24 @@ describe("route production benchmarks", () => {
       "production_score",
       "busy_road_ratio",
     ]));
+  });
+
+  it("fails a route when VTT safety reports a oneway violation", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "mtb-40k-oneway-safety")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 40.5,
+      ascendM: 790,
+      quality: {
+        productionScore: 0.82,
+        loopClosureKm: 0.4,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.6,
+        warnings: ["ONEWAY_VIOLATION"],
+      },
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("oneway_violation");
   });
 
   it("passes a route that stays within production thresholds", () => {
