@@ -9,6 +9,8 @@ import ScoreRing from "@/components/ui/ScoreRing";
 import WaitlistForm from "@/components/ui/WaitlistForm";
 import { translateQualityWarning } from "@/lib/route-quality-copy";
 import { buildWatchExportGuide } from "@/lib/watch-export";
+import { buildRouteExplanation } from "@/lib/route-explanations";
+import { buildFeedbackInsights } from "@/lib/feedback-insights";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -107,9 +109,12 @@ export default function RouteResult() {
     clearRoute,
     targetDistanceKm,
     targetElevationM,
+    scenicMode,
   } = useAppStore();
 
-  const feedbackCount = loadFeedbacks().length;
+  const feedbacks = loadFeedbacks();
+  const feedbackCount = feedbacks.length;
+  const feedbackInsights = buildFeedbackInsights(feedbacks);
   const [showWaitlistWidget, setShowWaitlistWidget] = useState(false);
   const [waitlistDismissed, setWaitlistDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
@@ -182,6 +187,11 @@ export default function RouteResult() {
     .map(translateQualityWarning)
     .filter((warning): warning is NonNullable<typeof warning> => warning != null);
   const watchExportGuide = buildWatchExportGuide(profile);
+  const routeExplanation = buildRouteExplanation(currentRoute, {
+    targetDistanceKm,
+    targetElevationM,
+    scenicMode,
+  });
   const total = candidates.length;
 
   return (
@@ -249,6 +259,33 @@ export default function RouteResult() {
           >
             {profile.name} · {profile.sport.replace(/_/g, " ")}
           </span>
+        </div>
+
+        {/* ── Explanation ───────────────────────────────────────────────────── */}
+        <div
+          style={{
+            marginTop: "16px",
+            padding: "12px 14px",
+            background: "var(--bg-surface)",
+            border: "1px solid var(--border)",
+            borderLeft: "3px solid var(--accent-lime)",
+            borderRadius: "2px",
+          }}
+          aria-label="Explication intelligente du parcours"
+        >
+          <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.18em", color: "var(--text-primary)", textTransform: "uppercase", marginBottom: "6px" }}>
+            {routeExplanation.headline}
+          </p>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            {routeExplanation.summary}
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+            {routeExplanation.signals.slice(0, 3).map((signal) => (
+              <span key={signal} style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "9px", color: "var(--accent-sage)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                {signal}
+              </span>
+            ))}
+          </div>
         </div>
 
         {/* ── 4 stat cards ─────────────────────────────────────────────────── */}
@@ -549,27 +586,54 @@ export default function RouteResult() {
         </div>
 
         {feedbackCount > 0 && (
-          <div style={{ marginTop: "10px", display: "flex", justifyContent: "center" }}>
-            <button
-              onClick={() => {
-                exportFeedbacksAsJSON();
-              }}
+          <>
+            <div
               style={{
-                fontFamily: "var(--font-syne), sans-serif",
-                fontSize: "10px",
-                color: "var(--text-muted)",
-                background: "none",
-                border: "none",
-                cursor: "pointer",
-                padding: "4px 0",
-                letterSpacing: "0.1em",
+                marginTop: "12px",
+                padding: "12px 14px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: "2px",
               }}
-              onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
-              onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-muted)")}
+              aria-label="Dashboard feedback local"
             >
-              EXPORTER FEEDBACKS ({feedbackCount})
-            </button>
-          </div>
+              <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.18em", color: "var(--text-primary)", textTransform: "uppercase", marginBottom: "8px" }}>
+                Signaux feedback
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+                <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)" }}>
+                  {Math.round(feedbackInsights.positiveRate * 100)}% positifs
+                </span>
+                <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)" }}>
+                  {Math.round(feedbackInsights.negativeRate * 100)}% négatifs
+                </span>
+              </div>
+              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                {feedbackInsights.actions[0]}
+              </p>
+            </div>
+            <div style={{ marginTop: "10px", display: "flex", justifyContent: "center" }}>
+              <button
+                onClick={() => {
+                  exportFeedbacksAsJSON();
+                }}
+                style={{
+                  fontFamily: "var(--font-syne), sans-serif",
+                  fontSize: "10px",
+                  color: "var(--text-muted)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: "4px 0",
+                  letterSpacing: "0.1em",
+                }}
+                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-primary)")}
+                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "var(--text-muted)")}
+              >
+                EXPORTER FEEDBACKS ({feedbackCount})
+              </button>
+            </div>
+          </>
         )}
         {/* ── Post-generation waitlist widget ───────────────────────────── */}
         {showWaitlistWidget && !waitlistDismissed && (

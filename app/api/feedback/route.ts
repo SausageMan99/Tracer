@@ -4,6 +4,8 @@ import * as path from "path";
 import { createRateLimiter } from "@/lib/rate-limiter";
 import { anonymizeIp } from "@/lib/privacy";
 import { sanitizeFeedbackReasons } from "@/lib/feedback-reasons";
+import { buildFeedbackInsights } from "@/lib/feedback-insights";
+import type { RouteFeedback } from "@/lib/feedback-store";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const FEEDBACKS_FILE = path.join(DATA_DIR, "feedbacks.json");
@@ -116,5 +118,6 @@ export async function GET(request: NextRequest) {
   }
 
   const feedbacks = await loadFeedbacksFromDisk();
-  return NextResponse.json({ success: true, count: feedbacks.length, feedbacks });
+  const insights = buildFeedbackInsights(feedbacks as RouteFeedback[]);
+  return NextResponse.json({ success: true, count: feedbacks.length, feedbacks, insights });
 }

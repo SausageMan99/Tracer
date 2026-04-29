@@ -12,6 +12,7 @@ import {
   BUSY_HIGHWAY_TYPES,
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
+import { getRouteIntention } from "../route-intentions";
 
 const MAX_ELEVATION_NODES = 1_000;
 
@@ -58,6 +59,17 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
       quietness: w.quietness + 0.05,
     };
   }
+
+  // Product intention: make the selected session profile influence the engine
+  // explicitly without changing the solver contract.
+  const intention = getRouteIntention(profile, scenicMode === true);
+  const multipliers = intention.weightMultipliers;
+  w = {
+    surface: w.surface * (multipliers.surface ?? 1),
+    elevation: w.elevation * (multipliers.elevation ?? 1),
+    nature: w.nature * (multipliers.nature ?? 1),
+    quietness: w.quietness * (multipliers.quietness ?? 1),
+  };
 
   // Normalize to sum = 1
   const sum = w.surface + w.elevation + w.nature + w.quietness;

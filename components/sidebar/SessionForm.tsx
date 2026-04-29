@@ -7,6 +7,7 @@ import {
   PROFILES_BY_SPORT,
   SPORT_LABELS,
 } from "@/lib/session-profiles";
+import { buildRouteIntentionCard } from "@/lib/route-intentions";
 import type {
   GenerateRouteError,
   GenerateRouteRequest,
@@ -176,6 +177,9 @@ export default function SessionForm() {
   }, [isLoading]);
 
   const currentProfile = PROFILES_BY_ID.get(selectedProfileId);
+  const routeIntention = currentProfile
+    ? buildRouteIntentionCard(currentProfile, scenicMode)
+    : null;
 
   const handleSportChange = (sport: Sport) => {
     setSelectedSport(sport);
@@ -223,7 +227,7 @@ export default function SessionForm() {
   };
 
   const handleGenerate = useCallback(async () => {
-    if (!address.trim() || !currentProfile || isLoading) return;
+    if (!address.trim() || !PROFILES_BY_ID.has(selectedProfileId) || isLoading) return;
     setLoading();
 
     // Close sidebar on mobile when generating
@@ -254,7 +258,7 @@ export default function SessionForm() {
     } catch {
       setError("Erreur réseau. Vérifiez votre connexion et réessayez.");
     }
-  }, [address, currentProfile, isLoading, selectedProfileId, setError, setLoading, setSuccess, targetDistanceKm, targetElevationM, scenicMode, setSidebarOpen]);
+  }, [address, isLoading, selectedProfileId, setError, setLoading, setSuccess, targetDistanceKm, targetElevationM, scenicMode, setSidebarOpen]);
 
   // Slider ranges
   const distMin = currentProfile?.distanceRange.min ?? 5;
@@ -457,6 +461,33 @@ export default function SessionForm() {
             >
               {currentProfile.description}
             </p>
+          )}
+          {routeIntention && (
+            <div
+              style={{
+                marginTop: "12px",
+                padding: "12px 14px",
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderLeft: "3px solid var(--accent-sage)",
+                borderRadius: "2px",
+              }}
+              aria-label="Intention du parcours"
+            >
+              <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.18em", color: "var(--text-primary)", textTransform: "uppercase", marginBottom: "6px" }}>
+                {routeIntention.title}
+              </p>
+              <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+                {routeIntention.promise}
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "8px" }}>
+                {routeIntention.biases.map((bias) => (
+                  <span key={bias} style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "9px", color: "var(--accent-sage)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    {bias}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
