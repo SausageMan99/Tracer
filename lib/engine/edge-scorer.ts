@@ -85,18 +85,24 @@ function scoreQuietness(highway: string): number {
   return 0.5;
 }
 
-function scoreNature(osmWayId: number, scenicWayIds: Set<string>): number {
-  return scenicWayIds.has(String(osmWayId)) ? 1.0 : 0.3;
+function scoreNature(osmWayId: number, scenicWayIds: Set<string>, highway: string, surface: string | undefined): number {
+  if (scenicWayIds.has(String(osmWayId))) return 1.0;
+  if (TRAIL_HIGHWAY_TYPES.has(highway)) return 0.85;
+  if (surface && UNPAVED_SURFACES.has(surface)) return 0.7;
+  if (highway === "living_street" || highway === "pedestrian") return 0.55;
+  return 0.25;
 }
 
-function scoreSafety(lit?: string, access?: string): number {
-  // Penalize private/restricted access
-  if (access === "private" || access === "no") return 0.0;
+function scoreSafety(edge: { lit?: string; access?: string; foot?: string; bicycle?: string; onewayViolation?: boolean }, sport: string): number {
+  // Never route through private/restricted access.
+  if (edge.access === "private" || edge.access === "no") return 0.0;
+  if (sport === "running" && edge.foot === "no") return 0.0;
+  if (sport !== "running" && (edge.bicycle === "no" || edge.onewayViolation)) return 0.0;
 
-  // Lighting score blended into quietness
-  if (lit === "yes") return 1.0;
-  if (lit === "no") return 0.3;
-  return 0.5; // unknown
+  // Lighting score blended into quietness; unknown is neutral rather than fatal.
+  if (edge.lit === "yes") return 1.0;
+  if (edge.lit === "no") return 0.35;
+  return 0.65;
 }
 
 export async function scoreEdges(
@@ -145,9 +151,9 @@ export async function scoreEdges(
     }
 
     const surfaceScore = scoreSurface(edge.surface, profile.sport);
-    const safetyScore = scoreSafety(edge.lit, edge.access);
+    const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
-    const natureScore = scoreNature(edge.osmWayId, scenicWayIds);
+    const natureScore = scoreNature(edge.osmWayId, scenicWayIds, edge.highway, edge.surface);
 
     // Elevation score: based on gradient
     const fromElev = nodeElevation.get(edge.from) ?? 0;

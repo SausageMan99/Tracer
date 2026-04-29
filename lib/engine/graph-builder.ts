@@ -181,7 +181,14 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
     const surface = el.tags.surface;
     const lit = el.tags.lit;
     const access = el.tags.access;
+    const foot = el.tags.foot;
+    const bicycle = el.tags.bicycle;
+    const oneway = el.tags.oneway;
+    const onewayBicycle = el.tags["oneway:bicycle"];
     const wayId = el.id;
+    const isOnewayForward = oneway === "yes" || oneway === "1" || oneway === "true";
+    const isOnewayReverse = oneway === "-1";
+    const bicycleExemptFromOneway = bicycle === "designated" || bicycle === "yes" || onewayBicycle === "no";
 
     for (let i = 0; i < el.nodes.length - 1; i++) {
       const fromOsm = el.nodes[i];
@@ -230,6 +237,10 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           surface,
           lit,
           access,
+          foot,
+          bicycle,
+          oneway,
+          onewayViolation: isOnewayReverse && !bicycleExemptFromOneway,
           osmWayId: wayId,
           score: 0,
         };
@@ -247,6 +258,10 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
           surface,
           lit,
           access,
+          foot,
+          bicycle,
+          oneway,
+          onewayViolation: isOnewayForward && !bicycleExemptFromOneway,
           osmWayId: wayId,
           score: 0,
         };

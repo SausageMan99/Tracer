@@ -183,6 +183,8 @@ export interface RouteCandidate {
   loopScore: number;
   /** Weighted multi-criteria score 0–1 (higher = better match) */
   totalScore: number;
+  /** Production-readiness guardrail metrics used to reject unsafe or weak routes */
+  quality?: import("./engine/route-quality").RouteQualityMetrics;
   /** Full road-following geometry for map display (more points than `points`) */
   geometry: {
     type: "LineString";
@@ -459,6 +461,10 @@ export interface EnrichedEdge {
   surface?: string;
   lit?: string;
   access?: string;
+  foot?: string;
+  bicycle?: string;
+  oneway?: string;
+  onewayViolation?: boolean;
   osmWayId: number;
   score: number;
 }

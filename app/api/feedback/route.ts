@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { createRateLimiter } from "@/lib/rate-limiter";
+import { anonymizeIp } from "@/lib/privacy";
 
 const DATA_DIR = path.join(process.cwd(), ".data");
 const FEEDBACKS_FILE = path.join(DATA_DIR, "feedbacks.json");
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const feedbacks = await loadFeedbacksFromDisk();
-    const updated = [...feedbacks, { ...body, timestamp: Date.now(), ip }];
+    const updated = [...feedbacks, { ...body, timestamp: Date.now(), ipHash: anonymizeIp(ip) }];
     await saveFeedbacksToDisk(updated);
   } catch (err) {
     console.error("[feedback] Failed to save:", err);

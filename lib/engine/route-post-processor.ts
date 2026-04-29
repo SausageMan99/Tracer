@@ -12,6 +12,7 @@ import {
   scoreRoute,
   computeLoopScore,
 } from "../route-generator-legacy";
+import { assessRouteQuality } from "./route-quality";
 
 const MAX_ROUTE_POINTS = 200;
 
@@ -128,14 +129,14 @@ export async function postProcess(
         ? edgeScores.reduce((a, b) => a + b, 0) / edgeScores.length
         : 0.5;
 
-      const totalScore = scoreRoute(
+      const baseScore = scoreRoute(
         { ascendM, distanceKm: solverPath.distanceKm, surfaceScore, loopScore },
         profile,
         targetDistanceKm,
         targetElevationM
       );
 
-      return {
+      const candidateWithoutQuality = {
         points,
         distanceKm: solverPath.distanceKm,
         durationSeconds,
@@ -143,8 +144,25 @@ export async function postProcess(
         descendM,
         surfaceScore,
         loopScore,
-        totalScore,
+        totalScore: baseScore,
         geometry,
+      };
+
+      const quality = assessRouteQuality({
+        candidate: candidateWithoutQuality,
+        path: solverPath,
+        graph,
+        profile,
+        targetDistanceKm,
+        targetElevationM,
+      });
+
+      const totalScore = baseScore * 0.65 + quality.productionScore * 0.35;
+
+      return {
+        ...candidateWithoutQuality,
+        totalScore,
+        quality,
       };
     })
   );
