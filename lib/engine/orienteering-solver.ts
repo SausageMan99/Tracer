@@ -26,14 +26,12 @@ interface SolverConfig {
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SOLVER_CONFIGS: SolverConfig[] = [
-  { beamWidth: 60, temperature: 0.2,  seedBearing: 0,   expansionFactor: 3 },
-  { beamWidth: 40, temperature: 0.3,  seedBearing: 72,  expansionFactor: 3 },
-  { beamWidth: 80, temperature: 0.15, seedBearing: 144, expansionFactor: 3 },
-  { beamWidth: 50, temperature: 0.25, seedBearing: 216, expansionFactor: 3 },
-  { beamWidth: 70, temperature: 0.2,  seedBearing: 288, expansionFactor: 3 },
+  { beamWidth: 24, temperature: 0.2,  seedBearing: 0,   expansionFactor: 2 },
+  { beamWidth: 24, temperature: 0.25, seedBearing: 120, expansionFactor: 2 },
+  { beamWidth: 28, temperature: 0.2,  seedBearing: 240, expansionFactor: 2 },
 ];
 
-const MAX_ITERATIONS = 2000;
+const MAX_ITERATIONS = 900;
 const DISTANCE_TOLERANCE = 0.15;
 const CLOSE_ENOUGH_KM = 0.2;
 const MAX_EDGE_REVISITS = 1;
@@ -281,14 +279,7 @@ function solveWithConfig(
         const estimatedRoadReturn = straightLineReturn * ROAD_DISTANCE_FACTOR;
         const remainingBudget = maxDist - distAfterEdge;
 
-        if (progress >= 0.5) {
-          // After 50% progress, prefer A* cache distance when available
-          const cachedReturn = returnCache.getDistance(graph, edge.to, startNodeId);
-          const returnEst = cachedReturn !== null ? cachedReturn : estimatedRoadReturn;
-          if (returnEst > remainingBudget) {
-            return 0.01;
-          }
-        } else if (estimatedRoadReturn > remainingBudget) {
+        if (estimatedRoadReturn > remainingBudget) {
           return 0.01;
         }
 

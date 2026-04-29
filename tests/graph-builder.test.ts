@@ -25,7 +25,7 @@ function overpassResponse() {
 describe("buildGraph Overpass query", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    fs.rmSync(path.join(process.cwd(), ".cache", "graphs", "48.870_2.325_6.0.json"), { force: true });
+    fs.rmSync(path.join(process.cwd(), ".cache", "graphs"), { recursive: true, force: true });
   });
 
   it("keeps dense city requests focused on highway ways instead of expensive scenic nwr scans", async () => {
@@ -33,14 +33,15 @@ describe("buildGraph Overpass query", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const { graph, scenicWayIds } = await buildGraph(
-      { lat: 48.8701, lng: 2.3246 },
-      15
+      { lat: 48.8701, lng: 2.3246 }
     );
 
     const body = String(fetchMock.mock.calls[0][1]?.body ?? "");
     const decodedBody = decodeURIComponent(body);
 
     expect(decodedBody).toContain('way["highway"');
+    expect(decodedBody).toContain("around:1200");
+    expect(decodedBody).not.toContain("service");
     expect(decodedBody).not.toContain('nwr["natural"');
     expect(decodedBody).not.toContain('nwr["landuse"');
     expect(decodedBody).not.toContain('nwr["leisure"');

@@ -18,10 +18,7 @@ export async function generateRouteV2(
   const startCoordinate = await geocodeAddress(request.address);
 
   // 3. Build local OSM graph
-  const { graph, scenicWayIds } = await buildGraph(
-    startCoordinate,
-    request.targetDistanceKm
-  );
+  const { graph, scenicWayIds } = await buildGraph(startCoordinate);
 
   if (graph.nodes.size === 0) {
     throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });

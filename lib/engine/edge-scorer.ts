@@ -13,6 +13,19 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 
+const MAX_ELEVATION_NODES = 1_000;
+
+function selectElevationNodeIds(nodeIds: string[]): string[] {
+  if (nodeIds.length <= MAX_ELEVATION_NODES) return nodeIds;
+
+  const selected: string[] = [];
+  const stride = nodeIds.length / MAX_ELEVATION_NODES;
+  for (let i = 0; i < MAX_ELEVATION_NODES; i++) {
+    selected.push(nodeIds[Math.floor(i * stride)]);
+  }
+  return selected;
+}
+
 export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): SessionWeights {
   const { sport, sessionType } = profile;
 
@@ -111,9 +124,12 @@ export async function scoreEdges(
   profile: SessionProfile,
   scenicWayIds: Set<string>
 ): Promise<{ nodeElevation: Map<string, number> }> {
-  // Fetch elevations for all unique nodes
+  // Fetch elevations for a bounded sample of nodes. Dense city graphs can contain
+  // hundreds of thousands of OSM vertices; asking Open-Meteo for all of them
+  // creates thousands of parallel batches and times out the serverless function.
   const nodeIds = Array.from(graph.nodes.keys());
-  const coords: Coordinate[] = nodeIds.map((id) => {
+  const elevationNodeIds = selectElevationNodeIds(nodeIds);
+  const coords: Coordinate[] = elevationNodeIds.map((id) => {
     const n = graph.nodes.get(id)!;
     return { lat: n.lat, lng: n.lng };
   });
@@ -130,8 +146,8 @@ export async function scoreEdges(
   }
 
   const nodeElevation = new Map<string, number>();
-  for (let i = 0; i < nodeIds.length; i++) {
-    nodeElevation.set(nodeIds[i], elevations[i] ?? 0);
+  for (let i = 0; i < elevationNodeIds.length; i++) {
+    nodeElevation.set(elevationNodeIds[i], elevations[i] ?? 0);
   }
 
   // Determine preferred gradient based on profile intensity

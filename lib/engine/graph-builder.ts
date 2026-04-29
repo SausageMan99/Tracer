@@ -17,7 +17,6 @@ const HIGHWAY_FILTER = [
   "tertiary",
   "unclassified",
   "residential",
-  "service",
   "track",
   "path",
   "cycleway",
@@ -45,8 +44,12 @@ interface CachedGraph {
   cachedAt: number;
 }
 
-function computeRadius(targetDistanceKm: number): number {
-  return Math.max(2, Math.min(25, targetDistanceKm * 0.4));
+function computeRadius(): number {
+  // Dense city loops need a compact working graph. Public Overpass + Vercel
+  // cannot handle a 4–6 km Paris-centre graph (~200k–450k nodes) plus solver.
+  // A 1.2 km radius still gives enough street density for urban running loops
+  // while keeping generation under the serverless timeout.
+  return 1.2;
 }
 
 function getCacheKey(center: Coordinate, radiusKm: number): string {
@@ -83,10 +86,9 @@ function saveCache(cacheKey: string, data: CachedGraph): void {
 }
 
 export async function buildGraph(
-  center: Coordinate,
-  targetDistanceKm: number
+  center: Coordinate
 ): Promise<{ graph: EnrichedGraph; scenicWayIds: Set<string> }> {
-  const radiusKm = computeRadius(targetDistanceKm);
+  const radiusKm = computeRadius();
   const radiusM = Math.round(radiusKm * 1000);
   const cacheKey = getCacheKey(center, radiusKm);
 
@@ -108,7 +110,7 @@ export async function buildGraph(
   // into 504/timeouts. Scenic scoring is derived from tags on highway ways plus
   // trail/path/surface heuristics in edge-scorer.
   const query = `[out:json][timeout:30];(
-way["highway"~"^(${HIGHWAY_FILTER})$"](around:${radiusM},${center.lat},${center.lng});
+way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"](around:${radiusM},${center.lat},${center.lng});
 (._;>;);
 );out body qt;`;
 

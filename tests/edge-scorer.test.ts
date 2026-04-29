@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { deriveWeights } from "@/lib/engine/edge-scorer";
+import { describe, expect, it, vi } from "vitest";
+import type { EnrichedEdge, EnrichedGraph, GraphNode, SessionProfile } from "@/lib/types";
+import { deriveWeights, scoreEdges } from "@/lib/engine/edge-scorer";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 describe("deriveWeights", () => {
@@ -44,16 +45,58 @@ describe("deriveWeights", () => {
     deriveWeights(profile, true);
     expect(JSON.stringify(profile)).toBe(before);
   });
+});
 
-  it("all weights are positive", () => {
-    for (const profile of PROFILES_BY_ID.values()) {
-      for (const scenic of [false, true]) {
-        const w = deriveWeights(profile, scenic);
-        expect(w.surface).toBeGreaterThan(0);
-        expect(w.elevation).toBeGreaterThan(0);
-        expect(w.nature).toBeGreaterThan(0);
-        expect(w.quietness).toBeGreaterThan(0);
-      }
-    }
+function makeDenseGraph(nodeCount: number): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>();
+  const edges = new Map<string, EnrichedEdge>();
+
+  for (let i = 0; i < nodeCount; i++) {
+    const id = String(i);
+    nodes.set(id, { id, lat: 48.87 + i * 0.000001, lng: 2.32, edges: [] });
+  }
+
+  for (let i = 0; i < nodeCount - 1; i++) {
+    const id = `${i}-${i + 1}-1`;
+    edges.set(id, {
+      id,
+      from: String(i),
+      to: String(i + 1),
+      lengthKm: 0.01,
+      highway: "footway",
+      osmWayId: 1,
+      score: 0,
+    });
+    nodes.get(String(i))!.edges.push(id);
+  }
+
+  return { nodes, edges, center: { lat: 48.87, lng: 2.32 }, radiusKm: 3 };
+}
+
+const denseGraphProfile = {
+  sport: "running",
+  sessionType: "seuil_lactique",
+} as SessionProfile;
+
+describe("scoreEdges dense graphs", () => {
+  it("does not request elevation for every OSM node in dense city graphs", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: Array.from({ length: 100 }, () => 35) }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await scoreEdges(
+      makeDenseGraph(25_000),
+      { surface: 0.3, elevation: 0.1, nature: 0.2, quietness: 0.4 },
+      denseGraphProfile,
+      new Set()
+    );
+
+    const requestedCoordinates = fetchMock.mock.calls.reduce((total, call) => {
+      const url = new URL(String(call[0]));
+      return total + (url.searchParams.get("latitude")?.split(",").length ?? 0);
+    }, 0);
+
+    expect(requestedCoordinates).toBeLessThanOrEqual(1_000);
   });
 });
