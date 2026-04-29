@@ -101,9 +101,9 @@ describe("route production benchmarks", () => {
       ascendM: 95,
       quality: {
         productionScore: 0.84,
-        loopClosureKm: 0.18,
+        loopGapKm: 0.18,
         busyRoadRatio: 0.04,
-        naturalWayRatio: 0.38,
+        trailRatio: 0.38,
         warnings: [],
       },
     });

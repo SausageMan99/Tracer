@@ -26,8 +26,10 @@ export interface BenchmarkRouteSample {
   quality?: {
     productionScore?: number;
     loopClosureKm?: number;
+    loopGapKm?: number;
     busyRoadRatio?: number;
     naturalWayRatio?: number;
+    trailRatio?: number;
     warnings?: string[];
   };
 }
@@ -68,9 +70,9 @@ export function summarizeBenchmarkResult(
   const distanceErrorRatio = Math.abs(route.distanceKm - benchmark.targetDistanceKm) / benchmark.targetDistanceKm;
   const elevationErrorM = Math.abs(route.ascendM - benchmark.targetElevationM);
   const productionScore = quality.productionScore ?? 0;
-  const loopClosureKm = quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
+  const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
-  const naturalWayRatio = quality.naturalWayRatio ?? 0;
+  const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
   const warnings = quality.warnings ?? [];
 
   const failures: string[] = [];

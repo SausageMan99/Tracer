@@ -146,18 +146,41 @@ export function haversineKm(a: Coordinate, b: Coordinate): number {
 export async function geocodeAddress(address: string): Promise<Coordinate> {
   const token = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? process.env.MAPBOX_TOKEN ?? "";
   const encoded = encodeURIComponent(address);
-  const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${token}&limit=1&language=fr`;
 
+  if (token) {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${encodeURIComponent(token)}&limit=1&language=fr`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (!res.ok) throw new Error("GEOCODING_FAILED");
+
+    const data: { features: MapboxFeature[] } = await res.json();
+    if (!data.features?.length) throw new Error("GEOCODING_FAILED");
+
+    const [lng, lat] = data.features[0].center;
+    return { lat, lng };
+  }
+
+  const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=jsonv2&limit=1&countrycodes=fr`;
   const res = await fetch(url, {
+    headers: {
+      "User-Agent": "TrailForge/0.1 route benchmark geocoder",
+      Accept: "application/json",
+    },
     signal: AbortSignal.timeout(10_000),
   });
 
   if (!res.ok) throw new Error("GEOCODING_FAILED");
 
-  const data: { features: MapboxFeature[] } = await res.json();
-  if (!data.features?.length) throw new Error("GEOCODING_FAILED");
+  const data: Array<{ lat: string; lon: string }> = await res.json();
+  const first = data[0];
+  if (!first) throw new Error("GEOCODING_FAILED");
 
-  const [lng, lat] = data.features[0].center;
+  const lat = Number(first.lat);
+  const lng = Number(first.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) throw new Error("GEOCODING_FAILED");
+
   return { lat, lng };
 }
 
