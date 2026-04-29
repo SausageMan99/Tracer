@@ -126,11 +126,14 @@ export async function POST(req: NextRequest) {
   try {
     let route;
 
-    // V2 is loops-only — use legacy for waypoints/endAddress
+    // V2 is optimized for running loops. Waypoints/end-address and cycling long
+    // distances use the controlled external-routing strategy (ORS/GraphHopper)
+    // instead of forcing the local Overpass beam solver into huge graphs.
     const hasWaypoints =
       (routeRequest.waypoints?.length ?? 0) > 0 || !!routeRequest.endAddress;
+    const shouldUseExternalRouting = hasWaypoints || profile.sport !== "running";
 
-    if (hasWaypoints) {
+    if (shouldUseExternalRouting) {
       route = await generateRoute(routeRequest);
     } else {
       route = await generateRouteV2(routeRequest);

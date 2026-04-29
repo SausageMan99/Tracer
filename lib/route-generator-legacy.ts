@@ -457,6 +457,18 @@ function subsamplePoints(
  * const elevs = await fetchElevations([{ lat: 45.8, lng: 6.9 }]);
  * // elevs → [1832]  (Chamonix area)
  */
+async function fetchOpenTopoDataElevations(batch: Coordinate[]): Promise<number[]> {
+  const url = new URL("https://api.opentopodata.org/v1/aster30m");
+  url.searchParams.set("locations", batch.map((c) => `${c.lat},${c.lng}`).join("|"));
+
+  const res = await fetch(url.toString());
+  if (!res.ok) throw new Error("OpenTopoData elevation request failed");
+  const data: { results?: Array<{ elevation?: number | null }> } = await res.json();
+  const elevations = data.results?.map((result) => result.elevation ?? 0) ?? [];
+  if (elevations.length !== batch.length) throw new Error("Incomplete OpenTopoData elevation response");
+  return elevations;
+}
+
 export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
   if (coords.length === 0) return [];
 
@@ -473,6 +485,7 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
 
       try {
         const res = await fetch(url.toString());
+        if (!res.ok) throw new Error(`Open-Meteo elevation request failed: ${res.status}`);
         const data: OpenMeteoElevationResponse = await res.json();
         const rawElevation = data.elevation;
         if (!rawElevation || !Array.isArray(rawElevation) || rawElevation.length === 0) {
@@ -480,7 +493,11 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
         }
         return rawElevation;
       } catch {
-        return batch.map(() => 0);
+        try {
+          return await fetchOpenTopoDataElevations(batch);
+        } catch {
+          return batch.map(() => 0);
+        }
       }
     })
   );
@@ -504,16 +521,38 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
  * computeAscent([100, 150, 120, 200])
  * // → { ascendM: 130, descendM: 30 }
  */
-export function computeAscent(elevations: number[]): {
+export function computeAscent(elevations: number[], smoothingThresholdM = 0): {
   ascendM: number;
   descendM: number;
 } {
+  const cleanedElevations = elevations.map((elevation, index) => {
+    const previous = elevations[index - 1];
+    const next = elevations[index + 1];
+    if (
+      index > 0 &&
+      index < elevations.length - 1 &&
+      elevation === 0 &&
+      previous > 20 &&
+      next > 20 &&
+      Math.abs(previous - next) <= 15
+    ) {
+      return (previous + next) / 2;
+    }
+    return elevation;
+  });
+
   let ascendM = 0;
   let descendM = 0;
-  for (let i = 1; i < elevations.length; i++) {
-    const diff = elevations[i] - elevations[i - 1];
+  let anchorElevation = cleanedElevations[0];
+
+  for (let i = 1; i < cleanedElevations.length; i++) {
+    const currentElevation = cleanedElevations[i];
+    const diff = currentElevation - anchorElevation;
+    if (Math.abs(diff) <= smoothingThresholdM) continue;
+
     if (diff > 0) ascendM += diff;
     else descendM += Math.abs(diff);
+    anchorElevation = currentElevation;
   }
   return { ascendM, descendM };
 }

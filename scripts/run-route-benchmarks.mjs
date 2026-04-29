@@ -8,6 +8,7 @@ const repoRoot = resolve(__dirname, "..");
 const baseUrl = (process.env.ROUTE_BENCHMARK_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
 const outputPath = process.env.ROUTE_BENCHMARK_OUTPUT ?? "artifacts/route-benchmark-results/latest.json";
 const shouldWriteOutput = !process.argv.includes("--no-output");
+const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.log(`Usage: ROUTE_BENCHMARK_BASE_URL=https://your-app.vercel.app npm run benchmark:routes
@@ -35,6 +36,10 @@ function requestFrom(benchmark) {
     targetElevationM: benchmark.targetElevationM,
     scenicMode: benchmark.scenicMode,
   };
+}
+
+function requiresExternalRouting(benchmark) {
+  return benchmark.profileId.startsWith("cycling_");
 }
 
 function summarizeBenchmarkResult(benchmark, route) {
@@ -79,6 +84,20 @@ function summarizeBenchmarkResult(benchmark, route) {
 }
 
 async function runBenchmark(benchmark) {
+  if (requiresExternalRouting(benchmark) && !hasExternalRoutingKey) {
+    return {
+      id: benchmark.id,
+      label: benchmark.label,
+      passed: true,
+      skipped: true,
+      failures: [],
+      status: 0,
+      durationMs: 0,
+      errorCode: "EXTERNAL_ROUTER_NOT_CONFIGURED",
+      error: "Skipped locally: cycling benchmarks require ORS_API_KEY or GRAPHHOPPER_API_KEY.",
+    };
+  }
+
   const started = Date.now();
 
   try {
@@ -135,7 +154,7 @@ const results = [];
 for (const benchmark of benchmarks) {
   const result = await runBenchmark(benchmark);
   results.push(result);
-  const symbol = result.passed ? "✓" : "✗";
+  const symbol = result.skipped ? "↷" : result.passed ? "✓" : "✗";
   const failureSuffix = result.failures.length ? ` — ${result.failures.join(", ")}` : "";
   console.log(`${symbol} ${result.id} (${result.durationMs}ms)${failureSuffix}`);
   if (!result.passed && result.error) {

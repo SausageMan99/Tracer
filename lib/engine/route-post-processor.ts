@@ -53,6 +53,37 @@ function estimateDuration(
   return (distanceKm * baseMinPerKm + climbPenalty) * 60;
 }
 
+function rankPathsForPostProcess(
+  paths: SolverPath[],
+  targetDistanceKm: number,
+  limit: number
+): SolverPath[] {
+  return [...paths]
+    .sort((a, b) => {
+      const distancePenaltyA = Math.abs(a.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
+      const distancePenaltyB = Math.abs(b.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
+      const scoreA = a.totalScore / Math.max(a.distanceKm, 0.1) - distancePenaltyA * 2;
+      const scoreB = b.totalScore / Math.max(b.distanceKm, 0.1) - distancePenaltyB * 2;
+      return scoreB - scoreA;
+    })
+    .slice(0, limit);
+}
+
+function candidateRankingScore(
+  candidate: RouteCandidate,
+  targetDistanceKm: number,
+  targetElevationM: number
+): number {
+  const distancePenalty = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
+  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationPenalty = Math.max(0, Math.abs(candidate.ascendM - targetElevationM) - elevationToleranceM) / elevationToleranceM;
+
+  const trailRatio = candidate.quality?.trailRatio ?? 0;
+  const trailDeficitPenalty = targetDistanceKm >= 8 ? Math.max(0, 0.2 - trailRatio) * 0.8 : 0;
+
+  return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
+}
+
 export async function postProcess(
   paths: SolverPath[],
   graph: EnrichedGraph,
@@ -60,12 +91,14 @@ export async function postProcess(
   profile: SessionProfile,
   targetDistanceKm: number,
   targetElevationM: number,
-  nodeElevation: Map<string, number> = new Map()
+  nodeElevation: Map<string, number> = new Map(),
+  scenicWayIds: Set<string> = new Set()
 ): Promise<RouteCandidate[]> {
   if (paths.length === 0) return [];
 
-  // Take top 6 paths
-  const topPaths = paths.slice(0, 6);
+  // Keep a distance-aware shortlist. Raw solver score alone can prefer shorter
+  // high-quality loops and discard the only path that actually matches the ask.
+  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, 8);
 
   const candidates: RouteCandidate[] = await Promise.all(
     topPaths.map(async (solverPath) => {
@@ -80,8 +113,11 @@ export async function postProcess(
 
       // Build elevations from pre-fetched nodeElevation map, fall back to API
       let elevations: number[];
-      if (nodeElevation.size > 0) {
-        // Look up elevation for each sampled coordinate by matching back to closest node
+      if (nodeElevation.size > 0 && graph.nodes.size <= 1_000) {
+        // On small graphs every node has a direct elevation sample. On dense
+        // Overpass graphs, sampled-node interpolation follows OSM insertion order
+        // rather than the route geometry and can create fake D+ cliffs; route
+        // coordinates are safer for final ascent metrics.
         elevations = solverPath.nodeIds.length === fullCoords.length
           ? subsampleValues(
               solverPath.nodeIds.map((nid) => nodeElevation.get(nid) ?? 0),
@@ -103,8 +139,10 @@ export async function postProcess(
         elevation: elevations[i] ?? undefined,
       }));
 
+      const elevationSmoothingThresholdM = targetElevationM <= 50 ? 35 : 20;
       const { ascendM, descendM } = computeAscent(
-        elevations.filter((e): e is number => e != null)
+        elevations.filter((e): e is number => e != null),
+        elevationSmoothingThresholdM
       );
 
       const durationSeconds = estimateDuration(
@@ -155,6 +193,7 @@ export async function postProcess(
         profile,
         targetDistanceKm,
         targetElevationM,
+        scenicWayIds,
       });
 
       const totalScore = baseScore * 0.65 + quality.productionScore * 0.35;
@@ -168,7 +207,10 @@ export async function postProcess(
   );
 
   // Sort by totalScore descending
-  candidates.sort((a, b) => b.totalScore - a.totalScore);
+  candidates.sort((a, b) =>
+    candidateRankingScore(b, targetDistanceKm, targetElevationM) -
+    candidateRankingScore(a, targetDistanceKm, targetElevationM)
+  );
 
   return candidates;
 }

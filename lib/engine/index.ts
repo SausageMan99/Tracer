@@ -18,7 +18,10 @@ export async function generateRouteV2(
   const startCoordinate = await geocodeAddress(request.address);
 
   // 3. Build local OSM graph
-  const { graph, scenicWayIds } = await buildGraph(startCoordinate);
+  const { graph, scenicWayIds } = await buildGraph(startCoordinate, {
+    targetDistanceKm: request.targetDistanceKm,
+    sport: profile.sport,
+  });
 
   if (graph.nodes.size === 0) {
     throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });
@@ -64,7 +67,8 @@ export async function generateRouteV2(
     profile,
     request.targetDistanceKm,
     request.targetElevationM,
-    nodeElevation
+    nodeElevation,
+    scenicWayIds
   );
 
   if (candidates.length === 0) {
@@ -76,6 +80,7 @@ export async function generateRouteV2(
   // 8. Impossible D+ detection
   if (
     request.targetElevationM > 200 &&
+    Math.max(...candidates.map((c) => c.ascendM)) > 0 &&
     best.ascendM < request.targetElevationM * 0.3
   ) {
     const maxEstimate = Math.round(

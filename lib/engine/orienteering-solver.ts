@@ -397,14 +397,17 @@ function solveWithConfig(
 
             if (newDist + returnDist >= minDist && newDist + returnDist <= maxDist) {
               // Close loop via A* return path
+              const closedDistance = newDist + returnDist;
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath) {
                 validPaths.push({
                   nodeIds: [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   edgeIds: [...newState.edgeIds, ...returnPath.edgeIds],
                   totalScore: newState.totalScore,
-                  distanceKm: newDist + returnPath.distanceKm,
+                  distanceKm: closedDistance,
                 });
+              }
+              if (closedDistance >= targetDistanceKm * 0.98) {
                 continue;
               }
             }
@@ -419,8 +422,8 @@ function solveWithConfig(
                   totalScore: newState.totalScore,
                   distanceKm: newDist + returnPath.distanceKm,
                 });
-                continue;
               }
+              continue;
             }
           }
         }
@@ -439,7 +442,6 @@ function solveWithConfig(
               totalScore: newState.totalScore,
               distanceKm: newState.distanceKm,
             });
-            continue;
           }
         }
 

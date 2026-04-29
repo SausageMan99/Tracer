@@ -27,6 +27,59 @@ function selectElevationNodeIds(nodeIds: string[]): string[] {
   return selected;
 }
 
+function buildDenseElevationMap(
+  nodeIds: string[],
+  sampledNodeIds: string[],
+  elevations: number[]
+): Map<string, number> {
+  const nodeElevation = new Map<string, number>();
+  const positionByNodeId = new Map<string, number>();
+  for (let position = 0; position < nodeIds.length; position++) {
+    positionByNodeId.set(nodeIds[position], position);
+  }
+
+  const samples = sampledNodeIds
+    .map((nodeId, index) => ({
+      nodeId,
+      position: positionByNodeId.get(nodeId) ?? -1,
+      elevation: elevations[index] ?? 0,
+    }))
+    .filter((sample) => sample.position >= 0)
+    .sort((a, b) => a.position - b.position);
+
+  if (samples.length === 0) {
+    for (const nodeId of nodeIds) nodeElevation.set(nodeId, 0);
+    return nodeElevation;
+  }
+
+  let nextSampleIndex = 0;
+  for (let position = 0; position < nodeIds.length; position++) {
+    while (
+      nextSampleIndex < samples.length - 1 &&
+      samples[nextSampleIndex + 1].position <= position
+    ) {
+      nextSampleIndex++;
+    }
+
+    const previousSample = samples[nextSampleIndex];
+    const nextSample = samples[nextSampleIndex + 1];
+
+    if (!nextSample) {
+      nodeElevation.set(nodeIds[position], previousSample.elevation);
+      continue;
+    }
+
+    const span = Math.max(1, nextSample.position - previousSample.position);
+    const t = Math.max(0, Math.min(1, (position - previousSample.position) / span));
+    nodeElevation.set(
+      nodeIds[position],
+      previousSample.elevation + (nextSample.elevation - previousSample.elevation) * t
+    );
+  }
+
+  return nodeElevation;
+}
+
 export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): SessionWeights {
   const { sport, sessionType } = profile;
 
@@ -157,10 +210,7 @@ export async function scoreEdges(
     elevations = coords.map(() => 0);
   }
 
-  const nodeElevation = new Map<string, number>();
-  for (let i = 0; i < elevationNodeIds.length; i++) {
-    nodeElevation.set(elevationNodeIds[i], elevations[i] ?? 0);
-  }
+  const nodeElevation = buildDenseElevationMap(nodeIds, elevationNodeIds, elevations);
 
   // Determine preferred gradient based on profile intensity
   const prefersFlat =

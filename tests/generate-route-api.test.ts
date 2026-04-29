@@ -60,7 +60,7 @@ describe("POST /api/generate-route", () => {
     expect(generateRouteLegacyMock).not.toHaveBeenCalled();
   });
 
-  it("keeps legacy generation only for waypoint or end-address routes", async () => {
+  it("keeps legacy generation for waypoint or end-address routes", async () => {
     generateRouteLegacyMock.mockResolvedValue({ id: "point-to-point-route" });
 
     const { POST } = await import("@/app/api/generate-route/route");
@@ -71,6 +71,26 @@ describe("POST /api/generate-route", () => {
 
     expect(response.status).toBe(200);
     expect(payload).toMatchObject({ success: true, route: { id: "point-to-point-route" } });
+    expect(generateRouteV2Mock).not.toHaveBeenCalled();
+    expect(generateRouteLegacyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes long cycling loops through the controlled external-routing strategy instead of V2", async () => {
+    generateRouteLegacyMock.mockResolvedValue({ id: "road-bike-loop" });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(
+      makeRequest({
+        address: "Place Sainte-Anne, Rennes",
+        profileId: "cycling_road_endurance",
+        targetDistanceKm: 70,
+        targetElevationM: 500,
+      }) as never
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({ success: true, route: { id: "road-bike-loop" } });
     expect(generateRouteV2Mock).not.toHaveBeenCalled();
     expect(generateRouteLegacyMock).toHaveBeenCalledTimes(1);
   });

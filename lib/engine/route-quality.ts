@@ -76,15 +76,20 @@ export function assessRouteQuality(args: {
   profile: SessionProfile;
   targetDistanceKm: number;
   targetElevationM: number;
+  scenicWayIds?: Set<string>;
 }): RouteQualityMetrics {
-  const { candidate, path, graph, profile, targetDistanceKm, targetElevationM } = args;
+  const { candidate, path, graph, profile, targetDistanceKm, targetElevationM, scenicWayIds = new Set() } = args;
   const edges = path.edgeIds
     .map((edgeId) => graph.edges.get(edgeId))
     .filter((edge): edge is EnrichedEdge => edge != null);
 
   const totalKm = edgeLengthSum(edges) || candidate.distanceKm || 1;
   const busyKm = edgeLengthSum(edges.filter((edge) => BUSY_HIGHWAY_TYPES.has(edge.highway)));
-  const trailKm = edgeLengthSum(edges.filter((edge) => TRAIL_HIGHWAY_TYPES.has(edge.highway)));
+  const naturalKm = edgeLengthSum(
+    edges.filter((edge) =>
+      TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId))
+    )
+  );
   const restrictedKm = edgeLengthSum(edges.filter((edge) => hasRestrictedAccess(edge, profile)));
   const onewayViolationKm = edgeLengthSum(
     edges.filter((edge) => profile.sport !== "running" && edge.onewayViolation === true)
@@ -100,7 +105,7 @@ export function assessRouteQuality(args: {
     : Infinity;
 
   const busyRoadRatio = ratio(busyKm, totalKm);
-  const trailRatio = ratio(trailKm, totalKm);
+  const trailRatio = ratio(naturalKm, totalKm);
   const restrictedAccessRatio = ratio(restrictedKm, totalKm);
   const onewayViolationRatio = ratio(onewayViolationKm, totalKm);
   const repeatEdgeRatio = computeRepeatRatio(edges, totalKm);

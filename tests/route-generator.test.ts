@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { scoreRoute, computeAscent, haversineKm } from "@/lib/route-generator-legacy";
+import { describe, it, expect, vi } from "vitest";
+import { scoreRoute, computeAscent, fetchElevations, haversineKm } from "@/lib/route-generator-legacy";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import { generateGPX } from "@/lib/gpx-export";
 import type { GeneratedRoute, RoutePoint } from "@/lib/types";
@@ -160,6 +160,29 @@ describe("haversineKm", () => {
   });
 });
 
+describe("fetchElevations", () => {
+  it("falls back to OpenTopoData when Open-Meteo is rate limited", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: true, reason: "Daily API request limit exceeded" }), { status: 429 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        results: [
+          { elevation: 48 },
+          { elevation: 52 },
+        ],
+      }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const elevations = await fetchElevations([
+      { lat: 48.8566, lng: 2.3522 },
+      { lat: 48.86, lng: 2.36 },
+    ]);
+
+    expect(elevations).toEqual([48, 52]);
+    expect(String(fetchMock.mock.calls[1][0])).toContain("api.opentopodata.org");
+    vi.unstubAllGlobals();
+  });
+});
+
 // ─── Test 5: computeAscent ───────────────────────────────────────────────────
 
 describe("computeAscent", () => {
@@ -172,9 +195,18 @@ describe("computeAscent", () => {
     expect(descendM).toBeCloseTo(10, 1);
   });
 
-  it("returns 0 for a flat route", () => {
-    const flat = [100, 100, 100, 100];
-    const { ascendM, descendM } = computeAscent(flat);
+  it("can ignore small elevation noise when a smoothing threshold is provided", () => {
+    const noisyFlat = [100, 102, 101, 103, 100, 101];
+    const { ascendM, descendM } = computeAscent(noisyFlat, 4);
+
+    expect(ascendM).toBe(0);
+    expect(descendM).toBe(0);
+  });
+
+  it("ignores isolated missing-elevation zero dips between plausible neighboring points", () => {
+    const noisyProfile = [50, 51, 0, 52, 53, 0, 54];
+    const { ascendM, descendM } = computeAscent(noisyProfile, 4);
+
     expect(ascendM).toBe(0);
     expect(descendM).toBe(0);
   });

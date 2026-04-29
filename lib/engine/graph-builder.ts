@@ -44,12 +44,25 @@ interface CachedGraph {
   cachedAt: number;
 }
 
-function computeRadius(): number {
-  // Dense city loops need a compact working graph. Public Overpass + Vercel
-  // cannot handle a 4–6 km Paris-centre graph (~200k–450k nodes) plus solver.
-  // A 1.2 km radius still gives enough street density for urban running loops
-  // while keeping generation under the serverless timeout.
-  return 1.2;
+interface GraphBuildOptions {
+  targetDistanceKm?: number;
+  sport?: string;
+}
+
+function computeRadius(options: GraphBuildOptions = {}): number {
+  const targetDistanceKm = options.targetDistanceKm ?? 5;
+
+  if (options.sport === "cycling_road") {
+    return Math.max(2.5, Math.min(9, Number((targetDistanceKm / 8).toFixed(1))));
+  }
+
+  if (options.sport === "cycling_mtb" || options.sport === "cycling_gravel") {
+    return Math.max(2, Math.min(6, Number((targetDistanceKm / 7).toFixed(1))));
+  }
+
+  // Dense city running loops need enough radius to hit 8–12 km without issuing
+  // 4–6 km Paris-centre Overpass queries. 10 km maps to 1.6 km; 5 km stays 1.2.
+  return Math.max(1.2, Math.min(2.2, Number((targetDistanceKm / 6.25).toFixed(1))));
 }
 
 function getCacheKey(center: Coordinate, radiusKm: number): string {
@@ -86,9 +99,10 @@ function saveCache(cacheKey: string, data: CachedGraph): void {
 }
 
 export async function buildGraph(
-  center: Coordinate
+  center: Coordinate,
+  options: GraphBuildOptions = {}
 ): Promise<{ graph: EnrichedGraph; scenicWayIds: Set<string> }> {
-  const radiusKm = computeRadius();
+  const radiusKm = computeRadius(options);
   const radiusM = Math.round(radiusKm * 1000);
   const cacheKey = getCacheKey(center, radiusKm);
 
