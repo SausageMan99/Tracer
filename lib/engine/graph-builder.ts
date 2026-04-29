@@ -103,13 +103,13 @@ export async function buildGraph(
     };
   }
 
-  // Fetch highway ways with geometry + scenic features
+  // Fetch only routable highway ways and their nodes.
+  // Dense city scenic nwr scans around 5–8 km can push public Overpass mirrors
+  // into 504/timeouts. Scenic scoring is derived from tags on highway ways plus
+  // trail/path/surface heuristics in edge-scorer.
   const query = `[out:json][timeout:30];(
 way["highway"~"^(${HIGHWAY_FILTER})$"](around:${radiusM},${center.lat},${center.lng});
 (._;>;);
-nwr["natural"~"^(water|wood|forest|grassland|heath)$"](around:${radiusM},${center.lat},${center.lng});
-nwr["landuse"~"^(forest|wood)$"](around:${radiusM},${center.lat},${center.lng});
-nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
 );out body qt;`;
 
   const overpassFetch = async (attempt: number): Promise<Response> => {
@@ -117,7 +117,10 @@ nwr["leisure"="nature_reserve"](around:${radiusM},${center.lat},${center.lng});
       const res = await fetch("https://overpass-api.de/api/interpreter", {
         method: "POST",
         body: `data=${encodeURIComponent(query)}`,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "User-Agent": "TrailForge/0.1 contact:clement.dubosq@wanadoo.fr",
+        },
         signal: AbortSignal.timeout(30_000),
       });
       if (res.status === 429 || res.status === 503) {
