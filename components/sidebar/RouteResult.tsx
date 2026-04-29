@@ -107,24 +107,19 @@ export default function RouteResult() {
     targetElevationM,
   } = useAppStore();
 
-  const [feedbackCount, setFeedbackCount] = useState(0);
+  const feedbackCount = loadFeedbacks().length;
   const [showWaitlistWidget, setShowWaitlistWidget] = useState(false);
-  const [waitlistDismissed, setWaitlistDismissed] = useState(false);
-
-  useEffect(() => {
-    setFeedbackCount(loadFeedbacks().length);
-  }, [currentRoute]);
+  const [waitlistDismissed, setWaitlistDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("tf-waitlist-dismissed") === "1";
+  });
 
   // Show waitlist widget after 30s or after first GPX download
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (localStorage.getItem("tf-waitlist-dismissed") === "1") {
-      setWaitlistDismissed(true);
-      return;
-    }
+    if (typeof window === "undefined" || waitlistDismissed) return;
     const timer = setTimeout(() => setShowWaitlistWidget(true), 30000);
     return () => clearTimeout(timer);
-  }, []);
+  }, [waitlistDismissed]);
 
   const handleDismissWaitlist = useCallback(() => {
     setWaitlistDismissed(true);
@@ -474,7 +469,6 @@ export default function RouteResult() {
             <button
               onClick={() => {
                 exportFeedbacksAsJSON();
-                setFeedbackCount(loadFeedbacks().length);
               }}
               style={{
                 fontFamily: "var(--font-syne), sans-serif",

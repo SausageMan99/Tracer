@@ -7,6 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
+    "benchmark:routes": "node scripts/run-route-benchmarks.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },

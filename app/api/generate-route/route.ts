@@ -2,7 +2,7 @@
  * POST /api/generate-route
  *
  * Entry point for route generation. Validates the request body, delegates
- * to V2 engine (loop-only) or legacy engine, and maps errors to HTTP responses.
+ * loop generation to V2 or waypoint/end-address routes to legacy, and maps errors to HTTP responses.
  *
  * Request body: `GenerateRouteRequest`
  * Success response (200): `GenerateRouteResponse`
@@ -133,15 +133,7 @@ export async function POST(req: NextRequest) {
     if (hasWaypoints) {
       route = await generateRoute(routeRequest);
     } else {
-      try {
-        route = await generateRouteV2(routeRequest);
-      } catch (v2Err) {
-        console.warn(
-          "[generate-route] V2 engine failed, falling back to legacy:",
-          v2Err instanceof Error ? v2Err.message : v2Err
-        );
-        route = await generateRoute(routeRequest);
-      }
+      route = await generateRouteV2(routeRequest);
     }
 
     return NextResponse.json({ success: true, route });

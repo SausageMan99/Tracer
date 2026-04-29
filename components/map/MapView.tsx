@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppStore } from "@/lib/store";
@@ -28,6 +28,16 @@ const EMPTY_POINT: GeoJSON.Feature = {
 };
 
 const DRAW_DURATION_MS = 1400;
+
+function cleanupRouteArtifacts(
+  rafRef: RefObject<number | null>,
+  markerRef: RefObject<mapboxgl.Marker | null>
+) {
+  const rafId = rafRef.current;
+  const marker = markerRef.current;
+  if (rafId) cancelAnimationFrame(rafId);
+  marker?.remove();
+}
 
 // ── Slope → color expression (Mapbox data-driven) ────────────────────────────
 
@@ -463,11 +473,7 @@ export default function MapView() {
     }
 
     return () => {
-      // Capture mutable ref values at cleanup time
-      const rafId = rafRef.current;
-      const marker = markerRef.current;
-      if (rafId) cancelAnimationFrame(rafId);
-      marker?.remove();
+      cleanupRouteArtifacts(rafRef, markerRef);
       // Mapbox GL's map.remove() aborts in-flight fetch requests via AbortController.
       // These fire unhandled rejection events ("signal is aborted without reason")
       // that Next.js dev overlay picks up. Temporarily swallow them during teardown.

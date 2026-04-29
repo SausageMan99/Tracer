@@ -155,7 +155,13 @@ export default function SessionForm() {
   // caps at step 2 ("OPTIMISATION...") with progress at 80%.
   // The final step only appears when the API actually responds.
   useEffect(() => {
-    if (!isLoading) { setStepIndex(0); setProgressPct(0); return; }
+    if (!isLoading) {
+      const resetTimer = setTimeout(() => {
+        setStepIndex(0);
+        setProgressPct(0);
+      }, 0);
+      return () => clearTimeout(resetTimer);
+    }
     const pcts = [15, 45, 70, 80];
     const delays = [0, 2000, 4500, 8000]; // ms after loading starts
     const timers: ReturnType<typeof setTimeout>[] = [];
