@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "benchmark:routes": "node scripts/run-route-benchmarks.mjs",
+    "audit:osm": "node scripts/audit-osm-terrain.mjs",
     "test": "vitest",
     "test:run": "vitest run"
   },
