@@ -22,7 +22,11 @@ export interface RouteBenchmarkCase {
     minNaturalCorridorRatio?: number;
     maxRepeatEdgeRatio?: number;
     maxUTurnRatio?: number;
+    minTerrainDataConfidence?: "low" | "medium" | "high";
+    minTrailPotential?: "low" | "medium" | "high";
+    maxDurationMs?: number;
   };
+  blockingWarnings?: string[];
   notes: string;
 }
 
@@ -42,8 +46,11 @@ export interface BenchmarkRouteSample {
     naturalCorridorRatio?: number;
     repeatEdgeRatio?: number;
     uTurnRatio?: number;
+    terrainDataConfidence?: "low" | "medium" | "high";
+    trailPotential?: "low" | "medium" | "high";
     warnings?: string[];
   };
+  durationMs?: number;
 }
 
 export interface BenchmarkSummary {
@@ -64,6 +71,9 @@ export interface BenchmarkSummary {
     naturalCorridorRatio: number;
     repeatEdgeRatio: number;
     uTurnRatio: number;
+    terrainDataConfidence: "unknown" | "low" | "medium" | "high";
+    trailPotential: "unknown" | "low" | "medium" | "high";
+    durationMs: number | null;
     warnings: string[];
   };
 }
@@ -97,6 +107,9 @@ export function summarizeBenchmarkResult(
   const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
   const repeatEdgeRatio = quality.repeatEdgeRatio ?? 0;
   const uTurnRatio = quality.uTurnRatio ?? 0;
+  const terrainDataConfidence = quality.terrainDataConfidence ?? "unknown";
+  const trailPotential = quality.trailPotential ?? "unknown";
+  const durationMs = route.durationMs ?? null;
   const warnings = quality.warnings ?? [];
 
   const failures: string[] = [];
@@ -158,14 +171,29 @@ export function summarizeBenchmarkResult(
   ) {
     failures.push("u_turn_ratio");
   }
-  if (warnings.includes("ONEWAY_VIOLATION")) {
-    failures.push("oneway_violation");
+  if (
+    benchmark.thresholds.minTerrainDataConfidence !== undefined &&
+    compareOrderedLevel(terrainDataConfidence, benchmark.thresholds.minTerrainDataConfidence) < 0
+  ) {
+    failures.push("terrain_data_confidence");
   }
-  if (warnings.includes("U_TURN_DETECTED")) {
-    failures.push("u_turn_detected");
+  if (
+    benchmark.thresholds.minTrailPotential !== undefined &&
+    compareOrderedLevel(trailPotential, benchmark.thresholds.minTrailPotential) < 0
+  ) {
+    failures.push("trail_potential");
   }
-  if (warnings.includes("TOO_MUCH_BACKTRACKING")) {
-    failures.push("backtracking_detected");
+  if (
+    benchmark.thresholds.maxDurationMs !== undefined &&
+    durationMs !== null &&
+    durationMs > benchmark.thresholds.maxDurationMs
+  ) {
+    failures.push("duration_ms");
+  }
+  for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
+    if (warnings.includes(warning)) {
+      failures.push(warningToFailure(warning));
+    }
   }
 
   return {
@@ -186,7 +214,25 @@ export function summarizeBenchmarkResult(
       naturalCorridorRatio,
       repeatEdgeRatio,
       uTurnRatio,
+      terrainDataConfidence,
+      trailPotential,
+      durationMs,
       warnings,
     },
   };
+}
+
+function compareOrderedLevel(
+  actual: "unknown" | "low" | "medium" | "high",
+  minimum: "low" | "medium" | "high"
+): number {
+  const rank = { unknown: -1, low: 0, medium: 1, high: 2 } as const;
+  return rank[actual] - rank[minimum];
+}
+
+function warningToFailure(warning: string): string {
+  if (warning === "ONEWAY_VIOLATION") return "oneway_violation";
+  if (warning === "U_TURN_DETECTED") return "u_turn_detected";
+  if (warning === "TOO_MUCH_BACKTRACKING") return "backtracking_detected";
+  return `blocking_warning:${warning}`;
 }

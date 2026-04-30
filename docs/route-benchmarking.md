@@ -1,6 +1,6 @@
-# Route production benchmarks
+# Route engine benchmarks
 
-TrailForge doit être évalué comme un produit outdoor, pas seulement comme une API qui répond 200. Le script `npm run benchmark:routes` rejoue les cas terrain critiques contre `/api/generate-route` et échoue dès qu'une route manque un seuil produit.
+TrailForge doit être évalué comme un produit trail/running, pas seulement comme une API qui répond 200. Le script `npm run benchmark:routes` rejoue les cas terrain critiques contre `/api/generate-route` et échoue dès qu'une route viole un seuil qualité critique.
 
 ## Lancer le banc
 
@@ -11,17 +11,53 @@ ROUTE_BENCHMARK_BASE_URL=http://localhost:3000 npm run benchmark:routes
 Par défaut, le script cible `http://localhost:3000`. Pour tester Vercel ou une preview :
 
 ```bash
-ROUTE_BENCHMARK_BASE_URL=https://trailforge.example.vercel.app npm run benchmark:routes
+ROUTE_BENCHMARK_BASE_URL=https://trailforge-preview.vercel.app npm run benchmark:routes
 ```
 
-Un rapport JSON est écrit dans `artifacts/route-benchmark-results/latest.json`, sauf avec `--no-output`.
+Commandes utiles :
+
+```bash
+npm run benchmark:routes -- --help
+npm run benchmark:routes -- --list
+npm run benchmark:routes -- --case tourville
+npm run benchmark:routes -- --case tourville-pommiers-trail-10k --save-artifacts
+npm run benchmark:routes -- --case caen --output artifacts/route-benchmark-results/caen.json
+```
 
 ## Source de vérité
 
-Les scénarios sont définis dans `lib/route-benchmarks-data.json`. Ce fichier est consommé à la fois par le domaine TypeScript (`lib/route-benchmarks.ts`) et par le runner Node (`scripts/run-route-benchmarks.mjs`) pour éviter deux listes divergentes.
+Les scénarios sont définis dans `lib/route-benchmarks-data.json`. Ce fichier est consommé par `lib/route-benchmarks.ts`, par les tests Vitest et par le runner Node `scripts/run-route-benchmarks.mjs`. Il ne doit pas y avoir de deuxième liste cachée.
 
-Chaque cas fixe : adresse, profil, distance, D+, mode scenic éventuel, puis seuils qualité. Les seuils couvrent l'écart distance, l'écart D+, le score production, la fermeture de boucle, le ratio grands axes et, quand pertinent, le ratio nature.
+Le panel actuel contient 12 cas, orientés Phase 1 trail/running : Tourville-sur-Odon 5/8/10/12 km depuis `7 Rue des Pommiers`, Caen Prairie/Orne, Caen Colline aux Oiseaux, Clécy/Suisse normande, Fontainebleau, Meudon, Lille Citadelle, Paris 19 canal/Buttes-Chaumont et Nanterre grands axes.
 
-## Principe CTO
+## Seuils contrôlés
 
-Une route qui revient avec succès HTTP mais qui fait 7,8 km au lieu de 10 km, passe trop par de grands axes ou ne ferme pas correctement la boucle est une régression produit. Le benchmark doit donc échouer même si l'API n'a pas crashé.
+Chaque cas fixe une adresse, un profil, une distance cible, un D+ cible, `scenicMode: true`, des seuils qualité et des warnings bloquants.
+
+Le runner échoue avec exit code non-zéro si un cas viole un de ces contrôles : distance adherence, D+ tolerance, production score, loop gap/closure, busy-road ratio, natural/trail ratio, paved ratio quand disponible, trail beauty, longest trail segment, natural corridor ratio, repeatEdgeRatio, uTurnRatio, terrainDataConfidence, trailPotential ou durationMs.
+
+Les warnings suivants sont bloquants sur les 12 cas : `ONEWAY_VIOLATION`, `U_TURN_DETECTED`, `TOO_MUCH_BACKTRACKING`. Une route HTTP 200 avec U-turn, backtracking ou overlap objectif est donc un échec produit.
+
+## Artifacts et métriques
+
+Le rapport agrégé est écrit par défaut dans :
+
+```text
+artifacts/route-benchmark-results/latest.json
+```
+
+Ce dossier est ignoré par git via `/artifacts/`. Utilise `--no-output` pour ne rien écrire, ou `--output <path>` pour choisir un fichier.
+
+Avec `--save-artifacts`, le runner sauvegarde aussi le payload `route` de chaque succès dans :
+
+```text
+artifacts/route-benchmark-results/routes/<benchmark-id>.json
+```
+
+Ces artifacts servent à la session de debug : comparer les métriques, inspecter la géométrie, puis exporter en GPX/GeoJSON si un outil dédié est ajouté. Le runner ne masque pas les erreurs réseau/API : les échecs HTTP, Overpass, 429/504 ou serveur local absent sortent dans le rapport avec `errorCode`, `status` et `durationMs`.
+
+## Interprétation
+
+Un benchmark vert veut dire : route générée, boucle suffisamment fermée, distance/D+ acceptables, pas de grand axe excessif, pas de backtracking/U-turn bloquant, et potentiel terrain cohérent avec le cas. Ce n'est pas une preuve que la route est belle, mais c'est le minimum pour éviter les régressions évidentes.
+
+Un benchmark rouge doit être lu par `failures[]`. Pour la mission nocturne de fiabilité, prioriser dans cet ordre : `network_error/http_error`, `loop_closure`, `repeat_edge_ratio`/`u_turn_ratio`, `natural_way_ratio`/`trail_potential`, puis `distance_tolerance`/`elevation_tolerance`. Ne pas corriger en élargissant naïvement le rayon Overpass, surtout sur Paris et zones denses.

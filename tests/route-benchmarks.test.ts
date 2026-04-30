@@ -7,17 +7,24 @@ import {
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 describe("route production benchmarks", () => {
-  it("covers the critical Reddit/product regression cases", () => {
+  it("covers the 12 priority running/trail regression cases", () => {
     const ids = BENCHMARK_CASES.map((benchmark) => benchmark.id);
 
-    expect(ids).toContain("lille-10k-citadel-loop");
-    expect(ids).toContain("paris-19-canal-running");
-    expect(ids).toContain("dijon-hilly-running");
-    expect(ids).toContain("nanterre-east-avoid-highways");
-    expect(ids).toContain("rennes-saint-malo-road-bike");
-    expect(ids).toContain("mtb-40k-oneway-safety");
-    expect(ids).toContain("fontainebleau-trail-15k");
-    expect(ids).toContain("tourville-pommiers-trail-12k");
+    expect(BENCHMARK_CASES).toHaveLength(12);
+    expect(ids).toEqual(expect.arrayContaining([
+      "tourville-pommiers-trail-5k",
+      "tourville-pommiers-trail-8k",
+      "tourville-pommiers-trail-10k",
+      "tourville-pommiers-trail-12k",
+      "caen-prairie-8k-mixed",
+      "caen-colline-aux-oiseaux-6k-soft",
+      "clecy-suisse-normande-trail-12k",
+      "fontainebleau-trail-15k",
+      "meudon-forest-trail-10k",
+      "lille-10k-citadel-loop",
+      "paris-19-canal-running",
+      "nanterre-east-avoid-highways",
+    ]));
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
@@ -28,6 +35,7 @@ describe("route production benchmarks", () => {
       expect(PROFILES_BY_ID.has(benchmark.profileId)).toBe(true);
       expect(benchmark.targetDistanceKm).toBeGreaterThan(0);
       expect(benchmark.targetElevationM).toBeGreaterThanOrEqual(0);
+      expect(benchmark.scenicMode).toBe(true);
     }
   });
 
@@ -41,6 +49,16 @@ describe("route production benchmarks", () => {
       expect(benchmark.thresholds.maxLoopClosureKm).toBeGreaterThan(0);
       expect(benchmark.thresholds.maxBusyRoadRatio).toBeGreaterThanOrEqual(0);
       expect(benchmark.thresholds.maxBusyRoadRatio).toBeLessThanOrEqual(0.15);
+      expect(benchmark.thresholds.maxRepeatEdgeRatio).toBeGreaterThan(0);
+      expect(benchmark.thresholds.maxRepeatEdgeRatio).toBeLessThanOrEqual(0.06);
+      expect(benchmark.thresholds.maxUTurnRatio).toBeGreaterThan(0);
+      expect(benchmark.thresholds.maxUTurnRatio).toBeLessThanOrEqual(0.015);
+      expect(benchmark.thresholds.maxDurationMs).toBeGreaterThan(0);
+      expect(benchmark.blockingWarnings).toEqual(expect.arrayContaining([
+        "ONEWAY_VIOLATION",
+        "U_TURN_DETECTED",
+        "TOO_MUCH_BACKTRACKING",
+      ]));
     }
   });
 
@@ -66,8 +84,13 @@ describe("route production benchmarks", () => {
         loopClosureKm: 0.4,
         busyRoadRatio: 0.18,
         naturalWayRatio: 0.12,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
         warnings: ["DISTANCE_OFF_TARGET", "TOO_MUCH_BUSY_ROAD"],
       },
+      durationMs: 1200,
     });
 
     expect(summary.passed).toBe(false);
@@ -78,18 +101,27 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("fails a route when VTT safety reports a oneway violation", () => {
-    const benchmark = BENCHMARK_CASES.find((item) => item.id === "mtb-40k-oneway-safety")!;
+  it("fails a route when safety reports a oneway violation", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
-      distanceKm: 40.5,
-      ascendM: 790,
+      distanceKm: 10.1,
+      ascendM: 210,
       quality: {
         productionScore: 0.82,
         loopClosureKm: 0.4,
         busyRoadRatio: 0.01,
         naturalWayRatio: 0.6,
+        pavedRatio: 0.2,
+        trailBeautyScore: 0.8,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.6,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
         warnings: ["ONEWAY_VIOLATION"],
       },
+      durationMs: 1200,
     });
 
     expect(summary.passed).toBe(false);
@@ -106,8 +138,13 @@ describe("route production benchmarks", () => {
         loopGapKm: 0.18,
         busyRoadRatio: 0.04,
         trailRatio: 0.38,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
         warnings: [],
       },
+      durationMs: 1200,
     });
 
     expect(summary.passed).toBe(true);
@@ -128,8 +165,13 @@ describe("route production benchmarks", () => {
         trailBeautyScore: 0.48,
         longestTrailSegmentKm: 2,
         naturalCorridorRatio: 0.32,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
         warnings: [],
       },
+      durationMs: 1000,
     });
 
     expect(summary.passed).toBe(false);
@@ -141,7 +183,7 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("fails the Tourville trail benchmark on U-turns and overlapping edges", () => {
+  it("fails the Tourville trail benchmarks on U-turns and overlapping edges", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-12k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 11.7,
@@ -157,8 +199,11 @@ describe("route production benchmarks", () => {
         naturalCorridorRatio: 0.48,
         repeatEdgeRatio: 0.09,
         uTurnRatio: 0.04,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
         warnings: ["U_TURN_DETECTED", "TOO_MUCH_BACKTRACKING"],
       },
+      durationMs: 1000,
     });
 
     expect(summary.passed).toBe(false);
@@ -167,6 +212,36 @@ describe("route production benchmarks", () => {
       "u_turn_ratio",
       "u_turn_detected",
       "backtracking_detected",
+    ]));
+  });
+
+  it("fails a trail benchmark when terrain confidence or potential is too low", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "clecy-suisse-normande-trail-12k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 12,
+      ascendM: 340,
+      quality: {
+        productionScore: 0.8,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.01,
+        trailRatio: 0.5,
+        pavedRatio: 0.2,
+        trailBeautyScore: 0.8,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.6,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "low",
+        trailPotential: "medium",
+        warnings: [],
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "terrain_data_confidence",
+      "trail_potential",
     ]));
   });
 });

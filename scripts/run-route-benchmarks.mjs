@@ -5,28 +5,70 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..");
+const args = process.argv.slice(2);
 const baseUrl = (process.env.ROUTE_BENCHMARK_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
-const outputPath = process.env.ROUTE_BENCHMARK_OUTPUT ?? "artifacts/route-benchmark-results/latest.json";
-const shouldWriteOutput = !process.argv.includes("--no-output");
+const outputPath = getArgValue("--output") ?? process.env.ROUTE_BENCHMARK_OUTPUT ?? "artifacts/route-benchmark-results/latest.json";
+const artifactDir = getArgValue("--artifact-dir") ?? process.env.ROUTE_BENCHMARK_ARTIFACT_DIR ?? "artifacts/route-benchmark-results/routes";
+const shouldWriteOutput = !args.includes("--no-output");
+const shouldSaveArtifacts = args.includes("--save-artifacts");
+const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
 
-if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`Usage: ROUTE_BENCHMARK_BASE_URL=https://your-app.vercel.app npm run benchmark:routes
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`Usage: npm run benchmark:routes -- [options]
 
-Runs TrailForge production smoke benchmarks against /api/generate-route and fails on quality threshold regressions.
+Runs TrailForge route benchmarks against /api/generate-route and fails on quality threshold regressions.
 
 Environment:
-  ROUTE_BENCHMARK_BASE_URL  Target app URL. Default: http://localhost:3000
-  ROUTE_BENCHMARK_OUTPUT    JSON output path. Default: artifacts/route-benchmark-results/latest.json
+  ROUTE_BENCHMARK_BASE_URL     Target app URL. Default: http://localhost:3000
+  ROUTE_BENCHMARK_OUTPUT       JSON report path. Default: artifacts/route-benchmark-results/latest.json
+  ROUTE_BENCHMARK_ARTIFACT_DIR Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
 
 Options:
-  --no-output               Do not write the JSON artifact.`);
+  --case <id-or-prefix>        Run only matching benchmark id(s). Repeatable.
+  --list                       Print benchmark ids and exit.
+  --output <path>              Override JSON report path.
+  --artifact-dir <path>        Override per-route artifact directory.
+  --save-artifacts             Save successful route payloads as JSON artifacts.
+  --no-output                  Do not write the aggregate JSON report.
+  --help                       Show this help.
+
+Examples:
+  npm run benchmark:routes -- --list
+  npm run benchmark:routes -- --case tourville --save-artifacts
+  ROUTE_BENCHMARK_BASE_URL=https://preview.vercel.app npm run benchmark:routes -- --case tourville-pommiers-trail-10k`);
   process.exit(0);
 }
 
 const endpoint = `${baseUrl}/api/generate-route`;
 const benchmarkDataPath = resolve(repoRoot, "lib/route-benchmarks-data.json");
-const benchmarks = JSON.parse(await readFile(benchmarkDataPath, "utf8"));
+let benchmarks = JSON.parse(await readFile(benchmarkDataPath, "utf8"));
+
+if (args.includes("--list")) {
+  for (const benchmark of benchmarks) {
+    console.log(`${benchmark.id}\t${benchmark.label}`);
+  }
+  process.exit(0);
+}
+
+if (caseFilters.length > 0) {
+  benchmarks = benchmarks.filter((benchmark) =>
+    caseFilters.some((filter) => benchmark.id === filter || benchmark.id.startsWith(filter) || benchmark.id.includes(filter))
+  );
+
+  if (benchmarks.length === 0) {
+    console.error(`No route benchmark matched: ${caseFilters.join(", ")}`);
+    process.exit(2);
+  }
+}
+
+function getArgValue(name) {
+  const equalsArg = args.find((arg) => arg.startsWith(`${name}=`));
+  if (equalsArg) return equalsArg.slice(name.length + 1);
+  const index = args.indexOf(name);
+  if (index >= 0) return args[index + 1];
+  return undefined;
+}
 
 function requestFrom(benchmark) {
   return {
@@ -42,14 +84,36 @@ function requiresExternalRouting(benchmark) {
   return benchmark.profileId.startsWith("cycling_");
 }
 
-function summarizeBenchmarkResult(benchmark, route) {
+function compareOrderedLevel(actual, minimum) {
+  const rank = { unknown: -1, low: 0, medium: 1, high: 2 };
+  return rank[actual ?? "unknown"] - rank[minimum];
+}
+
+function warningToFailure(warning) {
+  if (warning === "ONEWAY_VIOLATION") return "oneway_violation";
+  if (warning === "U_TURN_DETECTED") return "u_turn_detected";
+  if (warning === "TOO_MUCH_BACKTRACKING") return "backtracking_detected";
+  return `blocking_warning:${warning}`;
+}
+
+function summarizeBenchmarkResult(benchmark, route, durationMs) {
   const quality = route.quality ?? {};
-  const distanceErrorRatio = Math.abs(route.distanceKm - benchmark.targetDistanceKm) / benchmark.targetDistanceKm;
-  const elevationErrorM = Math.abs(route.ascendM - benchmark.targetElevationM);
+  const distanceKm = route.distanceKm ?? 0;
+  const ascendM = route.ascendM ?? 0;
+  const distanceErrorRatio = Math.abs(distanceKm - benchmark.targetDistanceKm) / benchmark.targetDistanceKm;
+  const elevationErrorM = Math.abs(ascendM - benchmark.targetElevationM);
   const productionScore = quality.productionScore ?? 0;
   const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
   const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
+  const pavedRatio = quality.pavedRatio ?? 0;
+  const trailBeautyScore = quality.trailBeautyScore ?? 0;
+  const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
+  const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
+  const repeatEdgeRatio = quality.repeatEdgeRatio ?? 0;
+  const uTurnRatio = quality.uTurnRatio ?? 0;
+  const terrainDataConfidence = quality.terrainDataConfidence ?? "unknown";
+  const trailPotential = quality.trailPotential ?? "unknown";
   const warnings = quality.warnings ?? [];
   const failures = [];
 
@@ -58,10 +122,20 @@ function summarizeBenchmarkResult(benchmark, route) {
   if (productionScore < benchmark.thresholds.minProductionScore) failures.push("production_score");
   if (loopClosureKm > benchmark.thresholds.maxLoopClosureKm) failures.push("loop_closure");
   if (busyRoadRatio > benchmark.thresholds.maxBusyRoadRatio) failures.push("busy_road_ratio");
-  if (benchmark.thresholds.minNaturalWayRatio !== undefined && naturalWayRatio < benchmark.thresholds.minNaturalWayRatio) {
-    failures.push("natural_way_ratio");
+  if (benchmark.thresholds.minNaturalWayRatio !== undefined && naturalWayRatio < benchmark.thresholds.minNaturalWayRatio) failures.push("natural_way_ratio");
+  if (benchmark.thresholds.maxPavedRatio !== undefined && pavedRatio > benchmark.thresholds.maxPavedRatio) failures.push("paved_ratio");
+  if (benchmark.thresholds.minTrailBeautyScore !== undefined && trailBeautyScore < benchmark.thresholds.minTrailBeautyScore) failures.push("trail_beauty_score");
+  if (benchmark.thresholds.minLongestTrailSegmentKm !== undefined && longestTrailSegmentKm < benchmark.thresholds.minLongestTrailSegmentKm) failures.push("longest_trail_segment");
+  if (benchmark.thresholds.minNaturalCorridorRatio !== undefined && naturalCorridorRatio < benchmark.thresholds.minNaturalCorridorRatio) failures.push("natural_corridor_ratio");
+  if (benchmark.thresholds.maxRepeatEdgeRatio !== undefined && repeatEdgeRatio > benchmark.thresholds.maxRepeatEdgeRatio) failures.push("repeat_edge_ratio");
+  if (benchmark.thresholds.maxUTurnRatio !== undefined && uTurnRatio > benchmark.thresholds.maxUTurnRatio) failures.push("u_turn_ratio");
+  if (benchmark.thresholds.minTerrainDataConfidence !== undefined && compareOrderedLevel(terrainDataConfidence, benchmark.thresholds.minTerrainDataConfidence) < 0) failures.push("terrain_data_confidence");
+  if (benchmark.thresholds.minTrailPotential !== undefined && compareOrderedLevel(trailPotential, benchmark.thresholds.minTrailPotential) < 0) failures.push("trail_potential");
+  if (benchmark.thresholds.maxDurationMs !== undefined && durationMs > benchmark.thresholds.maxDurationMs) failures.push("duration_ms");
+
+  for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
+    if (warnings.includes(warning)) failures.push(warningToFailure(warning));
   }
-  if (warnings.includes("ONEWAY_VIOLATION")) failures.push("oneway_violation");
 
   return {
     id: benchmark.id,
@@ -69,18 +143,37 @@ function summarizeBenchmarkResult(benchmark, route) {
     passed: failures.length === 0,
     failures,
     metrics: {
-      distanceKm: route.distanceKm,
-      ascendM: route.ascendM,
+      distanceKm,
+      ascendM,
       distanceErrorRatio,
       elevationErrorM,
       productionScore,
       loopClosureKm,
       busyRoadRatio,
       naturalWayRatio,
+      pavedRatio,
+      trailBeautyScore,
+      longestTrailSegmentKm,
+      naturalCorridorRatio,
+      repeatEdgeRatio,
+      uTurnRatio,
+      terrainDataConfidence,
+      trailPotential,
+      durationMs,
       warnings,
     },
     thresholds: benchmark.thresholds,
+    blockingWarnings: benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"],
   };
+}
+
+async function saveRouteArtifact(benchmark, payload) {
+  if (!shouldSaveArtifacts || payload?.route == null) return null;
+  const absoluteArtifactDir = resolve(repoRoot, artifactDir);
+  await mkdir(absoluteArtifactDir, { recursive: true });
+  const routeArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.json`);
+  await writeFile(routeArtifactPath, `${JSON.stringify(payload.route, null, 2)}\n`, "utf8");
+  return routeArtifactPath.replace(`${repoRoot}/`, "");
 }
 
 async function runBenchmark(benchmark) {
@@ -123,16 +216,14 @@ async function runBenchmark(benchmark) {
     }
 
     const best = payload.route?.best;
-    const summary = summarizeBenchmarkResult(benchmark, {
-      distanceKm: best?.distanceKm ?? 0,
-      ascendM: best?.ascendM ?? 0,
-      quality: best?.quality,
-    });
+    const summary = summarizeBenchmarkResult(benchmark, best ?? {}, durationMs);
+    const routeArtifact = await saveRouteArtifact(benchmark, payload);
 
     return {
       ...summary,
       status: response.status,
       durationMs,
+      routeArtifact,
       errorCode: null,
       error: null,
     };
@@ -163,12 +254,14 @@ for (const benchmark of benchmarks) {
 }
 
 const failed = results.filter((result) => !result.passed);
+const skipped = results.filter((result) => result.skipped);
 const report = {
   endpoint,
   generatedAt: new Date().toISOString(),
   total: results.length,
   failed: failed.length,
-  passed: results.length - failed.length,
+  skipped: skipped.length,
+  passed: results.length - failed.length - skipped.length,
   results,
 };
 
