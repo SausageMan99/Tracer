@@ -24,6 +24,20 @@ function labelForScore(score: number) {
   return { label: "Fragile", color: "var(--accent-danger)" };
 }
 
+function terrainConfidenceCopy(confidence?: "low" | "medium" | "high") {
+  if (confidence === "high") return { label: "Donnée solide", value: "haute", ok: true };
+  if (confidence === "medium") return { label: "Donnée partielle", value: "moyenne", ok: false };
+  if (confidence === "low") return { label: "Donnée faible", value: "basse", ok: false };
+  return { label: "Donnée inconnue", value: "n/a", ok: false };
+}
+
+function trailPotentialCopy(potential?: "low" | "medium" | "high") {
+  if (potential === "high") return "potentiel trail élevé";
+  if (potential === "medium") return "potentiel trail moyen";
+  if (potential === "low") return "potentiel trail faible";
+  return "potentiel non mesuré";
+}
+
 function StatBlock({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div
@@ -154,6 +168,9 @@ export default function RouteResult() {
   const elevationErrorPct = quality?.elevationErrorPct ?? Math.round(Math.abs(best.ascendM - targetElevationM) / Math.max(targetElevationM || 1, 1) * 100);
   const loopGapKm = quality?.loopGapKm;
   const trailRatio = quality?.trailRatio ?? quality?.naturalCorridorRatio ?? best.surfaceScore;
+  const terrainConfidence = terrainConfidenceCopy(quality?.terrainDataConfidence);
+  const terrainPotential = trailPotentialCopy(quality?.trailPotential);
+  const unknownSurfaceRatio = quality?.terrainUnknownSurfaceRatio;
   const qualityWarnings = (quality?.warnings ?? [])
     .map(translateQualityWarning)
     .filter((warning): warning is NonNullable<typeof warning> => warning != null);
@@ -225,8 +242,9 @@ export default function RouteResult() {
           <HealthRow label="Distance visée" value={`±${distanceErrorPct}%`} ok={distanceErrorPct <= 15} />
           <HealthRow label="D+ visé" value={`±${elevationErrorPct}%`} ok={elevationErrorPct <= 35} />
           <HealthRow label="Terrain trail" value={`${Math.round(trailRatio * 100)}%`} ok={trailRatio >= 0.45} />
+          <HealthRow label={terrainConfidence.label} value={terrainConfidence.value} ok={terrainConfidence.ok} />
           <p style={{ marginTop: "10px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.45 }}>
-            Indicateurs techniques, pas validation terrain. À tester avant de faire confiance aveuglément au GPX.
+            {terrainPotential}{unknownSurfaceRatio != null ? ` · ${Math.round(unknownSurfaceRatio * 100)}% des surfaces OSM inconnues` : ""}. Indicateurs techniques, pas validation terrain. À tester avant de faire confiance aveuglément au GPX.
           </p>
         </MiniPanel>
 

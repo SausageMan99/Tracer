@@ -265,6 +265,9 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).toContain(
       "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM."
     );
+    expect(quality.terrainDataConfidence).toBe("medium");
+    expect(quality.trailPotential).toBe("high");
+    expect(quality.terrainUnknownSurfaceRatio).toBeGreaterThan(0.45);
   });
 
   it("penalizes road-heavy loops for trail running", () => {

@@ -25,6 +25,9 @@ export interface RouteQualityMetrics {
   naturalCorridorRatio?: number;
   naturalFragmentationPerKm?: number;
   trailBeautyScore?: number;
+  terrainDataConfidence?: "low" | "medium" | "high";
+  trailPotential?: "low" | "medium" | "high";
+  terrainUnknownSurfaceRatio?: number;
   uTurnRatio: number;
   restrictedAccessRatio: number;
   onewayViolationRatio: number;
@@ -322,6 +325,9 @@ export function assessRouteQuality(args: {
     naturalCorridorRatio,
     naturalFragmentationPerKm,
     trailBeautyScore,
+    terrainDataConfidence: terrainAudit.confidence,
+    trailPotential: terrainAudit.trailPotential,
+    terrainUnknownSurfaceRatio: terrainAudit.metrics.unknownSurfaceRatio,
     uTurnRatio,
     restrictedAccessRatio,
     onewayViolationRatio,

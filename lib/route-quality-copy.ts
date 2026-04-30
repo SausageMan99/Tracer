@@ -36,6 +36,30 @@ export const QUALITY_WARNING_COPY: Record<string, QualityWarningCopy> = {
     label: "Tracé haché",
     description: "La route traverse beaucoup d'intersections.",
   },
+  NOT_ENOUGH_TRAIL: {
+    label: "Pas assez trail",
+    description: "Le tracé manque de chemins naturels pour une vraie sortie trail.",
+  },
+  TOO_MUCH_PAVEMENT: {
+    label: "Trop de bitume",
+    description: "Le parcours contient trop de segments pavés pour la promesse trail.",
+  },
+  TRAIL_TOO_FRAGMENTED: {
+    label: "Nature fragmentée",
+    description: "Les chemins naturels sont trop courts ou trop dispersés pour former un bon corridor.",
+  },
+  U_TURN_DETECTED: {
+    label: "Demi-tour détecté",
+    description: "Le tracé contient un retour immédiat qui risque de mal passer sur le terrain.",
+  },
+  "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM.": {
+    label: "Donnée OSM partielle",
+    description: "TrailForge voit des chemins, mais les surfaces sont mal renseignées : le potentiel trail est probable, pas garanti.",
+  },
+  "Boucle trop routière pour une sortie trail.": {
+    label: "Boucle trop routière",
+    description: "Le réseau local force trop de route par rapport à l'objectif trail.",
+  },
 };
 
 export function translateQualityWarning(code: string): QualityWarningCopy | null {
