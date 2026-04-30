@@ -141,8 +141,22 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
   };
 }
 
-function scoreSurface(surface: string | undefined, sport: string, profile: SessionProfile): number {
-  if (!surface) return 0.5;
+function scoreSurface(
+  edge: { highway: string; surface?: string; scenic?: boolean },
+  sport: string,
+  profile: SessionProfile,
+): number {
+  const surface = edge.surface;
+  if (!surface) {
+    if (
+      isTrailRunning(profile) &&
+      (edge.scenic === true || edge.highway === "path" || edge.highway === "track")
+    ) {
+      return 1.0;
+    }
+
+    return 0.5;
+  }
   const isPaved = PAVED_SURFACES.has(surface);
   const isUnpaved = UNPAVED_SURFACES.has(surface);
 
@@ -273,7 +287,7 @@ export async function scoreEdges(
       continue;
     }
 
-    const surfaceScore = scoreSurface(edge.surface, profile.sport, profile);
+    const surfaceScore = scoreSurface(edge, profile.sport, profile);
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
     const natureScore = scoreNature(edge, graph, scenicWayIds);

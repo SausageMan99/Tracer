@@ -132,6 +132,7 @@ function makeSingleEdgeGraph(edge: Partial<EnrichedEdge>): EnrichedGraph {
     score: 0,
     access: edge.access,
     foot: edge.foot,
+    scenic: edge.scenic,
   };
   const edges = new Map<string, EnrichedEdge>([[e.id, e]]);
   return { nodes, edges, center: { lat: 48.87, lng: 2.32 }, radiusKm: 1 };
@@ -208,6 +209,20 @@ describe("scoreEdges trail running surface preferences", () => {
     const roadScore = gRoad.edges.get("1-2-10")!.score;
 
     expect(pathScore).toBeGreaterThan(roadScore);
+  });
+
+  it("scores unknown-surface scenic paths as strong trail candidates", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+    const graph = makeSingleEdgeGraph({ highway: "path", scenic: true, osmWayId: 3 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(graph, weights, trailProfile, new Set());
+
+    expect(graph.edges.get("1-2-10")!.score).toBeGreaterThan(0.91);
   });
 
   it("normal running still prefers paved over unpaved (no regression)", async () => {
