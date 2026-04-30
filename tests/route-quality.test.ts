@@ -226,4 +226,44 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).toContain("NOT_ENOUGH_TRAIL");
     expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
   });
+
+  it("surfaces medium terrain data warning when many path-like edges lack surface tags", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.859, lng: 2.355, edges: ["cd", "de"] }],
+        ["e", { id: "e", lat: 48.86, lng: 2.356, edges: ["de"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 1, highway: "path", scenic: true, osmWayId: 40, score: 0.9 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 1, highway: "track", scenic: true, osmWayId: 41, score: 0.9 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 1, highway: "path", osmWayId: 42, score: 0.8 }],
+        ["de", { id: "de", from: "d", to: "e", lengthKm: 1, highway: "residential", surface: "asphalt", osmWayId: 43, score: 0.3 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c", "d", "e"],
+      edgeIds: ["ab", "bc", "cd", "de"],
+      distanceKm: 4,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 4, ascendM: 80 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 4,
+      targetElevationM: 80,
+    });
+
+    expect(quality.warnings).toContain(
+      "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM."
+    );
+  });
 });

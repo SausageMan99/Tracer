@@ -11,6 +11,7 @@ import {
   QUIET_HIGHWAY_TYPES,
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
+import { auditTerrainData } from "./terrain-audit";
 
 export interface RouteQualityMetrics {
   distanceErrorPct: number;
@@ -246,6 +247,7 @@ export function assessRouteQuality(args: {
   const repeatEdgeRatio = computeRepeatRatio(edges, totalKm);
   const uTurnRatio = computeUTurnRatio(path, graph, totalKm);
   const intersectionDensityPerKm = computeIntersectionDensity(path, graph);
+  const terrainAudit = auditTerrainData(edges);
 
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
   const elevationScore = clamp01(1 - elevationErrorPct / 0.45);
@@ -286,6 +288,13 @@ export function assessRouteQuality(args: {
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
   if (isTrailRunning(profile) && pavedRatio > 0.45) warnings.push("TOO_MUCH_PAVEMENT");
+  if (
+    isTrailRunning(profile) &&
+    terrainAudit.confidence === 'medium' &&
+    terrainAudit.metrics.unknownSurfaceRatio >= 0.45
+  ) {
+    warnings.push("Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM.");
+  }
   if (
     isTrailRunning(profile) &&
     (longestTrailSegmentKm < Math.min(3, totalKm * 0.35) || naturalCorridorRatio < 0.5)
