@@ -177,12 +177,41 @@ function scoreQuietness(highway: string): number {
   return 0.5;
 }
 
-function scoreNature(osmWayId: number, scenicWayIds: Set<string>, highway: string, surface: string | undefined): number {
-  if (scenicWayIds.has(String(osmWayId))) return 1.0;
-  if (TRAIL_HIGHWAY_TYPES.has(highway)) return 0.85;
-  if (surface && UNPAVED_SURFACES.has(surface)) return 0.7;
-  if (highway === "living_street" || highway === "pedestrian") return 0.55;
-  return 0.25;
+function isNaturalCorridorEdge(edge: { osmWayId: number; highway: string; surface?: string }, scenicWayIds: Set<string>): boolean {
+  return (
+    scenicWayIds.has(String(edge.osmWayId)) ||
+    TRAIL_HIGHWAY_TYPES.has(edge.highway) ||
+    (edge.surface != null && UNPAVED_SURFACES.has(edge.surface))
+  );
+}
+
+function computeNaturalContinuityBoost(
+  edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string },
+  graph: EnrichedGraph,
+  scenicWayIds: Set<string>
+): number {
+  if (!isNaturalCorridorEdge(edge, scenicWayIds)) return 0;
+
+  const toNode = graph.nodes.get(edge.to);
+  if (!toNode) return 0;
+
+  const naturalSuccessorCount = toNode.edges.reduce((count, edgeId) => {
+    const successor = graph.edges.get(edgeId);
+    if (!successor || successor.to === edge.from) return count;
+    return count + (isNaturalCorridorEdge(successor, scenicWayIds) ? 1 : 0);
+  }, 0);
+
+  return Math.min(0.15, naturalSuccessorCount * 0.08);
+}
+
+function scoreNature(edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string }, graph: EnrichedGraph, scenicWayIds: Set<string>): number {
+  let baseScore = 0.25;
+  if (scenicWayIds.has(String(edge.osmWayId))) baseScore = 1.0;
+  else if (TRAIL_HIGHWAY_TYPES.has(edge.highway)) baseScore = 0.85;
+  else if (edge.surface && UNPAVED_SURFACES.has(edge.surface)) baseScore = 0.7;
+  else if (edge.highway === "living_street" || edge.highway === "pedestrian") baseScore = 0.55;
+
+  return Math.min(1, baseScore + computeNaturalContinuityBoost(edge, graph, scenicWayIds));
 }
 
 function scoreSafety(edge: { lit?: string; access?: string; foot?: string; bicycle?: string; onewayViolation?: boolean }, sport: string): number {
@@ -245,7 +274,7 @@ export async function scoreEdges(
     const surfaceScore = scoreSurface(edge.surface, profile.sport, profile);
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
-    const natureScore = scoreNature(edge.osmWayId, scenicWayIds, edge.highway, edge.surface);
+    const natureScore = scoreNature(edge, graph, scenicWayIds);
 
     // Elevation score: based on gradient
     const fromElev = nodeElevation.get(edge.from) ?? 0;

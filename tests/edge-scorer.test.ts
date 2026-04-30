@@ -120,7 +120,7 @@ describe("scoreEdges dense graphs", () => {
 function makeSingleEdgeGraph(edge: Partial<EnrichedEdge>): EnrichedGraph {
   const nodes = new Map<string, GraphNode>();
   nodes.set("1", { id: "1", lat: 48.87, lng: 2.32, edges: ["1-2-10"] });
-  nodes.set("2", { id: "2", lat: 48.871, lng: 2.321, edges: ["2-1-10"] });
+  nodes.set("2", { id: "2", lat: 48.871, lng: 2.321, edges: [] });
   const e: EnrichedEdge = {
     id: "1-2-10",
     from: "1",
@@ -136,6 +136,38 @@ function makeSingleEdgeGraph(edge: Partial<EnrichedEdge>): EnrichedGraph {
   const edges = new Map<string, EnrichedEdge>([[e.id, e]]);
   return { nodes, edges, center: { lat: 48.87, lng: 2.32 }, radiusKm: 1 };
 }
+
+function makeCorridorVsIsolatedGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>();
+  nodes.set("a", { id: "a", lat: 48.87, lng: 2.32, edges: ["ab", "ad"] });
+  nodes.set("b", { id: "b", lat: 48.871, lng: 2.321, edges: ["bc"] });
+  nodes.set("c", { id: "c", lat: 48.872, lng: 2.322, edges: [] });
+  nodes.set("d", { id: "d", lat: 48.871, lng: 2.319, edges: [] });
+
+  const edges = new Map<string, EnrichedEdge>([
+    ["ab", { id: "ab", from: "a", to: "b", lengthKm: 0.5, highway: "path", surface: "dirt", osmWayId: 20, score: 0 }],
+    ["bc", { id: "bc", from: "b", to: "c", lengthKm: 0.5, highway: "path", surface: "dirt", osmWayId: 21, score: 0 }],
+    ["ad", { id: "ad", from: "a", to: "d", lengthKm: 0.5, highway: "path", surface: "dirt", osmWayId: 22, score: 0 }],
+  ]);
+
+  return { nodes, edges, center: { lat: 48.87, lng: 2.32 }, radiusKm: 1 };
+}
+
+describe("scoreEdges natural corridor continuity", () => {
+  it("scores an edge leading into a natural corridor higher than an isolated trail fragment", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+    const graph = makeCorridorVsIsolatedGraph();
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 35, 35, 35] }), { status: 200 })
+    ));
+
+    await scoreEdges(graph, weights, trailProfile, new Set());
+
+    expect(graph.edges.get("ab")!.score).toBeGreaterThan(graph.edges.get("ad")!.score);
+  });
+});
 
 describe("scoreEdges trail running surface preferences", () => {
   it("prefers unpaved surfaces for trail running", async () => {

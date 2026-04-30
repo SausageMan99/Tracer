@@ -126,6 +126,7 @@ describe("route production benchmarks", () => {
         pavedRatio: 0.52,
         trailBeautyScore: 0.48,
         longestTrailSegmentKm: 2,
+        naturalCorridorRatio: 0.32,
         warnings: [],
       },
     });
@@ -135,6 +136,7 @@ describe("route production benchmarks", () => {
       "paved_ratio",
       "trail_beauty_score",
       "longest_trail_segment",
+      "natural_corridor_ratio",
     ]));
   });
 });

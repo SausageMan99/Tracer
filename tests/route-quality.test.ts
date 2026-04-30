@@ -131,7 +131,51 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).not.toContain("TOO_MUCH_PAVEMENT");
   });
 
-  it("warns when a trail-running route is mostly paved road", () => {
+  it("measures natural corridor continuity separately from total trail fragments", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.859, lng: 2.355, edges: ["cd", "de"] }],
+        ["e", { id: "e", lat: 48.86, lng: 2.356, edges: ["de", "ef"] }],
+        ["f", { id: "f", lat: 48.861, lng: 2.357, edges: ["ef"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 0.4, highway: "path", surface: "dirt", osmWayId: 30, score: 0.95 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 1, highway: "residential", surface: "asphalt", osmWayId: 31, score: 0.3 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 0.4, highway: "path", surface: "dirt", osmWayId: 32, score: 0.95 }],
+        ["de", { id: "de", from: "d", to: "e", lengthKm: 1, highway: "residential", surface: "asphalt", osmWayId: 33, score: 0.3 }],
+        ["ef", { id: "ef", from: "e", to: "f", lengthKm: 2.2, highway: "track", surface: "ground", osmWayId: 34, score: 0.9 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c", "d", "e", "f"],
+      edgeIds: ["ab", "bc", "cd", "de", "ef"],
+      distanceKm: 5,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 5, ascendM: 90 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 5,
+      targetElevationM: 90,
+      scenicWayIds: new Set(["30", "32", "34"]),
+    });
+
+    expect(quality.trailRatio).toBeCloseTo(3 / 5);
+    expect(quality.naturalCorridorRatio).toBeCloseTo(2.2 / 5);
+    expect(quality.naturalFragmentationPerKm).toBeCloseTo(4 / 5);
+    expect(quality.warnings).toContain("TRAIL_TOO_FRAGMENTED");
+  });
+
+  it("warns when trail ratio is acceptable but natural corridors are too fragmented", () => {
     const graph = makeGraph();
     const profile = PROFILES_BY_ID.get("running_trail")!;
     const path: SolverPath = {

@@ -21,6 +21,8 @@ export interface RouteQualityMetrics {
   pavedRatio?: number;
   forestOrParkRatio?: number;
   longestTrailSegmentKm?: number;
+  naturalCorridorRatio?: number;
+  naturalFragmentationPerKm?: number;
   trailBeautyScore?: number;
   restrictedAccessRatio: number;
   onewayViolationRatio: number;
@@ -107,24 +109,63 @@ function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<s
   return longestKm;
 }
 
+function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<string>, totalKm: number): {
+  naturalCorridorRatio: number;
+  naturalFragmentationPerKm: number;
+} {
+  const MIN_CORRIDOR_KM = 0.5;
+  let corridorKm = 0;
+  let currentNaturalKm = 0;
+  let previousWasNatural: boolean | null = null;
+  let transitionCount = 0;
+
+  for (const edge of edges) {
+    const isNatural = isTrailLikeEdge(edge, scenicWayIds);
+    if (previousWasNatural !== null && previousWasNatural !== isNatural) {
+      transitionCount += 1;
+    }
+
+    if (isNatural) {
+      currentNaturalKm += edge.lengthKm;
+    } else {
+      if (currentNaturalKm >= MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
+      currentNaturalKm = 0;
+    }
+
+    previousWasNatural = isNatural;
+  }
+
+  if (currentNaturalKm >= MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
+
+  return {
+    naturalCorridorRatio: ratio(corridorKm, totalKm),
+    naturalFragmentationPerKm: totalKm > 0 ? transitionCount / totalKm : 0,
+  };
+}
+
 function computeTrailBeautyScore(args: {
   trailRatio: number;
   pavedRatio: number;
   busyRoadRatio: number;
   forestOrParkRatio: number;
+  naturalCorridorRatio: number;
+  naturalFragmentationPerKm: number;
   longestTrailSegmentKm: number;
   totalKm: number;
 }): number {
   const continuityRatio = ratio(args.longestTrailSegmentKm, Math.max(args.totalKm, 0.1));
   const lowPavementScore = clamp01(1 - args.pavedRatio / 0.5);
   const calmScore = clamp01(1 - args.busyRoadRatio * 8);
+  const lowFragmentationScore = clamp01(1 - args.naturalFragmentationPerKm / 1.2);
 
   return clamp01(
-    args.trailRatio * 0.35 +
-      args.forestOrParkRatio * 0.25 +
-      continuityRatio * 0.2 +
+    args.trailRatio * 0.25 +
+      args.forestOrParkRatio * 0.2 +
+      args.naturalCorridorRatio * 0.25 +
+      continuityRatio * 0.1 +
       lowPavementScore * 0.1 +
-      calmScore * 0.1
+      calmScore * 0.07 +
+      lowFragmentationScore * 0.03
   );
 }
 
@@ -170,11 +211,18 @@ export function assessRouteQuality(args: {
   const pavedRatio = ratio(pavedKm, totalKm);
   const forestOrParkRatio = ratio(forestOrParkKm, totalKm);
   const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds);
+  const { naturalCorridorRatio, naturalFragmentationPerKm } = computeNaturalCorridorStats(
+    edges,
+    scenicWayIds,
+    totalKm
+  );
   const trailBeautyScore = computeTrailBeautyScore({
     trailRatio,
     pavedRatio,
     busyRoadRatio,
     forestOrParkRatio,
+    naturalCorridorRatio,
+    naturalFragmentationPerKm,
     longestTrailSegmentKm,
     totalKm,
   });
@@ -219,7 +267,10 @@ export function assessRouteQuality(args: {
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
   if (isTrailRunning(profile) && pavedRatio > 0.45) warnings.push("TOO_MUCH_PAVEMENT");
-  if (isTrailRunning(profile) && longestTrailSegmentKm < Math.min(3, totalKm * 0.35)) {
+  if (
+    isTrailRunning(profile) &&
+    (longestTrailSegmentKm < Math.min(3, totalKm * 0.35) || naturalCorridorRatio < 0.5)
+  ) {
     warnings.push("TRAIL_TOO_FRAGMENTED");
   }
 
@@ -232,6 +283,8 @@ export function assessRouteQuality(args: {
     pavedRatio,
     forestOrParkRatio,
     longestTrailSegmentKm,
+    naturalCorridorRatio,
+    naturalFragmentationPerKm,
     trailBeautyScore,
     restrictedAccessRatio,
     onewayViolationRatio,

@@ -19,6 +19,7 @@ export interface RouteBenchmarkCase {
     maxPavedRatio?: number;
     minTrailBeautyScore?: number;
     minLongestTrailSegmentKm?: number;
+    minNaturalCorridorRatio?: number;
   };
   notes: string;
 }
@@ -36,6 +37,7 @@ export interface BenchmarkRouteSample {
     pavedRatio?: number;
     trailBeautyScore?: number;
     longestTrailSegmentKm?: number;
+    naturalCorridorRatio?: number;
     warnings?: string[];
   };
 }
@@ -55,6 +57,7 @@ export interface BenchmarkSummary {
     pavedRatio: number;
     trailBeautyScore: number;
     longestTrailSegmentKm: number;
+    naturalCorridorRatio: number;
     warnings: string[];
   };
 }
@@ -85,6 +88,7 @@ export function summarizeBenchmarkResult(
   const pavedRatio = quality.pavedRatio ?? 0;
   const trailBeautyScore = quality.trailBeautyScore ?? 0;
   const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
+  const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
   const warnings = quality.warnings ?? [];
 
   const failures: string[] = [];
@@ -128,6 +132,12 @@ export function summarizeBenchmarkResult(
   ) {
     failures.push("longest_trail_segment");
   }
+  if (
+    benchmark.thresholds.minNaturalCorridorRatio !== undefined &&
+    naturalCorridorRatio < benchmark.thresholds.minNaturalCorridorRatio
+  ) {
+    failures.push("natural_corridor_ratio");
+  }
   if (warnings.includes("ONEWAY_VIOLATION")) {
     failures.push("oneway_violation");
   }
@@ -147,6 +157,7 @@ export function summarizeBenchmarkResult(
       pavedRatio,
       trailBeautyScore,
       longestTrailSegmentKm,
+      naturalCorridorRatio,
       warnings,
     },
   };
