@@ -9,27 +9,27 @@ import BeamSearchVisual from "@/components/landing/feature-visuals/BeamSearchVis
 
 const CARDS = [
   {
-    badge: "Précision altimétrique",
-    title: "D+ au mètre. Pas à l'estimation.",
-    desc: "Données Open-Meteo à 30m de résolution. Gradient max, régularité, D+ et D− calculés sur chaque segment.",
+    badge: "D+ contrôlé",
+    title: "Le dénivelé compte vraiment.",
+    desc: "TrailForge vise ton D+ et affiche les compromis quand le terrain local ne permet pas de respecter la séance.",
     visual: <ElevationVisual />,
   },
   {
-    badge: "14 profils de séance",
-    title: "Chaque séance a son ADN.",
-    desc: "Fractionné 30/30, seuil lactique, gran fondo, trail — chaque profil a ses propres critères de scoring. Zéro compromis.",
+    badge: "Profil trail",
+    title: "Moins de bitume, plus de terrain.",
+    desc: "Le scoring privilégie sentiers, chemins, parcs et corridors naturels au lieu de tracer une simple boucle urbaine.",
     visual: <SessionChipsVisual />,
   },
   {
     badge: "Export GPX universel",
     title: "Direct sur ta montre.",
-    desc: "Transfert vers Garmin, Wahoo ou Suunto. Format GPX 1.1 avec élévation sur chaque point. Prêt à partir en 10 secondes.",
+    desc: "Format GPX propre, compatible Garmin, COROS, Suunto et Strava. Tu exportes, tu synchronises, tu pars.",
     visual: <RouteMapVisual />,
   },
   {
-    badge: "Moteur V2",
-    title: "847 routes. La meilleure gagne.",
-    desc: "Beam-search multi-directionnel, scoring multi-critères, déduplication géométrique. Le parcours optimal émerge automatiquement.",
+    badge: "Confiance terrain",
+    title: "Pas de fausse promesse.",
+    desc: "Si la boucle est contrainte, TrailForge l’indique clairement : distance ajustée, D+ approximatif ou trop de route.",
     visual: <BeamSearchVisual />,
   },
 ] as const;

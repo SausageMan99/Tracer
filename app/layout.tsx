@@ -40,9 +40,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TrailForge — Générateur de parcours GPS",
+  title: "TrailForge — Boucles trail prêtes pour ta montre",
   description:
-    "Génère un parcours running ou cyclisme adapté à ta séance en 10 secondes. D+, distance, surface — zéro compromis.",
+    "Crée une boucle trail fiable autour d’un point de départ. Distance, D+, surface et export GPX pour Garmin, COROS, Suunto ou Strava.",
   icons: { icon: "/favicon.ico" },
 };
 

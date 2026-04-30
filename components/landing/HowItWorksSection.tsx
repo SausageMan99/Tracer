@@ -15,18 +15,18 @@ interface Step {
 const STEPS: readonly Step[] = [
   {
     num: "01",
-    title: "Décris ta séance.",
-    desc: "Sport, profil, distance, D+. En 5 secondes, TrailForge sait exactement ce dont tu as besoin.",
+    title: "Choisis ton départ.",
+    desc: "Adresse, parking ou spot habituel. Ajoute distance, D+ cible et niveau de surface nature attendu.",
   },
   {
     num: "02",
-    title: "TrailForge forge.",
-    desc: "847 candidats analysés. Surface, dénivelé, boucle — le meilleur parcours est sélectionné automatiquement.",
+    title: "TrailForge vérifie.",
+    desc: "Le moteur cherche une vraie boucle et signale les compromis : trop de route, D+ approximatif, boucle imparfaite.",
   },
   {
     num: "03",
     title: "Lance-toi.",
-    desc: "Export GPX direct vers ta montre. Garmin, Wahoo, Suunto — prêt à partir en 10 secondes.",
+    desc: "Export GPX direct vers Garmin, COROS, Suunto ou Strava. Tu synchronises, tu cours.",
   },
 ] as const;
 
@@ -38,9 +38,9 @@ function FormMockup() {
       <svg viewBox="0 0 280 180" style={{ width: "100%", maxWidth: "280px", margin: "0 auto", display: "block" }}>
         <rect x="10" y="10" width="260" height="160" rx="2" fill="none" stroke="var(--border)" strokeWidth="1" />
         <rect x="30" y="30" width="60" height="22" rx="2" fill="var(--accent-lime)" />
-        <text x="60" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fontWeight="700" fill="var(--bg-deep)">Running</text>
+        <text x="60" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fontWeight="700" fill="var(--bg-deep)">Trail</text>
         <rect x="100" y="30" width="60" height="22" rx="2" fill="none" stroke="var(--border)" strokeWidth="1" />
-        <text x="130" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fill="var(--text-muted)">Cycling</text>
+        <text x="130" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fill="var(--text-muted)">Route</text>
         <line x1="30" y1="80" x2="250" y2="80" stroke="var(--bg-elevated)" strokeWidth="2" />
         <circle cx="160" cy="80" r="6" fill="var(--accent-lime)" />
         <text x="30" y="98" fontSize="8" fontFamily="var(--font-jetbrains)" fill="var(--text-muted)">12 km</text>

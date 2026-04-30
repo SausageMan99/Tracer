@@ -567,7 +567,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             textAlign: "center",
           }}
         >
-          <SectionLabel>Générateur de parcours GPS</SectionLabel>
+          <SectionLabel>Boucles trail prêtes pour montre</SectionLabel>
 
           <h1
             style={{
@@ -584,19 +584,19 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             {showNewHero ? (
               <>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-                  Ton terrain,
+                  Trace ta boucle,
                 </TextReveal>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
-                  ton parcours.
+                  lance-toi.
                 </TextReveal>
               </>
             ) : (
               <>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-                  Forge ton
+                  Trace ta
                 </TextReveal>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
-                  parcours.
+                  boucle.
                 </TextReveal>
               </>
             )}
@@ -611,15 +611,14 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               lineHeight: 1.7,
               margin: "0 auto",
             }}>
-              Génère un parcours adapté à ta séance{" "}
-              <span style={{ color: "var(--accent-lime)", fontWeight: 600 }}>en 10 secondes</span>.
+              Distance, D+, surface : tu fixes les règles.
               <br />
-              D+, distance, surface — zéro compromis.
+              TrailForge trace une boucle trail fiable, exportable sur ta montre.
             </p>
           </div>
 
           <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <MagneticButton href="/app">Générer mon parcours</MagneticButton>
+            <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
             <p style={{
               fontFamily: "var(--font-inter), sans-serif",
               fontSize: "13px",
@@ -730,9 +729,8 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
                 lineHeight: 1.75,
               }}
             >
-              Les runners et cyclistes passent des heures à planifier manuellement.
-              Trouver un parcours qui corresponde exactement à une séance spécifique
-              est fastidieux, imprécis, et souvent décevant.
+              Les traileurs passent trop de temps à bricoler des boucles sur plusieurs outils.
+              Distance, D+, surface, export montre : chaque compromis peut ruiner la sortie.
             </p>
           </div>
         </div>
@@ -750,18 +748,18 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         >
           <PainCard
             icon={<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="24" height="24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>}
-            title="Tu cherches sur Maps pendant 20 minutes"
-            desc="Planifier un parcours manuellement prend du temps, de l'énergie, et tu n'es jamais sûr du résultat avant de partir."
+            title="Tu perds 20 minutes avant même de courir"
+            desc="Entre carte, relief, surface et GPX, préparer une boucle fiable prend plus de temps que ça ne devrait."
           />
           <PainCard
             icon={<MapPinIcon />}
-            title="Le parcours ne correspond pas à ta séance"
-            desc="Un jour de fractionné, le lendemain un long. Chaque séance a des besoins différents que les outils généralistes ignorent."
+            title="La boucle ne respecte pas ta sortie"
+            desc="Tu demandes 12 km avec du D+ et tu finis avec une boucle trop plate, trop courte ou trop urbaine."
           />
           <PainCard
             icon={<MountainIcon />}
-            title="Tu rates ton D+ ou tu te retrouves en city run"
-            desc="Trop peu de dénivelé pour ta sortie montagne, ou trop d'asphalte pour ta sortie trail. Les compromis s'accumulent."
+            title="Tu découvres les problèmes sur le terrain"
+            desc="Trop de bitume, route passante, chemin douteux, boucle mal fermée : une mauvaise trace coûte une vraie sortie."
           />
         </div>
       </section>
@@ -819,19 +817,19 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           <TimelineStep
             num="01"
             title="Décris ta séance"
-            desc="Sport, profil de séance, distance et dénivelé. En 5 secondes, TrailForge sait exactement ce dont tu as besoin."
+            desc="Choisis ton départ, ta distance, ton D+ cible et le niveau de terrain naturel attendu."
             delay={0}
           />
           <TimelineStep
             num="02"
-            title="TrailForge calcule"
-            desc="Jusqu'à 847 candidats analysés. D+ au mètre près, terrain, boucle — le meilleur parcours est sélectionné automatiquement."
+            title="TrailForge vérifie"
+            desc="Le moteur cherche une vraie boucle et signale les compromis : trop de route, D+ approximatif, boucle imparfaite."
             delay={150}
           />
           <TimelineStep
             num="03"
             title="Lance-toi"
-            desc="Export GPX direct vers ta montre. Garmin, Wahoo, Suunto — prêt à partir en 10 secondes."
+            desc="Export GPX direct vers Garmin, COROS, Suunto ou Strava. Tu synchronises, tu cours."
             delay={300}
           />
         </div>
@@ -859,27 +857,27 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
         <StackingFeatureCards
           cards={[
             {
-              badge: "Profil altimétrique",
-              title: "D+ calculé au mètre près.",
-              desc: "Données Open-Meteo à 30m de résolution. Gradient max, régularité, dénivelé positif et négatif. Tout est là, précis.",
+              badge: "D+ contrôlé",
+              title: "Le dénivelé compte vraiment.",
+              desc: "TrailForge vise ton D+ et affiche les compromis quand le terrain local ne permet pas de respecter la séance.",
               visual: <ElevationVisual />,
             },
             {
-              badge: "14 profils de séance",
-              title: "Chaque séance, son parcours.",
-              desc: "Fractionné 30/30, seuil lactique, gran fondo, trail — chaque profil a ses propres critères de scoring. Zéro compromis.",
+              badge: "Profil trail",
+              title: "Moins de bitume, plus de terrain.",
+              desc: "Le scoring privilégie sentiers, chemins, parcs et corridors naturels au lieu de tracer une simple boucle urbaine.",
               visual: <SessionChipsVisual />,
             },
             {
               badge: "Export GPX universel",
               title: "Prêt pour ta montre.",
-              desc: "Transfert direct vers Garmin, Wahoo ou Suunto. Format GPX 1.1 avec élévation sur chaque point. Prêt à partir en 10 secondes.",
+              desc: "Format GPX propre, compatible Garmin, COROS, Suunto et Strava. Tu exportes, tu synchronises, tu pars.",
               visual: <RouteMapVisual />,
             },
             {
-              badge: "Compatibilité matériel",
-              title: "Toutes les marques supportées.",
-              desc: "GPX 1.1, timestamps synthétiques pour Wahoo, élévation sur chaque trackpoint pour Garmin. Aucune configuration requise.",
+              badge: "Confiance terrain",
+              title: "Pas de fausse promesse.",
+              desc: "Si la boucle est contrainte, TrailForge l’indique clairement : distance ajustée, D+ approximatif ou trop de route.",
               visual: <GpsDevicesVisual />,
             },
           ]}
@@ -910,9 +908,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             textAlign: "center",
           }}
         >
-          <StatBlock value={14} label="Profils de séance" />
+          <StatBlock value={1} label="Promesse trail claire" />
           <StatBlock value={10} suffix="s" prefix="< " label="Temps de génération" />
-          <StatBlock value={3} label="Moteurs de routage" />
+          <StatBlock value={30} suffix="%+" label="Objectif export GPX beta" />
         </div>
       </section>
 
@@ -959,12 +957,12 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             }}
           >
             <TextReveal trigger="scroll" splitType="words">
-              Prêt à forger ton premier parcours ?
+              Prêt à tracer une vraie boucle trail ?
             </TextReveal>
           </h2>
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
-            <MagneticButton href="/app">Ouvrir TrailForge</MagneticButton>
+            <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
             <MagneticButton href="https://github.com" primary={false}>
               Voir la doc
             </MagneticButton>

@@ -161,7 +161,7 @@ export default function HeroSection() {
           textAlign: "center",
         }}
       >
-        <SectionLabel>Générateur de parcours GPS</SectionLabel>
+        <SectionLabel>Boucles trail prêtes pour montre</SectionLabel>
 
         <h1
           style={{
@@ -176,7 +176,7 @@ export default function HeroSection() {
           }}
         >
           <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-            Ton terrain
+            Trace ta boucle.
           </TextReveal>
           <br />
           <TextReveal
@@ -187,7 +187,7 @@ export default function HeroSection() {
             delay={0.6}
             style={{ color: "var(--accent-lime)" }}
           >
-            t&apos;attend.
+            Lance-toi.
           </TextReveal>
         </h1>
 
@@ -202,15 +202,14 @@ export default function HeroSection() {
               margin: "0 auto",
             }}
           >
-            Génère le parcours parfait pour ta séance.
+            Distance, D+, surface : tu fixes les règles.
             <br />
-            D+, distance, surface.{" "}
-            <span style={{ color: "var(--accent-lime)", fontWeight: 600 }}>10 secondes.</span>
+            TrailForge trace une boucle trail fiable, exportable sur ta montre.
           </p>
         </div>
 
         <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <MagneticButton href="/app">Forger mon parcours</MagneticButton>
+          <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
           <p
             style={{
               fontFamily: "var(--font-inter), sans-serif",
