@@ -34,16 +34,20 @@ Le solver applique ensuite :
 - un score final de chemin qui valorise le ratio naturel et surtout le plus long corridor continu ;
 - une pénalité de fragmentation quand plusieurs petits segments naturels séparés remplacent un vrai corridor ;
 - une attraction précoce vers les grands composants naturels, même si la première arête d'accès est une petite route ;
+- un bonus d'entrée quand une arête amène réellement la route dans un composant naturel identifié ;
+- un seuil d'ancre moins naïf pour ne pas ignorer les bois moyens sur une sortie 10–12 km ;
+- une pénalité finale forte pour les boucles longues quasi entièrement routières quand une alternative naturelle existe ;
 - un bonus final pour les boucles qui visitent réellement un long massif continu.
 
 ## Garde-fou test
 
-Le test `tests/orienteering-solver.test.ts` couvre deux cas :
+Le test `tests/orienteering-solver.test.ts` couvre trois cas :
 
 1. une boucle à score brut supérieur avec un seul fragment trail puis route doit perdre contre une boucle à score brut inférieur mais composée d'un corridor naturel continu ;
-2. une route d'accès routière vers un grand massif naturel doit battre un petit fragment trail local suivi de routes.
+2. une route d'accès routière vers un grand massif naturel doit battre un petit fragment trail local suivi de routes ;
+3. une boucle routière propre qui contourne un bois doit perdre contre une boucle qui accepte une transition routière pour entrer dans le bois.
 
-Le second cas formalise le problème “bois des Amis de Jean Bosco → bois de Baron” : le solver doit viser le massif, pas saisir le premier bout vert disponible.
+Les deux derniers cas formalisent le problème “bois des Amis de Jean Bosco → bois de Baron” : le solver doit viser le massif et y entrer, pas simplement longer sa périphérie ou saisir le premier bout vert disponible.
 
 ## Pourquoi c'est important
 

@@ -175,6 +175,90 @@ function makeDistantMassifVsLocalFragmentGraph(): EnrichedGraph {
   return graph;
 }
 
+function makePerimeterVsWoodEntryGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["perimeter-a", makeNode("perimeter-a", 49.145, -0.505)],
+    ["perimeter-b", makeNode("perimeter-b", 49.150, -0.500)],
+    ["perimeter-c", makeNode("perimeter-c", 49.145, -0.495)],
+    ["wood-gate", makeNode("wood-gate", 49.143, -0.500)],
+    ["wood-a", makeNode("wood-a", 49.146, -0.499)],
+    ["wood-b", makeNode("wood-b", 49.148, -0.496)],
+    ["wood-c", makeNode("wood-c", 49.145, -0.493)],
+    ["wood-exit", makeNode("wood-exit", 49.142, -0.496)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 4,
+  };
+
+  addEdge(graph, "start-perimeter-a", "start", "perimeter-a", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "perimeter-a-perimeter-b", "perimeter-a", "perimeter-b", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "perimeter-b-perimeter-c", "perimeter-b", "perimeter-c", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "perimeter-c-start", "perimeter-c", "start", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+
+  addEdge(graph, "start-wood-gate", "start", "wood-gate", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.38,
+    lengthKm: 2.2,
+  });
+  addEdge(graph, "wood-gate-wood-a", "wood-gate", "wood-a", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.68,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "wood-a-wood-b", "wood-a", "wood-b", {
+    highway: "path",
+    surface: "ground",
+    score: 0.68,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "wood-b-wood-c", "wood-b", "wood-c", {
+    highway: "track",
+    surface: "earth",
+    score: 0.68,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "wood-c-wood-exit", "wood-c", "wood-exit", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.68,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "wood-exit-start", "wood-exit", "start", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.38,
+    lengthKm: 5.2,
+  });
+
+  return graph;
+}
+
 describe("solve natural corridor preference", () => {
   it("ranks a continuous natural corridor above a higher raw-score isolated trail fragment", async () => {
     const graph = makeCorridorVsFragmentLoopGraph();
@@ -203,6 +287,22 @@ describe("solve natural corridor preference", () => {
       "massif-b-massif-c",
       "massif-c-massif-d",
       "massif-d-start",
+    ]);
+  });
+
+  it("enters a real wood instead of drawing a clean road loop around it", async () => {
+    const graph = makePerimeterVsWoodEntryGraph();
+
+    const paths = await solve(graph, "start", 10, 0, new Map());
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-wood-gate",
+      "wood-gate-wood-a",
+      "wood-a-wood-b",
+      "wood-b-wood-c",
+      "wood-c-wood-exit",
+      "wood-exit-start",
     ]);
   });
 });
