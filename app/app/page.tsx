@@ -33,10 +33,13 @@ export default function AppPage() {
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
           `}
           style={{
-            background: "var(--bg-deep)",
+            background: "linear-gradient(180deg, var(--bg-deep), var(--bg-surface))",
+            backgroundImage: "var(--topo-lines), linear-gradient(180deg, var(--bg-deep), var(--bg-surface))",
+            backgroundSize: "240px 240px, auto",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
+            boxShadow: "24px 0 80px rgba(0,0,0,0.22)",
           }}
           aria-label="Panneau de configuration du parcours"
         >
@@ -70,10 +73,10 @@ export default function AppPage() {
             className="fixed bottom-6 right-4 z-20 md:hidden"
             onClick={() => setSidebarOpen(true)}
             style={{
-              background: "var(--accent-lime)",
-              color: "var(--bg-deep)",
-              border: "none",
-              borderRadius: "28px",
+              background: "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))",
+              color: "#071009",
+              border: "1px solid rgba(242,240,232,0.18)",
+              borderRadius: "999px",
               padding: "14px 24px",
               fontFamily: "var(--font-syne), sans-serif",
               fontSize: "13px",

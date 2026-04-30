@@ -1,8 +1,8 @@
 "use client";
 
 const CHIPS = [
-  "Fractionné", "Seuil", "Trail", "Endurance",
-  "Gran Fondo", "Gravel", "MTB", "Récup",
+  "Trail", "Découverte", "Endurance", "Forêt",
+  "D+", "GPX", "Surface nature",
 ] as const;
 
 const ACTIVE_INDICES = new Set([0, 2]);
@@ -19,9 +19,9 @@ export default function SessionChipsVisual() {
               fontFamily: "var(--font-syne), sans-serif",
               fontSize: "11px",
               padding: "6px 14px",
-              borderRadius: "2px",
+              borderRadius: "999px",
               border: "1px solid var(--border)",
-              background: isActive ? "var(--accent-lime)" : "var(--bg-elevated)",
+              background: isActive ? "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))" : "var(--bg-elevated)",
               color: isActive ? "var(--bg-deep)" : "var(--text-muted)",
               fontWeight: isActive ? 700 : 400,
             }}

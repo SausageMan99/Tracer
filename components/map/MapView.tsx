@@ -620,7 +620,7 @@ export default function MapView() {
               backdropFilter: "blur(16px)",
               background: "rgba(8,12,10,0.82)",
               border: "1px solid rgba(30,43,34,0.9)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
               padding: "10px 16px",
               display: "flex",
               gap: "20px",

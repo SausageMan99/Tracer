@@ -40,7 +40,7 @@ function FormMockup() {
         <rect x="30" y="30" width="60" height="22" rx="2" fill="var(--accent-lime)" />
         <text x="60" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fontWeight="700" fill="var(--bg-deep)">Trail</text>
         <rect x="100" y="30" width="60" height="22" rx="2" fill="none" stroke="var(--border)" strokeWidth="1" />
-        <text x="130" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fill="var(--text-muted)">Route</text>
+        <text x="130" y="45" textAnchor="middle" fontSize="9" fontFamily="var(--font-syne)" fill="var(--text-muted)">Nature</text>
         <line x1="30" y1="80" x2="250" y2="80" stroke="var(--bg-elevated)" strokeWidth="2" />
         <circle cx="160" cy="80" r="6" fill="var(--accent-lime)" />
         <text x="30" y="98" fontSize="8" fontFamily="var(--font-jetbrains)" fill="var(--text-muted)">12 km</text>
@@ -137,7 +137,7 @@ function VerticalStep({ step, index }: { readonly step: Step; readonly index: nu
         style={{
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
+          borderRadius: "var(--radius-control)",
           aspectRatio: "4/3",
           display: "flex",
           alignItems: "center",
@@ -217,7 +217,7 @@ function StepCard({ step, index }: { readonly step: Step; readonly index: number
           style={{
             background: "var(--bg-surface)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             aspectRatio: "4/3",
             display: "flex",
             alignItems: "center",

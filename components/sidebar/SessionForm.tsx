@@ -4,73 +4,14 @@ import React, { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import {
   PROFILES_BY_ID,
-  PROFILES_BY_SPORT,
-  SPORT_LABELS,
 } from "@/lib/session-profiles";
 import { buildRouteIntentionCard } from "@/lib/route-intentions";
 import type {
   GenerateRouteError,
   GenerateRouteRequest,
   GenerateRouteResponse,
-  Sport,
 } from "@/lib/types";
 import AddressInput from "@/components/sidebar/AddressInput";
-
-// ── Sport list ────────────────────────────────────────────────────────────────
-
-const SPORTS: Sport[] = ["running", "cycling_road", "cycling_gravel", "cycling_mtb"];
-
-// ── Sport SVG icons ───────────────────────────────────────────────────────────
-
-function RunningIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M13.49 5.48c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-3.6 13.9 1-4.4 2.1 2v6h2v-7.5l-2.1-2 .6-3c1.3 1.5 3.3 2.5 5.5 2.5v-2c-1.9 0-3.5-1-4.3-2.4l-1-1.6c-.4-.6-1-1-1.7-1-.3 0-.5.1-.8.1l-5.2 2.2v4.7h2v-3.4l1.8-.7-1.6 8.1-4.9-1-.4 2 7 1.4z" />
-    </svg>
-  );
-}
-
-function RoadBikeIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
-      <path d="M15.5 5.5c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zM5 12c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5zm5.8-10 2.4-2.4.8.8c1.3 1.3 3 2.1 5.1 2.1V9c-1.5 0-2.7-.6-3.6-1.5l-1.9-1.9c-.5-.4-1-.6-1.6-.6s-1.1.2-1.4.6L7.8 8.4c-.4.4-.6.9-.6 1.4 0 .6.2 1.1.6 1.4L11 14v5h2v-6l-2.2-2.5zm8.2 2c-2.8 0-5 2.2-5 5s2.2 5 5 5 5-2.2 5-5-2.2-5-5-5zm0 8.5c-1.9 0-3.5-1.6-3.5-3.5s1.6-3.5 3.5-3.5 3.5 1.6 3.5 3.5-1.6 3.5-3.5 3.5z" />
-    </svg>
-  );
-}
-
-function GravelIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
-      <circle cx="6" cy="17" r="3.5" strokeWidth="2"/>
-      <circle cx="18" cy="17" r="3.5" strokeWidth="2"/>
-      <path d="M6 17 L9 8 L15 8 L18 17" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M9 8 L12 5 L15 8" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M7 12 L17 12" strokeLinecap="round"/>
-      <circle cx="12" cy="8" r="1" fill="currentColor"/>
-    </svg>
-  );
-}
-
-function MtbIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className={className} aria-hidden="true">
-      <circle cx="5" cy="17" r="4" strokeWidth="2.5"/>
-      <circle cx="19" cy="17" r="4" strokeWidth="2.5"/>
-      <path d="M5 17 L8.5 7 L14 7 L19 17" strokeLinecap="round" strokeLinejoin="round"/>
-      <path d="M8.5 7 L11 4" strokeLinecap="round"/>
-      <path d="M11 4 L14 4" strokeLinecap="round"/>
-      <path d="M14 7 L14 4" strokeLinecap="round"/>
-      <path d="M6.5 12 L17.5 12" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
-}
-
-const SPORT_ICONS: Record<Sport, (cls: string) => React.ReactElement> = {
-  running:        (cls) => <RunningIcon className={cls} />,
-  cycling_road:   (cls) => <RoadBikeIcon className={cls} />,
-  cycling_gravel: (cls) => <GravelIcon className={cls} />,
-  cycling_mtb:    (cls) => <MtbIcon className={cls} />,
-};
 
 // ── Loading steps ─────────────────────────────────────────────────────────────
 
@@ -79,21 +20,17 @@ const LOADING_STEPS = ["ANALYSE DU TERRAIN...", "CALCUL DES PENTES...", "OPTIMIS
 // ── Chip labels ───────────────────────────────────────────────────────────────
 
 const CHIP_LABELS: Record<string, string> = {
+  running_trail_decouverte:   "Découverte",
+  running_trail:              "Trail",
   running_endurance:          "Endurance",
-  running_seuil:              "Seuil",
-  running_intervals:          "30/30",
-  running_sortie_longue:      "Longue",
-  running_recuperation:       "Récup",
-  cycling_road_endurance:     "Endurance",
-  cycling_road_seuil:         "Seuil",
-  cycling_road_intervals:     "Intervals",
-  cycling_road_gran_fondo:    "Gran Fondo",
-  cycling_road_recuperation:  "Récup",
-  cycling_gravel_endurance:   "Endurance",
-  cycling_gravel_gran_fondo:  "Gran Fondo",
-  cycling_mtb_endurance:      "Endurance",
-  cycling_mtb_intervals:      "Intervals",
 };
+
+const PHASE1_PROFILE_IDS = ["running_trail_decouverte", "running_trail", "running_endurance"] as const;
+const PHASE1_PROFILES = PHASE1_PROFILE_IDS
+  .map((id) => PROFILES_BY_ID.get(id))
+  .filter((profile): profile is NonNullable<typeof profile> => profile != null);
+
+const PHASE1_MAX_DISTANCE_KM = 15;
 
 // ── Section label ─────────────────────────────────────────────────────────────
 
@@ -146,7 +83,6 @@ export default function SessionForm() {
     setSidebarOpen,
   } = useAppStore();
 
-  const [selectedSport, setSelectedSport] = useState<Sport>("running");
   const [stepIndex, setStepIndex] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
 
@@ -181,22 +117,11 @@ export default function SessionForm() {
     ? buildRouteIntentionCard(currentProfile, scenicMode)
     : null;
 
-  const handleSportChange = (sport: Sport) => {
-    setSelectedSport(sport);
-    const profiles = PROFILES_BY_SPORT[sport] ?? [];
-    if (profiles.length > 0) {
-      const first = profiles[0];
-      setProfileId(first.id);
-      setTargetDistance(first.distanceRange.default);
-      setTargetElevation(first.elevationRange.default);
-    }
-  };
-
   const handleProfileChange = (profileId: string) => {
     const profile = PROFILES_BY_ID.get(profileId);
     if (profile) {
       setProfileId(profile.id);
-      setTargetDistance(profile.distanceRange.default);
+      setTargetDistance(Math.min(profile.distanceRange.default, PHASE1_MAX_DISTANCE_KM));
       setTargetElevation(profile.elevationRange.default);
     }
   };
@@ -262,11 +187,11 @@ export default function SessionForm() {
 
   // Slider ranges
   const distMin = currentProfile?.distanceRange.min ?? 5;
-  const distMax = currentProfile?.distanceRange.max ?? 100;
+  const distMax = Math.min(currentProfile?.distanceRange.max ?? PHASE1_MAX_DISTANCE_KM, PHASE1_MAX_DISTANCE_KM);
   const elevMin = currentProfile?.elevationRange.min ?? 0;
   const elevMax = currentProfile?.elevationRange.max ?? 2000;
 
-  const distPresets = currentProfile?.distancePresets ?? [];
+  const distPresets = (currentProfile?.distancePresets ?? []).filter((v) => v <= PHASE1_MAX_DISTANCE_KM);
   const elevPresets = currentProfile?.elevationPresets ?? [];
 
   // ── Shared styles ──────────────────────────────────────────────────────────
@@ -286,7 +211,7 @@ export default function SessionForm() {
 
   const presetChip = (active: boolean): React.CSSProperties => ({
     padding: "5px 12px",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-control)",
     fontFamily: "var(--font-syne), sans-serif",
     fontSize: "10px",
     fontWeight: 600,
@@ -294,7 +219,8 @@ export default function SessionForm() {
     cursor: "pointer",
     transition: "all 0.2s var(--ease-out-expo)",
     border: "1px solid",
-    ...(active ? chipActive : chipInactive),
+    background: active ? "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))" : "rgba(18,29,22,0.78)",
+    color: active ? "#071009" : "var(--text-muted)",
   });
 
   return (
@@ -306,7 +232,15 @@ export default function SessionForm() {
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="px-4 md:px-6 pt-5 pb-[18px] border-b border-[var(--border)]">
 
-        <SidebarSectionLabel>Configurer la séance</SidebarSectionLabel>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+          <SidebarSectionLabel>Atelier trail</SidebarSectionLabel>
+          <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--accent-amber)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            5–15 km
+          </span>
+        </div>
+        <h1 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "24px", lineHeight: 1.1, color: "var(--text-primary)", marginBottom: "10px", letterSpacing: "-0.02em" }}>
+          Crée une boucle trail fiable.
+        </h1>
         <p
           style={{
             fontFamily: "var(--font-inter), sans-serif",
@@ -315,7 +249,7 @@ export default function SessionForm() {
             lineHeight: 1.5,
           }}
         >
-          Génère un parcours en 10 secondes
+          Départ, D+, surface nature. Un GPX propre si la route tient vraiment.
         </p>
       </div>
 
@@ -327,7 +261,7 @@ export default function SessionForm() {
             id="address"
             value={address}
             onChange={setAddress}
-            placeholder="Ville, adresse…"
+            placeholder="Adresse, parking, point de départ…"
             disabled={isLoading}
             dark
           />
@@ -358,70 +292,14 @@ export default function SessionForm() {
 
         <Divider />
 
-        {/* ── Sport selector ─────────────────────────────────────────────── */}
-        <div>
-          <SidebarSectionLabel>Sport</SidebarSectionLabel>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: "8px",
-            }}
-            role="radiogroup"
-            aria-label="Sélection du sport"
-          >
-            {SPORTS.map((sport) => {
-              const isActive = selectedSport === sport;
-              return (
-                <button
-                  key={sport}
-                  type="button"
-                  role="radio"
-                  aria-checked={isActive}
-                  disabled={isLoading}
-                  onClick={() => handleSportChange(sport)}
-                  className="h-14 md:h-[72px]"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: "6px",
-                    borderRadius: "2px",
-                    border: isActive ? "1px solid var(--accent-lime)" : "1px solid var(--border)",
-                    background: isActive ? "var(--bg-elevated)" : "var(--bg-surface)",
-                    cursor: "pointer",
-                    transition: "all 0.2s var(--ease-out-expo)",
-                    color: isActive ? "var(--accent-lime)" : "var(--text-muted)",
-                  }}
-                >
-                  {SPORT_ICONS[sport]("w-5 h-5")}
-                  <span
-                    style={{
-                      fontFamily: "var(--font-syne), sans-serif",
-                      fontSize: "11px",
-                      fontWeight: 600,
-                      color: isActive ? "var(--text-primary)" : "var(--text-muted)",
-                    }}
-                  >
-                    {SPORT_LABELS[sport]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <Divider />
-
         {/* ── Session type chips ─────────────────────────────────────────── */}
         <div>
-          <SidebarSectionLabel>Type de séance</SidebarSectionLabel>
+          <SidebarSectionLabel>Intention</SidebarSectionLabel>
           <div
             className="session-scroll"
             style={{ display: "flex", gap: "6px", overflowX: "auto", paddingBottom: "4px" }}
           >
-            {(PROFILES_BY_SPORT[selectedSport] ?? []).map((profile) => {
+            {PHASE1_PROFILES.map((profile) => {
               const isActive = selectedProfileId === profile.id;
               return (
                 <button
@@ -432,7 +310,7 @@ export default function SessionForm() {
                   style={{
                     flexShrink: 0,
                     padding: "6px 14px",
-                    borderRadius: "2px",
+                    borderRadius: "999px",
                     fontFamily: "var(--font-syne), sans-serif",
                     fontSize: "11px",
                     fontWeight: isActive ? 700 : 400,
@@ -470,7 +348,7 @@ export default function SessionForm() {
                 background: "var(--bg-surface)",
                 border: "1px solid var(--border)",
                 borderLeft: "3px solid var(--accent-sage)",
-                borderRadius: "2px",
+                borderRadius: "var(--radius-control)",
               }}
               aria-label="Intention du parcours"
             >
@@ -493,12 +371,12 @@ export default function SessionForm() {
 
         <Divider />
 
-        {/* ── Mode toggle ────────────────────────────────────────────────── */}
+        {/* ── Mode toggle ───────────────────────────────────────────────── */}
         <div>
-          <SidebarSectionLabel>Mode</SidebarSectionLabel>
+          <SidebarSectionLabel>Surface</SidebarSectionLabel>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
 
-            {/* PERFORMANCE */}
+            {/* RÉGULIER */}
             <button
               type="button"
               onClick={() => setScenicMode(false)}
@@ -509,7 +387,7 @@ export default function SessionForm() {
                 alignItems: "center",
                 gap: "16px",
                 padding: "0 16px",
-                borderRadius: "2px",
+                borderRadius: "var(--radius-control)",
                 background: !scenicMode ? "var(--bg-elevated)" : "var(--bg-surface)",
                 border: "1px solid var(--border)",
                 borderLeft: !scenicMode ? "3px solid var(--accent-lime)" : "3px solid transparent",
@@ -523,15 +401,15 @@ export default function SessionForm() {
               </svg>
               <div>
                 <div style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.2em", color: !scenicMode ? "var(--text-primary)" : "var(--text-muted)", textTransform: "uppercase" }}>
-                  Performance
+                  Régulier
                 </div>
                 <div style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
-                  Route, régularité, surface
+                  Surface stable, régularité, peu de dénivelé technique
                 </div>
               </div>
             </button>
 
-            {/* SCENIC */}
+            {/* NATURE */}
             <button
               type="button"
               onClick={() => setScenicMode(true)}
@@ -542,7 +420,7 @@ export default function SessionForm() {
                 alignItems: "center",
                 gap: "16px",
                 padding: "0 16px",
-                borderRadius: "2px",
+                borderRadius: "var(--radius-control)",
                 background: scenicMode ? "var(--bg-elevated)" : "var(--bg-surface)",
                 border: "1px solid var(--border)",
                 borderLeft: scenicMode ? "3px solid var(--accent-sage)" : "3px solid transparent",
@@ -557,10 +435,10 @@ export default function SessionForm() {
               </svg>
               <div>
                 <div style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.2em", color: scenicMode ? "var(--text-primary)" : "var(--text-muted)", textTransform: "uppercase" }}>
-                  Scenic
+                  Nature
                 </div>
                 <div style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", marginTop: "2px" }}>
-                  Nature, popularité, découverte
+                  Sentiers, forêt, chemins, découverte
                 </div>
               </div>
             </button>
@@ -671,10 +549,10 @@ export default function SessionForm() {
           style={{
             width: "100%",
             height: "52px",
-            background: isLoading ? "var(--bg-elevated)" : "var(--accent-lime)",
-            color: isLoading ? "var(--text-muted)" : "var(--bg-deep)",
-            border: "none",
-            borderRadius: "2px",
+            background: isLoading ? "var(--bg-elevated)" : "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))",
+            color: isLoading ? "var(--text-muted)" : "#071009",
+            border: "1px solid rgba(242,240,232,0.14)",
+            borderRadius: "var(--radius-control)",
             fontFamily: "var(--font-syne), sans-serif",
             fontSize: "13px",
             fontWeight: 700,
@@ -710,7 +588,7 @@ export default function SessionForm() {
               }}
             />
           )}
-          {isLoading ? LOADING_STEPS[stepIndex] : "GÉNÉRER →"}
+          {isLoading ? LOADING_STEPS[stepIndex] : "TRACER LA BOUCLE →"}
         </button>
 
         {status === "error" && (
@@ -722,7 +600,7 @@ export default function SessionForm() {
               padding: "12px 16px",
               background: "rgba(239,68,68,0.08)",
               border: "1px solid rgba(239,68,68,0.25)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
             }}
           >
             <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#f87171", lineHeight: 1.5 }}>

@@ -10,10 +10,10 @@ interface Metric {
 }
 
 const METRICS: readonly Metric[] = [
-  { value: "14", label: "profils de séance" },
-  { value: "<10s", label: "génération" },
-  { value: "847", label: "candidats analysés" },
-  { value: "30m", label: "résolution altitude" },
+  { value: "3", label: "intentions trail" },
+  { value: "15km", label: "focus phase 1" },
+  { value: "0", label: "choix vélo" },
+  { value: "GPX", label: "sortie montre" },
 ] as const;
 
 export default function MetricsSection() {

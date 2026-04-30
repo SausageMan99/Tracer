@@ -7,9 +7,9 @@ import TextReveal from "@/components/ui/TextReveal";
 import TopographicDivider from "@/components/landing/shared/TopographicDivider";
 
 const PAIN_STATEMENTS = [
-  "Tu cherches. 20 minutes. Sans garantie.",
-  "Ton fractionné finit sur un boulevard.",
-  "Ton D+ est un mensonge. Chaque fois.",
+  "Tu bricolages Komoot + Strava + OpenRunner avant chaque sortie.",
+  "Tu demandes du trail et tu récupères trop souvent du bitume.",
+  "Ton D+ annoncé ne correspond pas à la séance prévue.",
 ] as const;
 
 export default function ManifestoSection() {
@@ -77,7 +77,7 @@ export default function ManifestoSection() {
         }}
       >
         <TextReveal trigger="scroll" splitType="words">
-          Planifier un parcours ne devrait pas être un parcours.
+          Le vrai concurrent, c’est ton bricolage avant de courir.
         </TextReveal>
       </h2>
 

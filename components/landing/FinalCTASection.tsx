@@ -52,21 +52,21 @@ export default function FinalCTASection() {
           }}
         >
           <TextReveal trigger="scroll" splitType="words">
-            Prêt à forger ?
+            Prêt à tester une vraie boucle trail ?
           </TextReveal>
         </h2>
 
         <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
-          <MagneticButton href="/app">Ouvrir TrailForge</MagneticButton>
+          <MagneticButton href="/app">Tracer une boucle test</MagneticButton>
           <MagneticButton href="https://github.com" primary={false}>
-            Voir sur GitHub
+            Lire la démarche
           </MagneticButton>
         </div>
 
         {/* Counter */}
         <div style={{ marginTop: "16px" }}>
           <ScrambleNumber
-            text="127 parcours forgés cette semaine"
+            text="Phase 1 · traileurs uniquement"
             style={{
               fontFamily: "var(--font-jetbrains), monospace",
               fontSize: "13px",

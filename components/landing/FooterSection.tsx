@@ -35,7 +35,7 @@ export default function FooterSection() {
           opacity: 0.5,
         }}
       >
-        48.8566°N 2.3522°E
+        Trail runners uniquement
       </span>
 
       <div style={{ display: "flex", gap: "24px", alignItems: "center" }}>
@@ -73,7 +73,7 @@ export default function FooterSection() {
           textAlign: "center",
         }}
       >
-        Projet personnel · 2026
+        Phase 1 · boucles 5–15 km · 2026
       </span>
     </footer>
   );

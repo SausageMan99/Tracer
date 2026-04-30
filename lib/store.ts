@@ -69,7 +69,7 @@ interface AppStore extends AppState {
   toggleSidebar: () => void;
 }
 
-const defaultProfile = SESSION_PROFILES[0];
+const defaultProfile = SESSION_PROFILES.find((profile) => profile.id === "running_trail") ?? SESSION_PROFILES[0];
 
 const initialState: AppState = {
   status: "idle" as AppStatus,

@@ -47,7 +47,7 @@ export default function FeatureShowcase() {
           }}
         >
           <TextReveal trigger="scroll" splitType="words">
-            Tout ce dont tu as besoin.
+            TrailForge devient volontairement plus étroit.
           </TextReveal>
         </h2>
       </div>

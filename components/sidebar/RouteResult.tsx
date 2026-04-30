@@ -47,13 +47,14 @@ function StatCard({
   return (
     <div
       style={{
-        background: "var(--bg-surface)",
+        background: "linear-gradient(180deg, rgba(18,29,22,0.92), rgba(11,18,14,0.94))",
         border: "1px solid var(--border)",
-        borderRadius: "2px",
+        borderRadius: "var(--radius-control)",
         padding: "16px",
         display: "flex",
         flexDirection: "column",
         gap: "6px",
+        boxShadow: "0 12px 36px rgba(0,0,0,0.22)",
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -152,7 +153,7 @@ export default function RouteResult() {
             padding: "16px",
             background: "rgba(239,68,68,0.08)",
             border: "1px solid rgba(239,68,68,0.25)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
           }}
         >
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#f87171", lineHeight: 1.5 }}>
@@ -231,7 +232,7 @@ export default function RouteResult() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6"/>
           </svg>
-          Nouvelle recherche
+          Nouvelle boucle
         </button>
 
         <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "center", gap: "2px" }}>
@@ -257,7 +258,7 @@ export default function RouteResult() {
               letterSpacing: "0.1em",
             }}
           >
-            {profile.name} · {profile.sport.replace(/_/g, " ")}
+            {profile.name}
           </span>
         </div>
 
@@ -269,7 +270,7 @@ export default function RouteResult() {
             background: "var(--bg-surface)",
             border: "1px solid var(--border)",
             borderLeft: "3px solid var(--accent-lime)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
           }}
           aria-label="Explication intelligente du parcours"
         >
@@ -320,7 +321,7 @@ export default function RouteResult() {
               padding: "12px 14px",
               background: "rgba(245,158,11,0.08)",
               border: "1px solid rgba(245,158,11,0.24)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
             }}
             aria-label="Compromis qualité du parcours"
           >
@@ -359,7 +360,7 @@ export default function RouteResult() {
             padding: "12px 16px",
             background: "var(--bg-surface)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
           }}
         >
           <p
@@ -432,7 +433,7 @@ export default function RouteResult() {
                     style={{
                       flexShrink: 0,
                       padding: "8px 12px",
-                      borderRadius: "2px",
+                      borderRadius: "var(--radius-control)",
                       border: isActive ? "1px solid var(--accent-lime)" : "1px solid var(--border)",
                       background: isActive ? "var(--bg-elevated)" : "var(--bg-surface)",
                       cursor: "pointer",
@@ -479,7 +480,7 @@ export default function RouteResult() {
               background: "var(--accent-lime)",
               color: "var(--bg-deep)",
               border: "none",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
               fontFamily: "var(--font-syne), sans-serif",
               fontSize: "12px",
               fontWeight: 700,
@@ -507,7 +508,7 @@ export default function RouteResult() {
               padding: "12px 14px",
               background: "var(--bg-surface)",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
             }}
             aria-label="Guide d'export vers montre ou compteur"
           >
@@ -549,7 +550,7 @@ export default function RouteResult() {
               background: "transparent",
               color: "var(--text-muted)",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
               fontFamily: "var(--font-syne), sans-serif",
               fontSize: "11px",
               fontWeight: 600,
@@ -593,7 +594,7 @@ export default function RouteResult() {
                 padding: "12px 14px",
                 background: "var(--bg-surface)",
                 border: "1px solid var(--border)",
-                borderRadius: "2px",
+                borderRadius: "var(--radius-control)",
               }}
               aria-label="Dashboard feedback local"
             >

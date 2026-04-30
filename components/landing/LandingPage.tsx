@@ -104,10 +104,13 @@ function PainCard({
         border: "1px solid var(--border)",
         background: "var(--bg-surface)",
         padding: "28px 32px",
-        borderRadius: "2px",
+        borderRadius: "var(--radius-card)",
+        backgroundImage: "var(--topo-lines)",
+        backgroundSize: "220px 220px",
+        boxShadow: "0 20px 70px rgba(0,0,0,0.22)",
       }}
     >
-      <div style={{ color: "var(--accent-sage)", marginBottom: "12px" }}>{icon}</div>
+      <div style={{ color: "var(--accent-amber)", marginBottom: "12px" }}>{icon}</div>
       <h3
         style={{
           fontFamily: "var(--font-syne), sans-serif",
@@ -196,7 +199,7 @@ function ElevationVisual() {
 // ── Session chips visual ──────────────────────────────────────────────────────
 
 function SessionChipsVisual() {
-  const chips = ["Fractionné", "Seuil", "Trail", "Endurance", "Gran Fondo", "Gravel", "MTB", "Récup"];
+  const chips = ["Trail", "Découverte", "Endurance", "Forêt", "D+", "GPX", "Surface nature"];
   return (
     <div style={{ padding: "24px", display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center" }}>
       {chips.map((c, i) => (
@@ -206,9 +209,9 @@ function SessionChipsVisual() {
             fontFamily: "var(--font-syne), sans-serif",
             fontSize: "11px",
             padding: "6px 14px",
-            borderRadius: "2px",
+            borderRadius: "999px",
             border: "1px solid var(--border)",
-            background: i === 0 || i === 2 ? "var(--accent-lime)" : "var(--bg-elevated)",
+            background: i === 0 || i === 2 ? "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))" : "var(--bg-elevated)",
             color: i === 0 || i === 2 ? "var(--bg-deep)" : "var(--text-muted)",
             fontWeight: i === 0 || i === 2 ? 700 : 400,
           }}
@@ -287,13 +290,13 @@ function RouteMapVisual() {
 function GpsDevicesVisual() {
   return (
     <div style={{ padding: "32px", display: "flex", gap: "24px", alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-      {["Garmin", "Wahoo", "Suunto"].map(brand => (
+      {["Garmin", "COROS", "Suunto"].map(brand => (
         <div
           key={brand}
           style={{
             padding: "16px 24px",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-card)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
@@ -537,7 +540,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               textDecoration: "none",
               border: "1px solid rgba(168,214,114,0.3)",
               padding: "8px 20px",
-              borderRadius: "2px",
+              borderRadius: "999px",
               transition: "all 0.3s var(--ease-out-expo)",
             }}
             onMouseEnter={(e) => {
@@ -567,7 +570,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             textAlign: "center",
           }}
         >
-          <SectionLabel>Boucles trail prêtes pour montre</SectionLabel>
+          <SectionLabel>GPS field lab · trail only</SectionLabel>
 
           <h1
             style={{
@@ -584,19 +587,19 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             {showNewHero ? (
               <>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-                  Trace ta boucle,
+                  Trace une boucle
                 </TextReveal>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
-                  lance-toi.
+                  qui tient terrain.
                 </TextReveal>
               </>
             ) : (
               <>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-                  Trace ta
+                  Boucles trail
                 </TextReveal>
                 <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.6} style={{ color: "var(--accent-lime)" }}>
-                  boucle.
+                  sans bricolage.
                 </TextReveal>
               </>
             )}
@@ -611,14 +614,12 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               lineHeight: 1.7,
               margin: "0 auto",
             }}>
-              Distance, D+, surface : tu fixes les règles.
-              <br />
-              TrailForge trace une boucle trail fiable, exportable sur ta montre.
+              5–15 km, D+ cible, surface nature. TrailForge ne vend pas une trace magique : il affiche les compromis avant que tu partes courir.
             </p>
           </div>
 
           <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
+            <MagneticButton href="/app">Tracer une boucle test</MagneticButton>
             <p style={{
               fontFamily: "var(--font-inter), sans-serif",
               fontSize: "13px",
@@ -626,7 +627,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               marginTop: "12px",
               opacity: 0.7,
             }}>
-              Gratuit, sans inscription
+              Gratuit · sans inscription · pensé pour montre GPS
             </p>
             <div style={{
               marginTop: "48px",
@@ -650,7 +651,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
                 <circle cx="300" cy="30" r="4" fill="var(--accent-lime)" opacity="0.8" />
                 {/* Distance label */}
                 <text x="160" y="75" textAnchor="middle" fontSize="10" fontFamily="var(--font-jetbrains)" fill="var(--text-muted)" opacity="0.6">
-                  14.2 km · D+ 312m
+                  11.8 km · D+ 340m · 72% chemins
                 </text>
               </svg>
             </div>
@@ -718,7 +719,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
               }}
             >
               <TextReveal trigger="scroll" splitType="words">
-                Aucun outil ne génère vraiment les parcours.
+                Le vrai concurrent, c’est ton bricolage Komoot + Strava + OpenRunner.
               </TextReveal>
             </h2>
             <p
@@ -786,7 +787,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             }}
           >
             <TextReveal trigger="scroll" splitType="words">
-              TrailForge fait le travail.
+              Une UX plus proche d’un brief de sortie que d’un configurateur générique.
             </TextReveal>
           </h2>
         </div>
@@ -849,7 +850,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             }}
           >
             <TextReveal trigger="scroll" splitType="words">
-              Tout ce dont tu as besoin.
+              TrailForge devient volontairement plus étroit.
             </TextReveal>
           </h2>
         </div>
@@ -908,9 +909,9 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             textAlign: "center",
           }}
         >
-          <StatBlock value={1} label="Promesse trail claire" />
-          <StatBlock value={10} suffix="s" prefix="< " label="Temps de génération" />
-          <StatBlock value={30} suffix="%+" label="Objectif export GPX beta" />
+          <StatBlock value={3} label="Intentions trail" />
+          <StatBlock value={15} suffix="km" label="Focus phase 1" />
+          <StatBlock value={0} label="Choix vélo" />
         </div>
       </section>
 
@@ -962,7 +963,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
           </h2>
 
           <div style={{ display: "flex", gap: "16px", flexWrap: "wrap", justifyContent: "center" }}>
-            <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
+            <MagneticButton href="/app">Tracer une boucle test</MagneticButton>
             <MagneticButton href="https://github.com" primary={false}>
               Voir la doc
             </MagneticButton>
@@ -1000,7 +1001,7 @@ export default function LandingPage({ showNewHero = false }: { showNewHero?: boo
             color: "var(--text-muted)",
           }}
         >
-          Projet personnel · Tous droits réservés
+          Phase 1 · trail runners uniquement
         </span>
         <div style={{ display: "flex", gap: "24px" }}>
           <Link href="/app" style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", textDecoration: "none" }}>

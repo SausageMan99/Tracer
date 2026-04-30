@@ -1,6 +1,6 @@
 "use client";
 
-const BRANDS = ["Garmin", "Wahoo", "Suunto"] as const;
+const BRANDS = ["Garmin", "COROS", "Suunto"] as const;
 
 export default function GpsDevicesVisual() {
   return (
@@ -11,7 +11,7 @@ export default function GpsDevicesVisual() {
           style={{
             padding: "16px 24px",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-card)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",

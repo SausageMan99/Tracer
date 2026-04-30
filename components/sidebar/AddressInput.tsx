@@ -190,7 +190,7 @@ export default function AddressInput({
           style={dark ? {
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             color: "var(--text-primary)",
             fontFamily: "var(--font-inter), sans-serif",
             fontSize: "13px",
@@ -223,7 +223,7 @@ export default function AddressInput({
           style={dark ? {
             background: "var(--bg-surface)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
             marginTop: "4px",
           } : undefined}

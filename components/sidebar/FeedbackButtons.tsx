@@ -41,7 +41,7 @@ export default function FeedbackButtons({
           padding: "10px 16px",
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
+          borderRadius: "var(--radius-control)",
         }}
       >
         <span
@@ -111,7 +111,7 @@ export default function FeedbackButtons({
             padding: "6px 12px",
             background: "rgba(168,214,114,0.08)",
             border: "1px solid rgba(168,214,114,0.2)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             fontSize: "14px",
             cursor: "pointer",
             transition: "all 0.2s var(--ease-out-expo)",
@@ -134,7 +134,7 @@ export default function FeedbackButtons({
             padding: "6px 12px",
             background: "rgba(248,113,113,0.08)",
             border: "1px solid rgba(248,113,113,0.2)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             fontSize: "14px",
             cursor: "pointer",
             transition: "all 0.2s var(--ease-out-expo)",

@@ -11,7 +11,7 @@ interface WaitlistFormProps {
 }
 
 export default function WaitlistForm({ source, compact = false }: WaitlistFormProps) {
-  const { email, sport, status, message, setEmail, setSport, submit } = useWaitlistForm(source);
+  const { email, status, message, setEmail, submit } = useWaitlistForm(source);
 
   if (status === "success") {
     return (
@@ -59,7 +59,7 @@ export default function WaitlistForm({ source, compact = false }: WaitlistFormPr
             padding: "10px 14px",
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             fontFamily: "var(--font-jetbrains), monospace",
             fontSize: "13px",
             color: "var(--text-primary)",
@@ -74,10 +74,10 @@ export default function WaitlistForm({ source, compact = false }: WaitlistFormPr
           disabled={status === "submitting"}
           style={{
             padding: "10px 20px",
-            background: "var(--accent-lime)",
+            background: "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))",
             color: "var(--bg-deep)",
             border: "none",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             fontFamily: "var(--font-syne), sans-serif",
             fontSize: "11px",
             fontWeight: 700,
@@ -114,7 +114,7 @@ export default function WaitlistForm({ source, compact = false }: WaitlistFormPr
           padding: "16px 20px",
           background: "var(--bg-elevated)",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
+          borderRadius: "var(--radius-control)",
           fontFamily: "var(--font-jetbrains), monospace",
           fontSize: "15px",
           color: "var(--text-primary)",
@@ -125,34 +125,22 @@ export default function WaitlistForm({ source, compact = false }: WaitlistFormPr
         onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
       />
 
-      {/* Sport toggle */}
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-        {(["running", "cycling", "both"] as const).map((s) => {
-          const isActive = sport === s;
-          const labels: Record<string, string> = { running: "Running", cycling: "Cyclisme", both: "Les deux" };
-          return (
-            <button
-              key={s}
-              type="button"
-              onClick={() => setSport(s)}
-              style={{
-                padding: "8px 16px",
-                borderRadius: "2px",
-                border: isActive ? "1px solid var(--accent-lime)" : "1px solid var(--border)",
-                background: isActive ? "rgba(168,214,114,0.1)" : "transparent",
-                color: isActive ? "var(--accent-lime)" : "var(--text-muted)",
-                fontFamily: "var(--font-syne), sans-serif",
-                fontSize: "12px",
-                fontWeight: isActive ? 700 : 400,
-                letterSpacing: "0.05em",
-                cursor: "pointer",
-                transition: "all 0.2s var(--ease-out-expo)",
-              }}
-            >
-              {labels[s]}
-            </button>
-          );
-        })}
+        <span
+          style={{
+            padding: "8px 16px",
+            borderRadius: "999px",
+            border: "1px solid var(--accent-lime)",
+            background: "rgba(196,216,107,0.1)",
+            color: "var(--accent-lime)",
+            fontFamily: "var(--font-syne), sans-serif",
+            fontSize: "12px",
+            fontWeight: 700,
+            letterSpacing: "0.05em",
+          }}
+        >
+          Trail running uniquement
+        </span>
       </div>
 
       {/* Submit */}
@@ -161,10 +149,10 @@ export default function WaitlistForm({ source, compact = false }: WaitlistFormPr
         disabled={status === "submitting"}
         style={{
           padding: "18px 36px",
-          background: "var(--accent-lime)",
+          background: "linear-gradient(135deg, var(--accent-lime), var(--accent-sage))",
           color: "var(--bg-deep)",
           border: "none",
-          borderRadius: "2px",
+          borderRadius: "var(--radius-control)",
           fontFamily: "var(--font-syne), sans-serif",
           fontSize: "13px",
           fontWeight: 700,

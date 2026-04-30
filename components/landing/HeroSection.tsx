@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { gsap } from "@/lib/gsap-setup";
@@ -18,9 +18,7 @@ export default function HeroSection() {
   const heroSubRef = useRef<HTMLDivElement>(null);
   const heroCtaRef = useRef<HTMLDivElement>(null);
   const heroNavRef = useRef<HTMLElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [videoFailed, setVideoFailed] = useState(false);
-
+  
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
@@ -55,41 +53,30 @@ export default function HeroSection() {
         flexDirection: "column",
       }}
     >
-      {/* Video background or TerrainCanvas fallback */}
-      {!videoFailed ? (
-        <>
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            loop
-            playsInline
-            onError={() => setVideoFailed(true)}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              objectFit: "cover",
-              zIndex: 0,
-            }}
-          >
-            <source src="/hero.mp4" type="video/mp4" />
-          </video>
-          {/* Dark overlay over video */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              background: "rgba(8, 12, 10, 0.65)",
-              zIndex: 1,
-            }}
-            aria-hidden="true"
-          />
-        </>
-      ) : (
-        <TerrainCanvas cameraY={32} cameraZ={65} opacity={0.65} />
-      )}
+      <TerrainCanvas cameraY={34} cameraZ={68} opacity={0.28} />
+      <div
+        className="topo-surface"
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+          backgroundColor: "rgba(5,8,6,0.76)",
+        }}
+        aria-hidden="true"
+      />
+      <div
+        style={{
+          position: "absolute",
+          inset: "12% 8% auto auto",
+          zIndex: 2,
+          width: "min(420px, 42vw)",
+          height: "min(420px, 42vw)",
+          borderRadius: "999px",
+          background: "radial-gradient(circle, rgba(196,216,107,0.20), transparent 68%)",
+          filter: "blur(8px)",
+        }}
+        aria-hidden="true"
+      />
 
       <GrainOverlay opacity={0.035} />
 
@@ -131,7 +118,7 @@ export default function HeroSection() {
             textDecoration: "none",
             border: "1px solid rgba(168,214,114,0.3)",
             padding: "8px 20px",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             transition: "all 0.3s var(--ease-out-expo)",
           }}
           onMouseEnter={(e) => {
@@ -161,7 +148,7 @@ export default function HeroSection() {
           textAlign: "center",
         }}
       >
-        <SectionLabel>Boucles trail prêtes pour montre</SectionLabel>
+        <SectionLabel>GPS field lab · trail only</SectionLabel>
 
         <h1
           style={{
@@ -176,7 +163,7 @@ export default function HeroSection() {
           }}
         >
           <TextReveal as="span" trigger="mount" splitType="chars" stagger={0.03} delay={0.3}>
-            Trace ta boucle.
+            Boucles trail
           </TextReveal>
           <br />
           <TextReveal
@@ -187,7 +174,7 @@ export default function HeroSection() {
             delay={0.6}
             style={{ color: "var(--accent-lime)" }}
           >
-            Lance-toi.
+            sans bricolage.
           </TextReveal>
         </h1>
 
@@ -202,14 +189,12 @@ export default function HeroSection() {
               margin: "0 auto",
             }}
           >
-            Distance, D+, surface : tu fixes les règles.
-            <br />
-            TrailForge trace une boucle trail fiable, exportable sur ta montre.
+            5–15 km, D+ cible, surface nature. TrailForge affiche les compromis avant que tu partes courir.
           </p>
         </div>
 
         <div ref={heroCtaRef} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-          <MagneticButton href="/app">Créer ma première boucle</MagneticButton>
+          <MagneticButton href="/app">Tracer une boucle test</MagneticButton>
           <p
             style={{
               fontFamily: "var(--font-inter), sans-serif",
@@ -219,7 +204,7 @@ export default function HeroSection() {
               opacity: 0.7,
             }}
           >
-            Gratuit. Sans inscription.
+            Gratuit · sans inscription · pensé pour montre GPS
           </p>
         </div>
       </div>

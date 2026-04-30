@@ -5,23 +5,28 @@
 /* ── TrailForge Design Tokens ─────────────────────────────────────────────── */
 
 :root {
-  --bg-deep:      #0A0D0C;
-  --bg-surface:   #0D1410;
-  --bg-elevated:  #141C17;
-  --border:       #2A3D30;
-  --text-primary: #E8EDE9;
-  --text-muted:   #8FA898;
-  --accent-moss:  #4A7C59;
-  --accent-sage:  #81C784;
-  --accent-lime:  #7CB342;
-  --accent-amber: #D4A843;
-  --accent-trail: #C17A3A;
-  --gradient-hero: linear-gradient(160deg, #080C0A 0%, #0F1F12 50%, #080C0A 100%);
+  --bg-deep:      #050806;
+  --bg-surface:   #0B120E;
+  --bg-elevated:  #121D16;
+  --bg-panel:     #17231B;
+  --border:       #25382B;
+  --text-primary: #F2F0E8;
+  --text-muted:   #9AAA9B;
+  --accent-moss:  #47694F;
+  --accent-sage:  #A7C7A2;
+  --accent-lime:  #C4D86B;
+  --accent-amber: #C4A166;
+  --accent-trail: #B56B38;
+  --accent-danger:#D46A5B;
+  --gradient-hero: radial-gradient(circle at 75% 25%, rgba(196, 161, 102, 0.16), transparent 28%), linear-gradient(145deg, #F2F0E8 0%, #DAD2C3 48%, #162319 49%, #050806 100%);
+  --topo-lines: url("data:image/svg+xml,%3Csvg width='220' height='220' viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23C4A166' stroke-opacity='0.22' stroke-width='1'%3E%3Cpath d='M-20 55 C35 18 83 18 138 53 C183 82 224 83 252 58'/%3E%3Cpath d='M-24 106 C22 76 72 72 118 103 C163 133 206 137 242 110'/%3E%3Cpath d='M-16 158 C39 126 92 126 142 158 C179 181 214 184 246 162'/%3E%3Cpath d='M34 -10 C62 28 63 64 35 98 C7 132 11 173 42 226'/%3E%3Cpath d='M143 -16 C172 20 174 63 145 98 C113 136 117 176 151 234'/%3E%3C/g%3E%3C/svg%3E");
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* Legacy compatibility */
-  --primary:       #7CB342;
+  --primary:       #C4D86B;
   --font-inter:    "Inter", sans-serif;
   --font-syne:     "Syne", sans-serif;
+  --radius-card:   14px;
+  --radius-control:10px;
 }
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
@@ -198,6 +203,18 @@ input[type="range"].dark-slider::-moz-range-thumb {
   to   { opacity: 1; transform: translateY(0); }
 }
 .fade-up { animation: fade-up 0.7s var(--ease-out-expo) both; }
+
+.topo-surface {
+  background-image: var(--topo-lines), radial-gradient(circle at 70% 10%, rgba(196, 216, 107, 0.12), transparent 34%);
+  background-size: 220px 220px, 100% 100%;
+}
+
+.trail-card {
+  background: linear-gradient(180deg, rgba(23,35,27,0.96), rgba(11,18,14,0.96));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
+}
 
 /* ── Scale fade ───────────────────────────────────────────────────────────── */
 

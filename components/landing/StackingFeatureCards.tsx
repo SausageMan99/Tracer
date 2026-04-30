@@ -46,7 +46,7 @@ function CardContent({
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",
             padding: "4px 12px",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             marginBottom: "20px",
           }}
         >
@@ -90,7 +90,7 @@ function CardContent({
         style={{
           background: "var(--bg-surface)",
           border: "1px solid var(--border)",
-          borderRadius: "2px",
+          borderRadius: "var(--radius-control)",
           overflow: "hidden",
           aspectRatio: "16/9",
           display: "flex",
@@ -164,7 +164,7 @@ export default function StackingFeatureCards({ cards }: StackingFeatureCardsProp
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border)",
-              borderRadius: "2px",
+              borderRadius: "var(--radius-control)",
             }}
           >
             <CardContent {...card} reverse={i % 2 !== 0} />
@@ -194,7 +194,7 @@ export default function StackingFeatureCards({ cards }: StackingFeatureCardsProp
             inset: 0,
             background: "var(--bg-surface)",
             border: "1px solid var(--border)",
-            borderRadius: "2px",
+            borderRadius: "var(--radius-control)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",

@@ -51,7 +51,7 @@ export default function MagneticButton({
     alignItems: "center",
     gap: "8px",
     padding: primary ? "18px clamp(28px, 6vw, 48px)" : "14px clamp(20px, 4vw, 36px)",
-    borderRadius: "2px",
+    borderRadius: "var(--radius-control)",
     fontFamily: "var(--font-syne), sans-serif",
     fontSize: "14px",
     fontWeight: 600,
