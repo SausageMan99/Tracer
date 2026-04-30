@@ -60,6 +60,57 @@ export function createEmptyTerrainAuditReport(): TerrainAuditReport {
   };
 }
 
+function isNaturalLikeEdge(edge: EnrichedEdge): boolean {
+  return (
+    edge.scenic === true ||
+    PATH_LIKE_HIGHWAYS.has(edge.highway) ||
+    NATURAL_SURFACES.has(edge.surface ?? '')
+  );
+}
+
+function calculateFragmentationScore(edges: EnrichedEdge[]): number {
+  const naturalEdges = edges.filter(isNaturalLikeEdge);
+  if (naturalEdges.length === 0) return 1;
+
+  const adjacency = new Map<string, Set<string>>();
+
+  for (const edge of naturalEdges) {
+    if (!adjacency.has(edge.from)) adjacency.set(edge.from, new Set());
+    if (!adjacency.has(edge.to)) adjacency.set(edge.to, new Set());
+    adjacency.get(edge.from)?.add(edge.to);
+    adjacency.get(edge.to)?.add(edge.from);
+  }
+
+  const visited = new Set<string>();
+  let largestComponentNodes = 0;
+
+  for (const node of Array.from(adjacency.keys())) {
+    if (visited.has(node)) continue;
+
+    const stack = [node];
+    let componentNodes = 0;
+    visited.add(node);
+
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      componentNodes += 1;
+
+      for (const next of Array.from(adjacency.get(current) ?? [])) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          stack.push(next);
+        }
+      }
+    }
+
+    largestComponentNodes = Math.max(largestComponentNodes, componentNodes);
+  }
+
+  if (adjacency.size === 0) return 1;
+  return 1 - largestComponentNodes / adjacency.size;
+}
+
 function classifyTrailPotential(metrics: TerrainAuditMetrics): TrailPotential {
   if (metrics.asphaltRatio >= 0.65 && metrics.scenicEdgeRatio < 0.2) return 'low';
   if (metrics.pathLikeEdgeRatio >= 0.6 && metrics.naturalAreaSignal >= 0.35) return 'high';
@@ -89,6 +140,10 @@ function buildTerrainWarnings(metrics: TerrainAuditMetrics): string[] {
     warnings.push('Beaucoup de chemins existent mais les surfaces OSM sont peu renseignées.');
   }
 
+  if (metrics.fragmentationScore >= 0.65) {
+    warnings.push('Les chemins naturels semblent fragmentés autour du départ.');
+  }
+
   return warnings;
 }
 
@@ -109,7 +164,7 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
     scenicEdgeRatio: ratio(scenicEdges, totalEdges),
     asphaltRatio: ratio(asphaltSurfaces, totalEdges),
     naturalAreaSignal: ratio(scenicEdges + naturalSurfaces, totalEdges),
-    fragmentationScore: 0,
+    fragmentationScore: calculateFragmentationScore(edges),
   };
   const trailPotential = classifyTrailPotential(metrics);
 

@@ -76,4 +76,25 @@ describe('terrain audit', () => {
     expect(report.confidence).toBe('medium');
     expect(report.warnings).toContain('Beaucoup de chemins existent mais les surfaces OSM sont peu renseignées.');
   });
+
+  it('detects low fragmentation when natural edges form a continuous corridor', () => {
+    const report = auditTerrainData([
+      edge({ from: 'a', to: 'b', highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'b', to: 'c', highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'c', to: 'd', highway: 'track', surface: 'unpaved', scenic: true }),
+    ]);
+
+    expect(report.metrics.fragmentationScore).toBeLessThan(0.35);
+  });
+
+  it('detects high fragmentation when natural edges are isolated', () => {
+    const report = auditTerrainData([
+      edge({ from: 'a', to: 'b', highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'c', to: 'd', highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'e', to: 'f', highway: 'track', surface: 'unpaved', scenic: true }),
+    ]);
+
+    expect(report.metrics.fragmentationScore).toBeGreaterThan(0.65);
+    expect(report.warnings).toContain('Les chemins naturels semblent fragmentés autour du départ.');
+  });
 });
