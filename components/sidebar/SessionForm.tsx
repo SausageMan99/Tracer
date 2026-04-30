@@ -441,6 +441,13 @@ export default function SessionForm() {
             </>
           )}
         </PanelCard>
+
+        <PanelCard muted>
+          <SectionLabel>Avant génération</SectionLabel>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+            TrailForge auditera la qualité OSM après génération : chemins disponibles, surfaces inconnues, bitume et continuité naturelle. Si la donnée terrain est faible, le résultat l&apos;affichera clairement au lieu de survendre le GPX.
+          </p>
+        </PanelCard>
       </div>
 
       <div
