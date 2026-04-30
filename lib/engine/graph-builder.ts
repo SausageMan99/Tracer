@@ -76,7 +76,7 @@ function tryLoadCache(cacheKey: string): CachedGraph | null {
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath, "utf-8");
     const cached: CachedGraph = JSON.parse(raw);
-    if (Date.now() - cached.cachedAt > CACHE_TTL_MS) {
+    if (Date.now() - cached.cachedAt > CACHE_TTL_MS || cached.nodes.length === 0 || cached.edges.length === 0) {
       fs.unlinkSync(filePath);
       return null;
     }
@@ -87,6 +87,8 @@ function tryLoadCache(cacheKey: string): CachedGraph | null {
 }
 
 function saveCache(cacheKey: string, data: CachedGraph): void {
+  if (data.nodes.length === 0 || data.edges.length === 0) return;
+
   try {
     fs.mkdirSync(CACHE_DIR, { recursive: true });
     fs.writeFileSync(
@@ -194,8 +196,9 @@ nwr["boundary"="protected_area"](around:${radiusM},${center.lat},${center.lng});
     : "";
   const query = `[out:json][timeout:30];(
 way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"](around:${radiusM},${center.lat},${center.lng});${scenicAreaQuery}
-(._;>;);
-);out body qt;`;
+)->.trailforgeWays;
+(.trailforgeWays;>;);
+out body qt;`;
 
   const overpassFetch = async (attempt: number): Promise<Response> => {
     try {

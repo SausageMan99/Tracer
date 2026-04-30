@@ -79,8 +79,9 @@ nwr["natural"~"^(wood|forest|grassland|heath|scrub|wetland)$"](around:${radiusM}
 nwr["landuse"~"^(forest|wood|recreation_ground)$"](around:${radiusM},${center.lat},${center.lng});
 nwr["leisure"~"^(nature_reserve|park)$"](around:${radiusM},${center.lat},${center.lng});
 nwr["boundary"="protected_area"](around:${radiusM},${center.lat},${center.lng});
-(._;>;);
-);out body qt;`;
+)->.trailforgeWays;
+(.trailforgeWays;>;);
+out body qt;`;
 
   const res = await fetch('https://overpass-api.de/api/interpreter', {
     method: 'POST',

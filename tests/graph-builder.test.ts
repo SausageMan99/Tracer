@@ -93,6 +93,51 @@ describe("buildGraph Overpass query", () => {
     expect(decodedBody).toContain('nwr["leisure"');
     expect(decodedBody).toContain('nwr["boundary"="protected_area"]');
   });
+
+  it("ignores stale empty graph caches and refetches routable ways", async () => {
+    const cacheDir = path.join(process.cwd(), ".cache", "graphs");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cacheDir, "48.870_2.325_1.6_scenic.json"),
+      JSON.stringify({
+        nodes: [],
+        edges: [],
+        center: { lat: 48.8701, lng: 2.3246 },
+        radiusKm: 1.6,
+        scenicWayIds: ["99"],
+        cachedAt: Date.now(),
+      })
+    );
+    const fetchMock = vi.fn().mockResolvedValue(overpassResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(graph.nodes.size).toBe(2);
+    expect(graph.edges.size).toBe(2);
+  });
+
+  it("does not cache Overpass responses that contain no routable graph", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      elements: [
+        { type: "node", id: 1, lat: 48.8701, lon: 2.3246 },
+        { type: "way", id: 99, nodes: [1], tags: { natural: "wood" } },
+      ],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 }
+    );
+
+    expect(graph.nodes.size).toBe(0);
+    expect(fs.existsSync(path.join(process.cwd(), ".cache", "graphs", "48.870_2.325_1.6_scenic.json"))).toBe(false);
+  });
 });
 
 describe("buildGraph scenic detection enrichment", () => {
