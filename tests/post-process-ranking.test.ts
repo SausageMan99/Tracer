@@ -105,4 +105,34 @@ describe("postProcess candidate ranking", () => {
 
     expect(candidates[0].quality?.trailRatio).toBe(1);
   });
+
+  it("downgrades trail loops with overlapping backtracking even when their raw score is higher", async () => {
+    const graph = makeChainGraph(20);
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const nodeElevation = new Map(Array.from(graph.nodes.keys()).map((id) => [id, 100]));
+    const cleanTrailPath: SolverPath = {
+      nodeIds: Array.from({ length: 12 }, (_, i) => String(i)),
+      edgeIds: Array.from({ length: 11 }, (_, i) => `${i}-${i + 1}`),
+      distanceKm: 11,
+      totalScore: 70,
+    };
+    const overlappingPath: SolverPath = {
+      nodeIds: ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "1"],
+      edgeIds: ["0-1", "1-2", "2-3", "3-4", "4-5", "5-6", "6-7", "7-8", "8-9", "9-10", "0-1"],
+      distanceKm: 11,
+      totalScore: 120,
+    };
+
+    const candidates = await postProcess(
+      [overlappingPath, cleanTrailPath],
+      graph,
+      { lat: 48.8, lng: 2.3 },
+      trailProfile,
+      11,
+      0,
+      nodeElevation
+    );
+
+    expect(candidates[0].quality?.repeatEdgeRatio).toBeLessThan(0.08);
+  });
 });

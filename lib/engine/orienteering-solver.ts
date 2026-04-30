@@ -310,46 +310,15 @@ function backtrackPenalty(incomingBearing: number, candidateBearing: number): nu
   return 0.5 * (1 - Math.cos((normalized / 180) * Math.PI));
 }
 
-function softmaxSelect(scores: number[], temperature: number): number {
-  if (scores.length === 0) return -1;
-  if (scores.length === 1) return 0;
-
-  const maxScore = Math.max(...scores);
-  const exps = scores.map((s) => Math.exp((s - maxScore) / Math.max(temperature, 0.01)));
-  const sumExp = exps.reduce((a, b) => a + b, 0);
-
-  const r = Math.random() * sumExp;
-  let cumulative = 0;
-  for (let i = 0; i < exps.length; i++) {
-    cumulative += exps[i];
-    if (r <= cumulative) return i;
-  }
-  return exps.length - 1;
-}
-
-/**
- * Select top-K indices from an array of scores using softmax sampling.
- */
-function softmaxSelectMultiple(
+function selectTopScoringEdges(
   scores: number[],
-  temperature: number,
   k: number
 ): number[] {
-  if (scores.length === 0) return [];
-  if (scores.length <= k) return scores.map((_, i) => i);
-
-  const selected: number[] = [];
-  const remaining = scores.map((s, i) => ({ score: s, index: i }));
-
-  for (let pick = 0; pick < k && remaining.length > 0; pick++) {
-    const remScores = remaining.map((r) => r.score);
-    const idx = softmaxSelect(remScores, temperature);
-    if (idx < 0) break;
-    selected.push(remaining[idx].index);
-    remaining.splice(idx, 1);
-  }
-
-  return selected;
+  return scores
+    .map((score, index) => ({ score, index }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((entry) => entry.index);
 }
 
 // ── Diverse beam selection (farthest-point sampling) ─────────────────────────
@@ -428,7 +397,7 @@ function solveWithConfig(
   nodeElevation: Map<string, number>,
   config: SolverConfig
 ): SolverPath[] {
-  const { beamWidth, temperature, seedBearing } = config;
+  const { beamWidth, seedBearing } = config;
   const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
   const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
   const startNode = graph.nodes.get(startNodeId);
@@ -591,7 +560,7 @@ function solveWithConfig(
       });
 
       // Multi-child expansion: select top-K edges
-      const selectedIndices = softmaxSelectMultiple(adjustedScores, temperature, k);
+      const selectedIndices = selectTopScoringEdges(adjustedScores, k);
       if (selectedIndices.length === 0) continue;
 
       for (const selectedIdx of selectedIndices) {

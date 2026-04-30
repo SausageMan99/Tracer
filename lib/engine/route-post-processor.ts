@@ -72,16 +72,31 @@ function rankPathsForPostProcess(
 function candidateRankingScore(
   candidate: RouteCandidate,
   targetDistanceKm: number,
-  targetElevationM: number
+  targetElevationM: number,
+  profile: SessionProfile
 ): number {
   const distancePenalty = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
   const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
   const elevationPenalty = Math.max(0, Math.abs(candidate.ascendM - targetElevationM) - elevationToleranceM) / elevationToleranceM;
 
-  const trailRatio = candidate.quality?.trailRatio ?? 0;
+  const quality = candidate.quality;
+  const trailRatio = quality?.trailRatio ?? 0;
+  const repeatEdgeRatio = quality?.repeatEdgeRatio ?? 0;
+  const uTurnRatio = quality?.uTurnRatio ?? 0;
+  const trailBeautyScore = quality?.trailBeautyScore ?? 0;
+  const naturalCorridorRatio = quality?.naturalCorridorRatio ?? 0;
+  const forestOrParkRatio = quality?.forestOrParkRatio ?? 0;
   const trailDeficitPenalty = targetDistanceKm >= 8 ? Math.max(0, 0.2 - trailRatio) * 0.8 : 0;
 
-  return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
+  if (profile.sessionType !== "trail") {
+    return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
+  }
+
+  const backtrackingPenalty = repeatEdgeRatio * 1.8 + uTurnRatio * 2.5;
+  const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.22 : 0;
+  const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
+
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty;
 }
 
 export async function postProcess(
@@ -208,8 +223,8 @@ export async function postProcess(
 
   // Sort by totalScore descending
   candidates.sort((a, b) =>
-    candidateRankingScore(b, targetDistanceKm, targetElevationM) -
-    candidateRankingScore(a, targetDistanceKm, targetElevationM)
+    candidateRankingScore(b, targetDistanceKm, targetElevationM, profile) -
+    candidateRankingScore(a, targetDistanceKm, targetElevationM, profile)
   );
 
   return candidates;
