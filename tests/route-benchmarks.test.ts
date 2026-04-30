@@ -17,6 +17,7 @@ describe("route production benchmarks", () => {
     expect(ids).toContain("rennes-saint-malo-road-bike");
     expect(ids).toContain("mtb-40k-oneway-safety");
     expect(ids).toContain("fontainebleau-trail-15k");
+    expect(ids).toContain("tourville-pommiers-trail-12k");
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
@@ -137,6 +138,35 @@ describe("route production benchmarks", () => {
       "trail_beauty_score",
       "longest_trail_segment",
       "natural_corridor_ratio",
+    ]));
+  });
+
+  it("fails the Tourville trail benchmark on U-turns and overlapping edges", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-12k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 11.7,
+      ascendM: 104,
+      quality: {
+        productionScore: 0.78,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.04,
+        trailRatio: 0.42,
+        pavedRatio: 0.38,
+        trailBeautyScore: 0.61,
+        longestTrailSegmentKm: 2.8,
+        naturalCorridorRatio: 0.48,
+        repeatEdgeRatio: 0.09,
+        uTurnRatio: 0.04,
+        warnings: ["U_TURN_DETECTED", "TOO_MUCH_BACKTRACKING"],
+      },
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "repeat_edge_ratio",
+      "u_turn_ratio",
+      "u_turn_detected",
+      "backtracking_detected",
     ]));
   });
 });

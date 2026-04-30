@@ -144,5 +144,29 @@
       "minNaturalCorridorRatio": 0.55
     },
     "notes": "Cas trail-running typique : forte attente de chemins continus, forêt et très peu de bitume."
+  },
+  {
+    "id": "tourville-pommiers-trail-12k",
+    "label": "Tourville-sur-Odon 12 km — bois Jean Bosco / Baron",
+    "address": "7 Rue des Pommiers, 14210 Tourville-sur-Odon",
+    "profileId": "running_trail",
+    "targetDistanceKm": 12,
+    "targetElevationM": 150,
+    "scenicMode": true,
+    "thresholds": {
+      "distanceToleranceRatio": 0.1,
+      "elevationToleranceM": 120,
+      "minProductionScore": 0.72,
+      "maxLoopClosureKm": 0.45,
+      "maxBusyRoadRatio": 0.08,
+      "minNaturalWayRatio": 0.35,
+      "maxPavedRatio": 0.42,
+      "minTrailBeautyScore": 0.58,
+      "minLongestTrailSegmentKm": 2.5,
+      "minNaturalCorridorRatio": 0.45,
+      "maxRepeatEdgeRatio": 0.04,
+      "maxUTurnRatio": 0.01
+    },
+    "notes": "Retour terrain Clément : la boucle ne doit pas faire de demi-tour ni de lignes qui se chevauchent, et doit privilégier les vrais chemins boisés autour des Amis de Jean Bosco / bois de Baron plutôt que la route du départ."
   }
 ]

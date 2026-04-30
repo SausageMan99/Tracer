@@ -20,6 +20,8 @@ export interface RouteBenchmarkCase {
     minTrailBeautyScore?: number;
     minLongestTrailSegmentKm?: number;
     minNaturalCorridorRatio?: number;
+    maxRepeatEdgeRatio?: number;
+    maxUTurnRatio?: number;
   };
   notes: string;
 }
@@ -38,6 +40,8 @@ export interface BenchmarkRouteSample {
     trailBeautyScore?: number;
     longestTrailSegmentKm?: number;
     naturalCorridorRatio?: number;
+    repeatEdgeRatio?: number;
+    uTurnRatio?: number;
     warnings?: string[];
   };
 }
@@ -58,6 +62,8 @@ export interface BenchmarkSummary {
     trailBeautyScore: number;
     longestTrailSegmentKm: number;
     naturalCorridorRatio: number;
+    repeatEdgeRatio: number;
+    uTurnRatio: number;
     warnings: string[];
   };
 }
@@ -89,6 +95,8 @@ export function summarizeBenchmarkResult(
   const trailBeautyScore = quality.trailBeautyScore ?? 0;
   const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
   const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
+  const repeatEdgeRatio = quality.repeatEdgeRatio ?? 0;
+  const uTurnRatio = quality.uTurnRatio ?? 0;
   const warnings = quality.warnings ?? [];
 
   const failures: string[] = [];
@@ -138,8 +146,26 @@ export function summarizeBenchmarkResult(
   ) {
     failures.push("natural_corridor_ratio");
   }
+  if (
+    benchmark.thresholds.maxRepeatEdgeRatio !== undefined &&
+    repeatEdgeRatio > benchmark.thresholds.maxRepeatEdgeRatio
+  ) {
+    failures.push("repeat_edge_ratio");
+  }
+  if (
+    benchmark.thresholds.maxUTurnRatio !== undefined &&
+    uTurnRatio > benchmark.thresholds.maxUTurnRatio
+  ) {
+    failures.push("u_turn_ratio");
+  }
   if (warnings.includes("ONEWAY_VIOLATION")) {
     failures.push("oneway_violation");
+  }
+  if (warnings.includes("U_TURN_DETECTED")) {
+    failures.push("u_turn_detected");
+  }
+  if (warnings.includes("TOO_MUCH_BACKTRACKING")) {
+    failures.push("backtracking_detected");
   }
 
   return {
@@ -158,6 +184,8 @@ export function summarizeBenchmarkResult(
       trailBeautyScore,
       longestTrailSegmentKm,
       naturalCorridorRatio,
+      repeatEdgeRatio,
+      uTurnRatio,
       warnings,
     },
   };

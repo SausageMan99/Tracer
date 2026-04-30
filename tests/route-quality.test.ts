@@ -89,6 +89,32 @@ describe("assessRouteQuality", () => {
     expect(quality.productionScore).toBeGreaterThan(0.8);
   });
 
+  it("flags immediate U-turns and overlapping backtracking", () => {
+    const graph = makeGraph();
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "a"],
+      edgeIds: ["ab", "ab"],
+      distanceKm: 2,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 2, ascendM: 50 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 2,
+      targetElevationM: 50,
+    });
+
+    expect(quality.uTurnRatio).toBeCloseTo(0.5);
+    expect(quality.repeatEdgeRatio).toBeCloseTo(0.5);
+    expect(quality.warnings).toContain("U_TURN_DETECTED");
+    expect(quality.warnings).toContain("TOO_MUCH_BACKTRACKING");
+    expect(quality.productionScore).toBeLessThan(0.8);
+  });
+
   it("computes trail-specific beauty metrics from surfaces and continuous paths", () => {
     const graph: EnrichedGraph = {
       center: { lat: 48.8566, lng: 2.3522 },

@@ -24,6 +24,7 @@ export interface RouteQualityMetrics {
   naturalCorridorRatio?: number;
   naturalFragmentationPerKm?: number;
   trailBeautyScore?: number;
+  uTurnRatio: number;
   restrictedAccessRatio: number;
   onewayViolationRatio: number;
   repeatEdgeRatio: number;
@@ -67,6 +68,20 @@ function computeRepeatRatio(edges: EnrichedEdge[], totalKm: number): number {
   }
 
   return ratio(repeatedKm, totalKm);
+}
+
+function computeUTurnRatio(path: SolverPath, graph: EnrichedGraph, totalKm: number): number {
+  let uTurnKm = 0;
+
+  for (let index = 2; index < path.nodeIds.length; index += 1) {
+    if (path.nodeIds[index] !== path.nodeIds[index - 2]) continue;
+
+    const backtrackEdgeId = path.edgeIds[index - 1];
+    const backtrackEdge = graph.edges.get(backtrackEdgeId);
+    uTurnKm += backtrackEdge?.lengthKm ?? 0;
+  }
+
+  return ratio(uTurnKm, totalKm);
 }
 
 function computeIntersectionDensity(path: SolverPath, graph: EnrichedGraph): number {
@@ -229,6 +244,7 @@ export function assessRouteQuality(args: {
   const restrictedAccessRatio = ratio(restrictedKm, totalKm);
   const onewayViolationRatio = ratio(onewayViolationKm, totalKm);
   const repeatEdgeRatio = computeRepeatRatio(edges, totalKm);
+  const uTurnRatio = computeUTurnRatio(path, graph, totalKm);
   const intersectionDensityPerKm = computeIntersectionDensity(path, graph);
 
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
@@ -237,6 +253,7 @@ export function assessRouteQuality(args: {
   const calmScore = clamp01(1 - busyRoadRatio * 4);
   const safetyScore = clamp01(1 - restrictedAccessRatio * 10 - onewayViolationRatio * 10);
   const noveltyScore = clamp01(1 - repeatEdgeRatio * 4);
+  const pathShapeScore = clamp01(1 - uTurnRatio * 8);
   const intersectionScore = clamp01(1 - Math.max(0, intersectionDensityPerKm - 8) / 12);
 
   const natureScore = profile.sport === "cycling_road"
@@ -252,7 +269,8 @@ export function assessRouteQuality(args: {
     loopScore * 0.18 +
     calmScore * 0.14 +
     safetyScore * 0.14 +
-    noveltyScore * 0.08 +
+    noveltyScore * 0.05 +
+    pathShapeScore * 0.03 +
     intersectionScore * 0.04 +
     routeEnvironmentScore * 0.04;
 
@@ -263,6 +281,7 @@ export function assessRouteQuality(args: {
   if (busyRoadRatio > 0.08) warnings.push("TOO_MUCH_BUSY_ROAD");
   if (restrictedAccessRatio > 0) warnings.push("RESTRICTED_ACCESS");
   if (onewayViolationRatio > 0) warnings.push("ONEWAY_VIOLATION");
+  if (uTurnRatio > 0.03) warnings.push("U_TURN_DETECTED");
   if (repeatEdgeRatio > 0.08) warnings.push("TOO_MUCH_BACKTRACKING");
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
@@ -286,6 +305,7 @@ export function assessRouteQuality(args: {
     naturalCorridorRatio,
     naturalFragmentationPerKm,
     trailBeautyScore,
+    uTurnRatio,
     restrictedAccessRatio,
     onewayViolationRatio,
     repeatEdgeRatio,
