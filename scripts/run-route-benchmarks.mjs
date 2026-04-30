@@ -29,7 +29,7 @@ Options:
   --list                       Print benchmark ids and exit.
   --output <path>              Override JSON report path.
   --artifact-dir <path>        Override per-route artifact directory.
-  --save-artifacts             Save successful route payloads as JSON artifacts.
+  --save-artifacts             Save successful route payloads as JSON plus best-route GeoJSON artifacts.
   --no-output                  Do not write the aggregate JSON report.
   --help                       Show this help.
 
@@ -167,13 +167,59 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   };
 }
 
-async function saveRouteArtifact(benchmark, payload) {
+function routeToGeoJson(benchmark, route) {
+  const best = route?.best;
+  const coordinates = best?.geometry?.coordinates;
+  if (!Array.isArray(coordinates) || coordinates.length === 0) return null;
+
+  return {
+    type: "FeatureCollection",
+    features: [
+      {
+        type: "Feature",
+        properties: {
+          benchmarkId: benchmark.id,
+          label: benchmark.label,
+          targetDistanceKm: benchmark.targetDistanceKm,
+          targetElevationM: benchmark.targetElevationM,
+          profileId: benchmark.profileId,
+          distanceKm: best.distanceKm ?? null,
+          ascendM: best.ascendM ?? null,
+          productionScore: best.quality?.productionScore ?? null,
+          repeatEdgeRatio: best.quality?.repeatEdgeRatio ?? null,
+          uTurnRatio: best.quality?.uTurnRatio ?? null,
+          busyRoadRatio: best.quality?.busyRoadRatio ?? null,
+          naturalWayRatio: best.quality?.trailRatio ?? best.quality?.naturalWayRatio ?? null,
+        },
+        geometry: {
+          type: "LineString",
+          coordinates,
+        },
+      },
+    ],
+  };
+}
+
+async function saveRouteArtifacts(benchmark, payload) {
   if (!shouldSaveArtifacts || payload?.route == null) return null;
   const absoluteArtifactDir = resolve(repoRoot, artifactDir);
   await mkdir(absoluteArtifactDir, { recursive: true });
+
   const routeArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.json`);
   await writeFile(routeArtifactPath, `${JSON.stringify(payload.route, null, 2)}\n`, "utf8");
-  return routeArtifactPath.replace(`${repoRoot}/`, "");
+
+  const artifacts = {
+    routeJson: routeArtifactPath.replace(`${repoRoot}/`, ""),
+  };
+
+  const geoJson = routeToGeoJson(benchmark, payload.route);
+  if (geoJson) {
+    const geoJsonArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.geojson`);
+    await writeFile(geoJsonArtifactPath, `${JSON.stringify(geoJson, null, 2)}\n`, "utf8");
+    artifacts.geoJson = geoJsonArtifactPath.replace(`${repoRoot}/`, "");
+  }
+
+  return artifacts;
 }
 
 async function runBenchmark(benchmark) {
@@ -217,13 +263,14 @@ async function runBenchmark(benchmark) {
 
     const best = payload.route?.best;
     const summary = summarizeBenchmarkResult(benchmark, best ?? {}, durationMs);
-    const routeArtifact = await saveRouteArtifact(benchmark, payload);
+    const routeArtifacts = await saveRouteArtifacts(benchmark, payload);
 
     return {
       ...summary,
       status: response.status,
       durationMs,
-      routeArtifact,
+      routeArtifacts,
+      routeArtifact: routeArtifacts?.routeJson,
       errorCode: null,
       error: null,
     };
