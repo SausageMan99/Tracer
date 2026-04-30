@@ -260,6 +260,83 @@ function makePerimeterVsWoodEntryGraph(): EnrichedGraph {
   return graph;
 }
 
+function makeUnknownSurfaceScenicCorridorVsRoadLoopGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["road-a", makeNode("road-a", 49.145, -0.505)],
+    ["road-b", makeNode("road-b", 49.150, -0.500)],
+    ["road-c", makeNode("road-c", 49.145, -0.495)],
+    ["scenic-a", makeNode("scenic-a", 49.143, -0.499)],
+    ["scenic-b", makeNode("scenic-b", 49.146, -0.497)],
+    ["scenic-c", makeNode("scenic-c", 49.148, -0.494)],
+    ["scenic-d", makeNode("scenic-d", 49.144, -0.492)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 3,
+  };
+
+  addEdge(graph, "start-road-a", "start", "road-a", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.84,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "road-a-road-b", "road-a", "road-b", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.84,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "road-b-road-c", "road-b", "road-c", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.84,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "road-c-start", "road-c", "start", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.84,
+    lengthKm: 1.5,
+  });
+
+  addEdge(graph, "start-scenic-a", "start", "scenic-a", {
+    highway: "path",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "scenic-a-scenic-b", "scenic-a", "scenic-b", {
+    highway: "path",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "scenic-b-scenic-c", "scenic-b", "scenic-c", {
+    highway: "track",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 1.5,
+  });
+  addEdge(graph, "scenic-c-scenic-d", "scenic-c", "scenic-d", {
+    highway: "path",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.8,
+  });
+  addEdge(graph, "scenic-d-start", "scenic-d", "start", {
+    highway: "track",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.7,
+  });
+
+  return graph;
+}
+
 function makeMappedWoodRoadVsOpenRoadGraph(): EnrichedGraph {
   const nodes = new Map<string, GraphNode>([
     ["start", makeNode("start", 49.14, -0.50)],
@@ -392,6 +469,21 @@ describe("solve natural corridor preference", () => {
       "wood-b-wood-c",
       "wood-c-wood-exit",
       "wood-exit-start",
+    ]);
+  });
+
+  it("keeps scenic path corridors without surface tags ahead of cleaner road loops", async () => {
+    const graph = makeUnknownSurfaceScenicCorridorVsRoadLoopGraph();
+
+    const paths = await solve(graph, "start", 6, 0, new Map());
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-scenic-a",
+      "scenic-a-scenic-b",
+      "scenic-b-scenic-c",
+      "scenic-c-scenic-d",
+      "scenic-d-start",
     ]);
   });
 
