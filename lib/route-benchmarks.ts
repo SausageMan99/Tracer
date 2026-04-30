@@ -16,6 +16,9 @@ export interface RouteBenchmarkCase {
     maxLoopClosureKm: number;
     maxBusyRoadRatio: number;
     minNaturalWayRatio?: number;
+    maxPavedRatio?: number;
+    minTrailBeautyScore?: number;
+    minLongestTrailSegmentKm?: number;
   };
   notes: string;
 }
@@ -30,6 +33,9 @@ export interface BenchmarkRouteSample {
     busyRoadRatio?: number;
     naturalWayRatio?: number;
     trailRatio?: number;
+    pavedRatio?: number;
+    trailBeautyScore?: number;
+    longestTrailSegmentKm?: number;
     warnings?: string[];
   };
 }
@@ -46,6 +52,9 @@ export interface BenchmarkSummary {
     loopClosureKm: number;
     busyRoadRatio: number;
     naturalWayRatio: number;
+    pavedRatio: number;
+    trailBeautyScore: number;
+    longestTrailSegmentKm: number;
     warnings: string[];
   };
 }
@@ -73,6 +82,9 @@ export function summarizeBenchmarkResult(
   const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
   const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
+  const pavedRatio = quality.pavedRatio ?? 0;
+  const trailBeautyScore = quality.trailBeautyScore ?? 0;
+  const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
   const warnings = quality.warnings ?? [];
 
   const failures: string[] = [];
@@ -98,6 +110,24 @@ export function summarizeBenchmarkResult(
   ) {
     failures.push("natural_way_ratio");
   }
+  if (
+    benchmark.thresholds.maxPavedRatio !== undefined &&
+    pavedRatio > benchmark.thresholds.maxPavedRatio
+  ) {
+    failures.push("paved_ratio");
+  }
+  if (
+    benchmark.thresholds.minTrailBeautyScore !== undefined &&
+    trailBeautyScore < benchmark.thresholds.minTrailBeautyScore
+  ) {
+    failures.push("trail_beauty_score");
+  }
+  if (
+    benchmark.thresholds.minLongestTrailSegmentKm !== undefined &&
+    longestTrailSegmentKm < benchmark.thresholds.minLongestTrailSegmentKm
+  ) {
+    failures.push("longest_trail_segment");
+  }
   if (warnings.includes("ONEWAY_VIOLATION")) {
     failures.push("oneway_violation");
   }
@@ -114,6 +144,9 @@ export function summarizeBenchmarkResult(
       loopClosureKm,
       busyRoadRatio,
       naturalWayRatio,
+      pavedRatio,
+      trailBeautyScore,
+      longestTrailSegmentKm,
       warnings,
     },
   };

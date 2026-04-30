@@ -75,6 +75,7 @@ const SESSION_TYPE_TO_INTENTION: Record<SessionType, RouteIntentionId> = {
   seuil: "threshold_work",
   intervals: "intervals_flat",
   gran_fondo: "long_adventure",
+  trail: "nature_escape",
 };
 
 export function getRouteIntention(profile: SessionProfile, scenicMode = false): RouteIntention {

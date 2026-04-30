@@ -122,5 +122,26 @@
       "minNaturalWayRatio": 0.35
     },
     "notes": "Cas Reddit VTT : zéro tolérance implicite sur les incohérences de sécurité/sens de circulation."
+  },
+  {
+    "id": "fontainebleau-trail-15k",
+    "label": "Fontainebleau 15 km — sentiers forestiers",
+    "address": "Place Denecourt, Fontainebleau",
+    "profileId": "running_trail",
+    "targetDistanceKm": 15,
+    "targetElevationM": 200,
+    "scenicMode": true,
+    "thresholds": {
+      "distanceToleranceRatio": 0.1,
+      "elevationToleranceM": 120,
+      "minProductionScore": 0.72,
+      "maxLoopClosureKm": 0.5,
+      "maxBusyRoadRatio": 0.05,
+      "minNaturalWayRatio": 0.45,
+      "maxPavedRatio": 0.35,
+      "minTrailBeautyScore": 0.65,
+      "minLongestTrailSegmentKm": 4
+    },
+    "notes": "Cas trail-running typique : forte attente de chemins continus, forêt et très peu de bitume."
   }
 ]

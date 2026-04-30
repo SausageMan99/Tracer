@@ -88,4 +88,72 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).not.toContain("DISTANCE_OFF_TARGET");
     expect(quality.productionScore).toBeGreaterThan(0.8);
   });
+
+  it("computes trail-specific beauty metrics from surfaces and continuous paths", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.859, lng: 2.355, edges: ["cd"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 2, highway: "path", surface: "dirt", osmWayId: 10, score: 0.95 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 3, highway: "track", surface: "gravel", osmWayId: 11, score: 0.9 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 1, highway: "residential", surface: "asphalt", osmWayId: 12, score: 0.3 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c", "d"],
+      edgeIds: ["ab", "bc", "cd"],
+      distanceKm: 6,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 6, ascendM: 120 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 6,
+      targetElevationM: 120,
+      scenicWayIds: new Set(["10", "11"]),
+    });
+
+    expect(quality.pavedRatio).toBeCloseTo(1 / 6);
+    expect(quality.forestOrParkRatio).toBeCloseTo(5 / 6);
+    expect(quality.longestTrailSegmentKm).toBe(5);
+    expect(quality.trailBeautyScore).toBeGreaterThan(0.8);
+    expect(quality.warnings).not.toContain("NOT_ENOUGH_TRAIL");
+    expect(quality.warnings).not.toContain("TOO_MUCH_PAVEMENT");
+  });
+
+  it("warns when a trail-running route is mostly paved road", () => {
+    const graph = makeGraph();
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c"],
+      edgeIds: ["ab", "bc"],
+      distanceKm: 2,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate(),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 2,
+      targetElevationM: 50,
+    });
+
+    expect(quality.pavedRatio).toBeGreaterThan(0.45);
+    expect(quality.longestTrailSegmentKm).toBe(0);
+    expect(quality.trailBeautyScore).toBeLessThan(0.45);
+    expect(quality.warnings).toContain("NOT_ENOUGH_TRAIL");
+    expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
+  });
 });

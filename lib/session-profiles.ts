@@ -104,6 +104,43 @@ export const SESSION_PROFILES: SessionProfile[] = [
     },
   },
 
+  {
+    id: "running_trail",
+    name: "Trail Nature",
+    sport: "running",
+    sessionType: "trail",
+    distanceRange: { min: 5, default: 12, max: 30 },
+    elevationRange: { min: 50, default: 250, max: 800 },
+    distancePresets: [5, 10, 15, 21, 30],
+    elevationPresets: [50, 250, 500, 800],
+    description: "Course sur sentiers et chemins forestiers. Privilégie la nature, les chemins et les surfaces non goudronnées.",
+    graphhopperProfile: "foot",
+    weights: {
+      elevationMatch: 0.25,
+      distanceMatch: 0.30,
+      surfaceQuality: 0.20,
+      loopQuality: 0.25,
+    },
+  },
+  {
+    id: "running_trail_decouverte",
+    name: "Trail Découverte",
+    sport: "running",
+    sessionType: "trail",
+    distanceRange: { min: 4, default: 8, max: 15 },
+    elevationRange: { min: 30, default: 150, max: 400 },
+    distancePresets: [4, 6, 8, 10, 15],
+    elevationPresets: [30, 150, 300, 400],
+    description: "Trail court et accessible, parcours nature en forêt ou en parc. Idéal pour découvrir le trail.",
+    graphhopperProfile: "foot",
+    weights: {
+      elevationMatch: 0.20,
+      distanceMatch: 0.35,
+      surfaceQuality: 0.25,
+      loopQuality: 0.20,
+    },
+  },
+
   // ─── CYCLING ROAD ───────────────────────────────────────────────────────────
   // orsProfile: "cycling-road" → ORS routes sur routes lisses, évite pistes et grands axes
   {

@@ -16,6 +16,10 @@ import { getRouteIntention } from "../route-intentions";
 
 const MAX_ELEVATION_NODES = 1_000;
 
+function isTrailRunning(profile: SessionProfile): boolean {
+  return profile.sport === "running" && profile.sessionType === "trail";
+}
+
 function selectElevationNodeIds(nodeIds: string[]): string[] {
   if (nodeIds.length <= MAX_ELEVATION_NODES) return nodeIds;
 
@@ -92,6 +96,9 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
     w = { surface: 0.25, elevation: 0.2, nature: 0.35, quietness: 0.2 };
   } else if (sport === "cycling_mtb") {
     w = { surface: 0.15, elevation: 0.3, nature: 0.4, quietness: 0.15 };
+  } else if (isTrailRunning(profile)) {
+    // Trail running: strongly prefer nature and quiet paths, reduce paved surface bias
+    w = { surface: 0.15, elevation: 0.2, nature: 0.45, quietness: 0.2 };
   }
 
   // Intensity adjustments (immutable spreads)
@@ -134,10 +141,17 @@ export function deriveWeights(profile: SessionProfile, scenicMode?: boolean): Se
   };
 }
 
-function scoreSurface(surface: string | undefined, sport: string): number {
+function scoreSurface(surface: string | undefined, sport: string, profile: SessionProfile): number {
   if (!surface) return 0.5;
   const isPaved = PAVED_SURFACES.has(surface);
   const isUnpaved = UNPAVED_SURFACES.has(surface);
+
+  if (isTrailRunning(profile)) {
+    // Trail running: unpaved is best, paved is worst
+    if (isUnpaved) return 1.0;
+    if (isPaved) return 0.15;
+    return 0.5;
+  }
 
   if (sport === "cycling_mtb") {
     if (isUnpaved) return 1.0;
@@ -228,7 +242,7 @@ export async function scoreEdges(
       continue;
     }
 
-    const surfaceScore = scoreSurface(edge.surface, profile.sport);
+    const surfaceScore = scoreSurface(edge.surface, profile.sport, profile);
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
     const natureScore = scoreNature(edge.osmWayId, scenicWayIds, edge.highway, edge.surface);

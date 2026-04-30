@@ -183,7 +183,11 @@ way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"]
       tags.natural ||
       tags.landuse === "forest" ||
       tags.landuse === "wood" ||
-      tags.leisure === "nature_reserve"
+      tags.landuse === "recreation_ground" ||
+      tags.leisure === "nature_reserve" ||
+      tags.leisure === "park" ||
+      tags.route === "hiking" ||
+      tags.boundary === "protected_area"
     ) {
       scenicWayIds.add(String(el.id));
     }

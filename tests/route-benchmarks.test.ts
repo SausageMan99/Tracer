@@ -16,6 +16,7 @@ describe("route production benchmarks", () => {
     expect(ids).toContain("nanterre-east-avoid-highways");
     expect(ids).toContain("rennes-saint-malo-road-bike");
     expect(ids).toContain("mtb-40k-oneway-safety");
+    expect(ids).toContain("fontainebleau-trail-15k");
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
@@ -110,5 +111,30 @@ describe("route production benchmarks", () => {
 
     expect(summary.passed).toBe(true);
     expect(summary.failures).toEqual([]);
+  });
+
+  it("fails a trail benchmark when pavement or beauty thresholds are missed", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 15.1,
+      ascendM: 210,
+      quality: {
+        productionScore: 0.82,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.02,
+        trailRatio: 0.55,
+        pavedRatio: 0.52,
+        trailBeautyScore: 0.48,
+        longestTrailSegmentKm: 2,
+        warnings: [],
+      },
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "paved_ratio",
+      "trail_beauty_score",
+      "longest_trail_segment",
+    ]));
   });
 });

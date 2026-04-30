@@ -26,7 +26,8 @@ export type SessionType =
   | "recuperation"
   | "seuil"
   | "intervals"
-  | "gran_fondo";
+  | "gran_fondo"
+  | "trail";
 
 // ---- Session Profile ----
 

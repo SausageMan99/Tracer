@@ -43,7 +43,7 @@ describe("POST /api/generate-route", () => {
 
   it("does not silently fall back to legacy when V2 loop generation fails", async () => {
     generateRouteV2Mock.mockRejectedValue(
-      new RouteGenerationError("NO_ROAD_NETWORK", "SOLVER_EMPTY")
+      new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "SOLVER_EMPTY" })
     );
     generateRouteLegacyMock.mockResolvedValue({ id: "legacy-route" });
 

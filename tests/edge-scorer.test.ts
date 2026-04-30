@@ -45,8 +45,23 @@ describe("deriveWeights", () => {
     deriveWeights(profile, true);
     expect(JSON.stringify(profile)).toBe(before);
   });
-});
 
+  it("trail running boosts nature weight above normal running", () => {
+    const trail = PROFILES_BY_ID.get("running_trail")!;
+    const endurance = PROFILES_BY_ID.get("running_endurance")!;
+    const trailW = deriveWeights(trail, false);
+    const enduranceW = deriveWeights(endurance, false);
+    expect(trailW.nature).toBeGreaterThan(enduranceW.nature);
+  });
+
+  it("trail running reduces surface weight vs normal running", () => {
+    const trail = PROFILES_BY_ID.get("running_trail")!;
+    const endurance = PROFILES_BY_ID.get("running_endurance")!;
+    const trailW = deriveWeights(trail, false);
+    const enduranceW = deriveWeights(endurance, false);
+    expect(trailW.surface).toBeLessThan(enduranceW.surface);
+  });
+});
 function makeDenseGraph(nodeCount: number): EnrichedGraph {
   const nodes = new Map<string, GraphNode>();
   const edges = new Map<string, EnrichedEdge>();
@@ -98,5 +113,88 @@ describe("scoreEdges dense graphs", () => {
     }, 0);
 
     expect(requestedCoordinates).toBeLessThanOrEqual(1_000);
+  });
+});
+
+// Helper to build a minimal graph with a single edge for surface/nature tests
+function makeSingleEdgeGraph(edge: Partial<EnrichedEdge>): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>();
+  nodes.set("1", { id: "1", lat: 48.87, lng: 2.32, edges: ["1-2-10"] });
+  nodes.set("2", { id: "2", lat: 48.871, lng: 2.321, edges: ["2-1-10"] });
+  const e: EnrichedEdge = {
+    id: "1-2-10",
+    from: "1",
+    to: "2",
+    lengthKm: 0.1,
+    highway: edge.highway ?? "footway",
+    surface: edge.surface,
+    osmWayId: edge.osmWayId ?? 10,
+    score: 0,
+    access: edge.access,
+    foot: edge.foot,
+  };
+  const edges = new Map<string, EnrichedEdge>([[e.id, e]]);
+  return { nodes, edges, center: { lat: 48.87, lng: 2.32 }, radiusKm: 1 };
+}
+
+describe("scoreEdges trail running surface preferences", () => {
+  it("prefers unpaved surfaces for trail running", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+
+    const gDirt = makeSingleEdgeGraph({ highway: "path", surface: "dirt", osmWayId: 1 });
+    const gAsphalt = makeSingleEdgeGraph({ highway: "tertiary", surface: "asphalt", osmWayId: 2 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(gDirt, weights, trailProfile, new Set());
+    await scoreEdges(gAsphalt, weights, trailProfile, new Set());
+
+    const dirtScore = gDirt.edges.get("1-2-10")!.score;
+    const asphaltScore = gAsphalt.edges.get("1-2-10")!.score;
+
+    expect(dirtScore).toBeGreaterThan(asphaltScore);
+  });
+
+  it("prefers paths and tracks for trail running over roads", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+
+    const gPath = makeSingleEdgeGraph({ highway: "path", surface: "dirt", osmWayId: 1 });
+    const gRoad = makeSingleEdgeGraph({ highway: "primary", surface: "asphalt", osmWayId: 2 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(gPath, weights, trailProfile, new Set());
+    await scoreEdges(gRoad, weights, trailProfile, new Set());
+
+    const pathScore = gPath.edges.get("1-2-10")!.score;
+    const roadScore = gRoad.edges.get("1-2-10")!.score;
+
+    expect(pathScore).toBeGreaterThan(roadScore);
+  });
+
+  it("normal running still prefers paved over unpaved (no regression)", async () => {
+    const endurance = PROFILES_BY_ID.get("running_endurance")!;
+    const weights = deriveWeights(endurance, false);
+
+    const gDirt = makeSingleEdgeGraph({ highway: "path", surface: "dirt", osmWayId: 1 });
+    const gAsphalt = makeSingleEdgeGraph({ highway: "tertiary", surface: "asphalt", osmWayId: 2 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(gDirt, weights, endurance, new Set());
+    await scoreEdges(gAsphalt, weights, endurance, new Set());
+
+    const dirtScore = gDirt.edges.get("1-2-10")!.score;
+    const asphaltScore = gAsphalt.edges.get("1-2-10")!.score;
+
+    expect(asphaltScore).toBeGreaterThan(dirtScore);
   });
 });

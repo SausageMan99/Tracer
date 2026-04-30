@@ -36,4 +36,23 @@ describe("route intentions", () => {
     expect(card.title).toBe(ROUTE_INTENTIONS.nature_escape.label);
     expect(card.biases.join(" ")).toContain("nature");
   });
+
+  it("maps trail session type to nature escape intention", () => {
+    const trail = PROFILES_BY_ID.get("running_trail")!;
+    const intention = getRouteIntention(trail);
+
+    expect(intention.id).toBe("nature_escape");
+    expect(intention.weightMultipliers.nature).toBeGreaterThan(1);
+  });
+
+  it("gives trail running higher nature and lower surface (paved) weights than normal running endurance", () => {
+    const trail = PROFILES_BY_ID.get("running_trail")!;
+    const endurance = PROFILES_BY_ID.get("running_endurance")!;
+
+    const trailWeights = deriveWeights(trail, false);
+    const enduranceWeights = deriveWeights(endurance, false);
+
+    expect(trailWeights.nature).toBeGreaterThan(enduranceWeights.nature);
+    expect(trailWeights.surface).toBeLessThan(enduranceWeights.surface);
+  });
 });
