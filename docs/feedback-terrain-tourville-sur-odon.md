@@ -31,3 +31,7 @@ Le benchmark doit échouer si :
 ## Implication moteur
 
 Le prochain travail moteur ne doit pas seulement améliorer le score moyen. Il doit empêcher explicitement les traces qui reviennent sur elles-mêmes et favoriser les corridors naturels continus quand ils existent autour du départ.
+
+## Remote OSM audit interpretation
+
+Remote audit shows the area is not empty in OSM: there are many `path`, `track`, and `footway` ways near the start. The weak point is tag quality, especially missing `surface` values. TrailForge should not automatically treat missing surface as low trail quality when the edge is path-like and near scenic/natural context.

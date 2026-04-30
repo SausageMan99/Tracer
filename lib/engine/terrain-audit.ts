@@ -147,6 +147,20 @@ function buildTerrainWarnings(metrics: TerrainAuditMetrics): string[] {
   return warnings;
 }
 
+function buildTerrainRecommendations(metrics: TerrainAuditMetrics): string[] {
+  const recommendations: string[] = [];
+
+  if (metrics.unknownSurfaceRatio >= 0.45 && metrics.pathLikeEdgeRatio >= 0.5) {
+    recommendations.push('Traiter les chemins sans surface comme des candidats trail si leur contexte est boisé ou rural.');
+  }
+
+  if (metrics.fragmentationScore >= 0.65) {
+    recommendations.push('Favoriser les corridors naturels connectés plutôt que les fragments isolés.');
+  }
+
+  return recommendations;
+}
+
 export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
   if (edges.length === 0) return createEmptyTerrainAuditReport();
 
@@ -173,6 +187,6 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
     trailPotential,
     metrics,
     warnings: buildTerrainWarnings(metrics),
-    recommendations: [],
+    recommendations: buildTerrainRecommendations(metrics),
   };
 }

@@ -97,4 +97,23 @@ describe('terrain audit', () => {
     expect(report.metrics.fragmentationScore).toBeGreaterThan(0.65);
     expect(report.warnings).toContain('Les chemins naturels semblent fragmentés autour du départ.');
   });
+
+  it('classifies Tourville-like data as high potential with medium confidence when surfaces are missing', () => {
+    const report = auditTerrainData([
+      edge({ from: 'a', to: 'b', highway: 'path', scenic: true }),
+      edge({ from: 'b', to: 'c', highway: 'path', scenic: true }),
+      edge({ from: 'c', to: 'd', highway: 'track', scenic: true }),
+      edge({ from: 'd', to: 'e', highway: 'path' }),
+      edge({ from: 'e', to: 'f', highway: 'track' }),
+      edge({ from: 'f', to: 'g', highway: 'residential', surface: 'asphalt' }),
+      edge({ from: 'g', to: 'h', highway: 'residential', surface: 'asphalt' }),
+      edge({ from: 'h', to: 'i', highway: 'footway' }),
+    ]);
+
+    expect(report.trailPotential).toBe('high');
+    expect(report.confidence).toBe('medium');
+    expect(report.recommendations).toContain(
+      'Traiter les chemins sans surface comme des candidats trail si leur contexte est boisé ou rural.',
+    );
+  });
 });
