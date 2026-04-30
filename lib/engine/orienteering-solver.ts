@@ -14,6 +14,11 @@ interface BeamState {
   totalScore: number;
   cumulativeAscentM: number;
   cumulativeDescentM: number;
+  naturalDistanceKm: number;
+  naturalStreakKm: number;
+  longestNaturalStreakKm: number;
+  naturalSegmentCount: number;
+  wasOnNaturalCorridor: boolean;
 }
 
 interface SolverConfig {
@@ -37,6 +42,14 @@ const CLOSE_ENOUGH_KM = 0.2;
 const MAX_EDGE_REVISITS = 1;
 const REVISIT_PENALTY = 0.15;
 const ROAD_DISTANCE_FACTOR = 1.4;
+const NATURAL_CORRIDOR_BASE_BONUS_PER_KM = 0.12;
+const NATURAL_CORRIDOR_STREAK_BONUS_PER_KM = 0.08;
+const NATURAL_CORRIDOR_STREAK_BONUS_CAP = 0.28;
+const SHORT_NATURE_FRAGMENT_PENALTY_PER_KM = 0.08;
+const MIN_CORRIDOR_STREAK_KM = 1.5;
+
+const NATURAL_HIGHWAY_TYPES = new Set(["path", "track", "footway", "bridleway"]);
+const NATURAL_SURFACES = new Set(["dirt", "earth", "grass", "ground", "unpaved", "compacted", "fine_gravel", "gravel", "sand"]);
 
 // ── Utility functions ────────────────────────────────────────────────────────
 
@@ -44,6 +57,93 @@ function undirectedEdgeKey(from: string, to: string, wayId: number): string {
   return from < to
     ? `${from}-${to}-${wayId}`
     : `${to}-${from}-${wayId}`;
+}
+
+function isNaturalCorridorEdge(edge: { highway: string; surface?: string }): boolean {
+  return (
+    NATURAL_HIGHWAY_TYPES.has(edge.highway) ||
+    (edge.surface != null && NATURAL_SURFACES.has(edge.surface))
+  );
+}
+
+function scoreNaturalCorridorStep(edge: { lengthKm: number; highway: string; surface?: string }, state: BeamState): number {
+  if (!isNaturalCorridorEdge(edge)) {
+    if (state.wasOnNaturalCorridor && state.naturalStreakKm < MIN_CORRIDOR_STREAK_KM) {
+      return -SHORT_NATURE_FRAGMENT_PENALTY_PER_KM * edge.lengthKm;
+    }
+    return 0;
+  }
+
+  const streakAfterEdge = state.wasOnNaturalCorridor
+    ? state.naturalStreakKm + edge.lengthKm
+    : edge.lengthKm;
+  const streakBonus = Math.min(
+    NATURAL_CORRIDOR_STREAK_BONUS_CAP,
+    streakAfterEdge * NATURAL_CORRIDOR_STREAK_BONUS_PER_KM
+  );
+
+  return edge.lengthKm * (NATURAL_CORRIDOR_BASE_BONUS_PER_KM + streakBonus);
+}
+
+function advanceNaturalCorridorState(state: BeamState, edge: { lengthKm: number; highway: string; surface?: string }) {
+  const isNatural = isNaturalCorridorEdge(edge);
+  const naturalStreakKm = isNatural
+    ? (state.wasOnNaturalCorridor ? state.naturalStreakKm : 0) + edge.lengthKm
+    : 0;
+
+  return {
+    naturalDistanceKm: state.naturalDistanceKm + (isNatural ? edge.lengthKm : 0),
+    naturalStreakKm,
+    longestNaturalStreakKm: Math.max(state.longestNaturalStreakKm, naturalStreakKm),
+    naturalSegmentCount: state.naturalSegmentCount + (isNatural && !state.wasOnNaturalCorridor ? 1 : 0),
+    wasOnNaturalCorridor: isNatural,
+  };
+}
+
+function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]): number {
+  let rawScore = 0;
+  let totalDistanceKm = 0;
+  let naturalDistanceKm = 0;
+  let currentNaturalStreakKm = 0;
+  let longestNaturalStreakKm = 0;
+  let naturalSegmentCount = 0;
+  let wasNatural = false;
+
+  for (const edgeId of edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    rawScore += edge.score * edge.lengthKm;
+    totalDistanceKm += edge.lengthKm;
+
+    const isNatural = isNaturalCorridorEdge(edge);
+    if (isNatural) {
+      naturalDistanceKm += edge.lengthKm;
+      currentNaturalStreakKm = wasNatural ? currentNaturalStreakKm + edge.lengthKm : edge.lengthKm;
+      longestNaturalStreakKm = Math.max(longestNaturalStreakKm, currentNaturalStreakKm);
+      if (!wasNatural) naturalSegmentCount++;
+    } else {
+      currentNaturalStreakKm = 0;
+    }
+    wasNatural = isNatural;
+  }
+
+  if (totalDistanceKm <= 0) return rawScore;
+
+  const naturalRatio = naturalDistanceKm / totalDistanceKm;
+  const longestCorridorRatio = longestNaturalStreakKm / totalDistanceKm;
+  const fragmentationPenalty = Math.max(0, naturalSegmentCount - 1) * 0.08 * totalDistanceKm;
+  const corridorBonus = totalDistanceKm * (naturalRatio * 0.15 + longestCorridorRatio * 0.25);
+
+  return rawScore + corridorBonus - fragmentationPenalty;
+}
+
+function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: string[], distanceKm: number): SolverPath {
+  return {
+    nodeIds,
+    edgeIds,
+    totalScore: scorePathWithCorridorPreference(graph, edgeIds),
+    distanceKm,
+  };
 }
 
 function computeBearing(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
@@ -207,6 +307,11 @@ function solveWithConfig(
       totalScore: 0,
       cumulativeAscentM: 0,
       cumulativeDescentM: 0,
+      naturalDistanceKm: 0,
+      naturalStreakKm: 0,
+      longestNaturalStreakKm: 0,
+      naturalSegmentCount: 0,
+      wasOnNaturalCorridor: false,
     },
   ];
 
@@ -290,6 +395,10 @@ function solveWithConfig(
           score *= REVISIT_PENALTY;
         }
 
+        // 1.4 Corridor continuity: prefer edges that extend a real natural line,
+        // not one-off green fragments that dump the runner back on roads.
+        score += scoreNaturalCorridorStep(edge, state) / Math.max(edge.lengthKm, 0.1);
+
         // 4.1 Directional seeding: bias toward seed bearing in first 15%
         if (progress < 0.15) {
           const edgeBearing = computeBearing(currentNode.lat, currentNode.lng, toNode.lat, toNode.lng);
@@ -356,12 +465,7 @@ function solveWithConfig(
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM && state.distanceKm >= minDist) {
-            validPaths.push({
-              nodeIds: state.nodeIds,
-              edgeIds: state.edgeIds,
-              totalScore: state.totalScore,
-              distanceKm: state.distanceKm,
-            });
+            validPaths.push(buildSolverPath(graph, state.nodeIds, state.edgeIds, state.distanceKm));
           }
           continue;
         }
@@ -370,6 +474,10 @@ function solveWithConfig(
         const newEdgeVisits = new Map(state.edgeVisits);
         newEdgeVisits.set(edgeKey, (newEdgeVisits.get(edgeKey) ?? 0) + 1);
 
+        const corridorState = advanceNaturalCorridorState(state, selectedEdge);
+        const stepScore =
+          selectedEdge.score * selectedEdge.lengthKm + scoreNaturalCorridorStep(selectedEdge, state);
+
         const newState: BeamState = {
           nodeIds: [...state.nodeIds, selectedEdge.to],
           edgeIds: [...state.edgeIds, selectedEdge.id],
@@ -377,9 +485,10 @@ function solveWithConfig(
           currentNodeId: selectedEdge.to,
           lastFrom: state.currentNodeId,
           distanceKm: newDist,
-          totalScore: state.totalScore + selectedEdge.score * selectedEdge.lengthKm,
+          totalScore: state.totalScore + stepScore,
           cumulativeAscentM: newAscent,
           cumulativeDescentM: newDescent,
+          ...corridorState,
         };
 
         const newProgress = newDist / targetDistanceKm;
@@ -400,12 +509,12 @@ function solveWithConfig(
               const closedDistance = newDist + returnDist;
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath) {
-                validPaths.push({
-                  nodeIds: [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
-                  edgeIds: [...newState.edgeIds, ...returnPath.edgeIds],
-                  totalScore: newState.totalScore,
-                  distanceKm: closedDistance,
-                });
+                validPaths.push(buildSolverPath(
+                  graph,
+                  [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
+                  [...newState.edgeIds, ...returnPath.edgeIds],
+                  closedDistance
+                ));
               }
               if (closedDistance >= targetDistanceKm * 0.98) {
                 continue;
@@ -416,12 +525,12 @@ function solveWithConfig(
             if (newProgress >= 0.85) {
               const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
-                validPaths.push({
-                  nodeIds: [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
-                  edgeIds: [...newState.edgeIds, ...returnPath.edgeIds],
-                  totalScore: newState.totalScore,
-                  distanceKm: newDist + returnPath.distanceKm,
-                });
+                validPaths.push(buildSolverPath(
+                  graph,
+                  [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
+                  [...newState.edgeIds, ...returnPath.edgeIds],
+                  newDist + returnPath.distanceKm
+                ));
               }
               continue;
             }
@@ -436,12 +545,7 @@ function solveWithConfig(
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM) {
-            validPaths.push({
-              nodeIds: newState.nodeIds,
-              edgeIds: newState.edgeIds,
-              totalScore: newState.totalScore,
-              distanceKm: newState.distanceKm,
-            });
+            validPaths.push(buildSolverPath(graph, newState.nodeIds, newState.edgeIds, newState.distanceKm));
           }
         }
 
@@ -463,7 +567,7 @@ function computeJaccardSimilarity(edgesA: string[], edgesB: string[]): number {
   const setB = new Set(edgesB);
 
   let intersection = 0;
-  for (const e of setA) {
+  for (const e of Array.from(setA)) {
     if (setB.has(e)) intersection++;
   }
 
