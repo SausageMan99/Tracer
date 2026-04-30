@@ -16,6 +16,8 @@ Le solver garde maintenant un état de continuité naturelle pendant l'expansion
 - `naturalSegmentCount` : nombre de segments naturels séparés.
 - `wasOnNaturalCorridor` : indique si l'arête précédente appartenait au corridor.
 
+Il construit aussi des ancres naturelles avant la recherche : les grands composants connectés de chemins/surfaces naturelles. Ces ancres représentent les vrais massifs exploitables autour du départ. Tant que la trace n'a pas encore trouvé de corridor significatif, le solver accorde un bonus aux routes d'accès qui se rapprochent de ces grands composants.
+
 ## Règles appliquées
 
 Une arête est considérée comme naturelle si elle est :
@@ -30,16 +32,18 @@ Le solver applique ensuite :
 - un plafond pour éviter que le bonus écrase tout le reste ;
 - une petite pénalité lorsqu'un court fragment naturel renvoie immédiatement vers la route ;
 - un score final de chemin qui valorise le ratio naturel et surtout le plus long corridor continu ;
-- une pénalité de fragmentation quand plusieurs petits segments naturels séparés remplacent un vrai corridor.
+- une pénalité de fragmentation quand plusieurs petits segments naturels séparés remplacent un vrai corridor ;
+- une attraction précoce vers les grands composants naturels, même si la première arête d'accès est une petite route ;
+- un bonus final pour les boucles qui visitent réellement un long massif continu.
 
 ## Garde-fou test
 
-Le test `tests/orienteering-solver.test.ts` construit deux boucles :
+Le test `tests/orienteering-solver.test.ts` couvre deux cas :
 
-1. une boucle à score brut supérieur avec un seul fragment trail puis route ;
-2. une boucle à score brut inférieur mais composée d'un corridor naturel continu.
+1. une boucle à score brut supérieur avec un seul fragment trail puis route doit perdre contre une boucle à score brut inférieur mais composée d'un corridor naturel continu ;
+2. une route d'accès routière vers un grand massif naturel doit battre un petit fragment trail local suivi de routes.
 
-Le solver doit classer la deuxième en premier. Ce test échouait avant le changement et passe maintenant.
+Le second cas formalise le problème “bois des Amis de Jean Bosco → bois de Baron” : le solver doit viser le massif, pas saisir le premier bout vert disponible.
 
 ## Pourquoi c'est important
 

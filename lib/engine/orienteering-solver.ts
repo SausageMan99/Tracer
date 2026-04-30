@@ -28,6 +28,11 @@ interface SolverConfig {
   expansionFactor: number;
 }
 
+interface NaturalAnchor {
+  center: { lat: number; lng: number };
+  totalNaturalKm: number;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SOLVER_CONFIGS: SolverConfig[] = [
@@ -47,6 +52,10 @@ const NATURAL_CORRIDOR_STREAK_BONUS_PER_KM = 0.08;
 const NATURAL_CORRIDOR_STREAK_BONUS_CAP = 0.28;
 const SHORT_NATURE_FRAGMENT_PENALTY_PER_KM = 0.08;
 const MIN_CORRIDOR_STREAK_KM = 1.5;
+const MIN_NATURAL_ANCHOR_KM = 1.8;
+const NATURAL_ANCHOR_PULL_PROGRESS_LIMIT = 0.45;
+const NATURAL_ANCHOR_PULL_BONUS = 0.45;
+const NATURAL_MASSIF_VISIT_BONUS_PER_KM = 0.18;
 
 const NATURAL_HIGHWAY_TYPES = new Set(["path", "track", "footway", "bridleway"]);
 const NATURAL_SURFACES = new Set(["dirt", "earth", "grass", "ground", "unpaved", "compacted", "fine_gravel", "gravel", "sand"]);
@@ -64,6 +73,96 @@ function isNaturalCorridorEdge(edge: { highway: string; surface?: string }): boo
     NATURAL_HIGHWAY_TYPES.has(edge.highway) ||
     (edge.surface != null && NATURAL_SURFACES.has(edge.surface))
   );
+}
+
+function buildNaturalAnchors(graph: EnrichedGraph, targetDistanceKm: number): NaturalAnchor[] {
+  const parent = new Map<string, string>();
+
+  const find = (id: string): string => {
+    if (!parent.has(id)) parent.set(id, id);
+    const currentParent = parent.get(id)!;
+    if (currentParent === id) return id;
+    const root = find(currentParent);
+    parent.set(id, root);
+    return root;
+  };
+
+  const union = (a: string, b: string): void => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  const naturalEdges = Array.from(graph.edges.values()).filter(isNaturalCorridorEdge);
+  for (const edge of naturalEdges) {
+    union(edge.from, edge.to);
+  }
+
+  const components = new Map<string, {
+    totalNaturalKm: number;
+    weightedLat: number;
+    weightedLng: number;
+  }>();
+
+  for (const edge of naturalEdges) {
+    const from = graph.nodes.get(edge.from);
+    const to = graph.nodes.get(edge.to);
+    if (!from || !to) continue;
+
+    const root = find(edge.from);
+    const midpointLat = (from.lat + to.lat) / 2;
+    const midpointLng = (from.lng + to.lng) / 2;
+    const component = components.get(root) ?? {
+      totalNaturalKm: 0,
+      weightedLat: 0,
+      weightedLng: 0,
+    };
+
+    component.totalNaturalKm += edge.lengthKm;
+    component.weightedLat += midpointLat * edge.lengthKm;
+    component.weightedLng += midpointLng * edge.lengthKm;
+    components.set(root, component);
+  }
+
+  const minAnchorKm = Math.max(MIN_NATURAL_ANCHOR_KM, targetDistanceKm * 0.25);
+
+  return Array.from(components.values())
+    .filter((component) => component.totalNaturalKm >= minAnchorKm)
+    .map((component) => ({
+      totalNaturalKm: component.totalNaturalKm,
+      center: {
+        lat: component.weightedLat / component.totalNaturalKm,
+        lng: component.weightedLng / component.totalNaturalKm,
+      },
+    }))
+    .sort((a, b) => b.totalNaturalKm - a.totalNaturalKm)
+    .slice(0, 4);
+}
+
+function scoreNaturalAnchorPull(
+  currentCoord: { lat: number; lng: number },
+  toCoord: { lat: number; lng: number },
+  state: BeamState,
+  targetDistanceKm: number,
+  anchors: NaturalAnchor[]
+): number {
+  const progress = state.distanceKm / targetDistanceKm;
+  if (progress > NATURAL_ANCHOR_PULL_PROGRESS_LIMIT || anchors.length === 0) return 0;
+  if (state.longestNaturalStreakKm >= MIN_CORRIDOR_STREAK_KM) return 0;
+
+  let bestPull = 0;
+  for (const anchor of anchors) {
+    const currentDistance = haversineKm(currentCoord, anchor.center);
+    const nextDistance = haversineKm(toCoord, anchor.center);
+    if (nextDistance >= currentDistance) continue;
+
+    const approachRatio = (currentDistance - nextDistance) / Math.max(currentDistance, 0.1);
+    const anchorScale = Math.min(1, anchor.totalNaturalKm / Math.max(MIN_NATURAL_ANCHOR_KM, targetDistanceKm * 0.45));
+    const pull = approachRatio * anchorScale * NATURAL_ANCHOR_PULL_BONUS;
+    bestPull = Math.max(bestPull, pull);
+  }
+
+  return bestPull;
 }
 
 function scoreNaturalCorridorStep(edge: { lengthKm: number; highway: string; surface?: string }, state: BeamState): number {
@@ -133,8 +232,9 @@ function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]
   const longestCorridorRatio = longestNaturalStreakKm / totalDistanceKm;
   const fragmentationPenalty = Math.max(0, naturalSegmentCount - 1) * 0.08 * totalDistanceKm;
   const corridorBonus = totalDistanceKm * (naturalRatio * 0.15 + longestCorridorRatio * 0.25);
+  const massifVisitBonus = longestNaturalStreakKm * NATURAL_MASSIF_VISIT_BONUS_PER_KM;
 
-  return rawScore + corridorBonus - fragmentationPenalty;
+  return rawScore + corridorBonus + massifVisitBonus - fragmentationPenalty;
 }
 
 function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: string[], distanceKm: number): SolverPath {
@@ -294,6 +394,7 @@ function solveWithConfig(
   if (!startNode) return [];
 
   const startCoord = { lat: startNode.lat, lng: startNode.lng };
+  const naturalAnchors = buildNaturalAnchors(graph, targetDistanceKm);
   const returnCache = new ReturnDistanceCache();
 
   let beam: BeamState[] = [
@@ -398,6 +499,10 @@ function solveWithConfig(
         // 1.4 Corridor continuity: prefer edges that extend a real natural line,
         // not one-off green fragments that dump the runner back on roads.
         score += scoreNaturalCorridorStep(edge, state) / Math.max(edge.lengthKm, 0.1);
+
+        // 1.5 Early massif pull: before the route has found a real corridor,
+        // reward access roads that reduce distance to large natural components.
+        score += scoreNaturalAnchorPull(currentCoord, toCoord, state, targetDistanceKm, naturalAnchors);
 
         // 4.1 Directional seeding: bias toward seed bearing in first 15%
         if (progress < 0.15) {
