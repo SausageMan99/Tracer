@@ -20,6 +20,7 @@ function addEdge(
     lengthKm: partial.lengthKm ?? 1,
     highway: partial.highway,
     surface: partial.surface,
+    scenic: partial.scenic,
     osmWayId: partial.osmWayId ?? graph.edges.size + 1,
     score: partial.score,
   };
@@ -259,6 +260,94 @@ function makePerimeterVsWoodEntryGraph(): EnrichedGraph {
   return graph;
 }
 
+function makeMappedWoodRoadVsOpenRoadGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["open-a", makeNode("open-a", 49.145, -0.505)],
+    ["open-b", makeNode("open-b", 49.150, -0.500)],
+    ["open-c", makeNode("open-c", 49.145, -0.495)],
+    ["forest-gate", makeNode("forest-gate", 49.143, -0.500)],
+    ["forest-a", makeNode("forest-a", 49.146, -0.499)],
+    ["forest-b", makeNode("forest-b", 49.148, -0.496)],
+    ["forest-c", makeNode("forest-c", 49.145, -0.493)],
+    ["forest-exit", makeNode("forest-exit", 49.142, -0.496)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 4,
+  };
+
+  addEdge(graph, "start-open-a", "start", "open-a", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "open-a-open-b", "open-a", "open-b", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "open-b-open-c", "open-b", "open-c", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+  addEdge(graph, "open-c-start", "open-c", "start", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.82,
+    lengthKm: 2.5,
+  });
+
+  addEdge(graph, "start-forest-gate", "start", "forest-gate", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.38,
+    lengthKm: 2.2,
+  });
+  addEdge(graph, "forest-gate-forest-a", "forest-gate", "forest-a", {
+    highway: "residential",
+    surface: "asphalt",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "forest-a-forest-b", "forest-a", "forest-b", {
+    highway: "unclassified",
+    surface: "asphalt",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "forest-b-forest-c", "forest-b", "forest-c", {
+    highway: "residential",
+    surface: "asphalt",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "forest-c-forest-exit", "forest-c", "forest-exit", {
+    highway: "unclassified",
+    surface: "asphalt",
+    scenic: true,
+    score: 0.62,
+    lengthKm: 0.6,
+  });
+  addEdge(graph, "forest-exit-start", "forest-exit", "start", {
+    highway: "residential",
+    surface: "asphalt",
+    score: 0.38,
+    lengthKm: 5.2,
+  });
+
+  return graph;
+}
+
 describe("solve natural corridor preference", () => {
   it("ranks a continuous natural corridor above a higher raw-score isolated trail fragment", async () => {
     const graph = makeCorridorVsFragmentLoopGraph();
@@ -303,6 +392,22 @@ describe("solve natural corridor preference", () => {
       "wood-b-wood-c",
       "wood-c-wood-exit",
       "wood-exit-start",
+    ]);
+  });
+
+  it("treats roads through mapped woods as natural corridors when no dirt surface is tagged", async () => {
+    const graph = makeMappedWoodRoadVsOpenRoadGraph();
+
+    const paths = await solve(graph, "start", 10, 0, new Map());
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-forest-gate",
+      "forest-gate-forest-a",
+      "forest-a-forest-b",
+      "forest-b-forest-c",
+      "forest-c-forest-exit",
+      "forest-exit-start",
     ]);
   });
 });

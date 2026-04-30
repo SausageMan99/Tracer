@@ -22,6 +22,7 @@ Il construit aussi des ancres naturelles avant la recherche : les grands composa
 
 Une arête est considérée comme naturelle si elle est :
 
+- explicitement marquée `scenic` par le graph builder parce qu'elle appartient à, traverse, ou passe juste à côté d'une zone OSM boisée/naturelle ;
 - un type OSM `path`, `track`, `footway`, `bridleway`, ou
 - une surface `dirt`, `earth`, `grass`, `ground`, `unpaved`, `compacted`, `fine_gravel`, `gravel`, `sand`.
 
@@ -41,13 +42,14 @@ Le solver applique ensuite :
 
 ## Garde-fou test
 
-Le test `tests/orienteering-solver.test.ts` couvre trois cas :
+Le test `tests/orienteering-solver.test.ts` couvre quatre cas :
 
 1. une boucle à score brut supérieur avec un seul fragment trail puis route doit perdre contre une boucle à score brut inférieur mais composée d'un corridor naturel continu ;
 2. une route d'accès routière vers un grand massif naturel doit battre un petit fragment trail local suivi de routes ;
-3. une boucle routière propre qui contourne un bois doit perdre contre une boucle qui accepte une transition routière pour entrer dans le bois.
+3. une boucle routière propre qui contourne un bois doit perdre contre une boucle qui accepte une transition routière pour entrer dans le bois ;
+4. une boucle sur petites routes traversant un bois mappé doit battre une grande boucle routière ouverte, même si ces routes forestières n'ont ni `path` ni surface terre dans OSM.
 
-Les deux derniers cas formalisent le problème “bois des Amis de Jean Bosco → bois de Baron” : le solver doit viser le massif et y entrer, pas simplement longer sa périphérie ou saisir le premier bout vert disponible.
+Les cas 3 et 4 formalisent le problème “bois des Amis de Jean Bosco → bois de Baron” : le solver doit viser le massif, y entrer et exploiter les routes/chemins qui le traversent, pas simplement longer sa périphérie ou saisir le premier bout vert disponible.
 
 ## Pourquoi c'est important
 

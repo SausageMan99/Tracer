@@ -71,8 +71,9 @@ function undirectedEdgeKey(from: string, to: string, wayId: number): string {
     : `${to}-${from}-${wayId}`;
 }
 
-function isNaturalCorridorEdge(edge: { highway: string; surface?: string }): boolean {
+function isNaturalCorridorEdge(edge: { highway: string; surface?: string; scenic?: boolean }): boolean {
   return (
+    edge.scenic === true ||
     NATURAL_HIGHWAY_TYPES.has(edge.highway) ||
     (edge.surface != null && NATURAL_SURFACES.has(edge.surface))
   );
@@ -204,7 +205,7 @@ function scoreLowNatureRoutePenalty(totalDistanceKm: number, naturalDistanceKm: 
   return Math.max(0, minimumExpectedNaturalRatio - naturalRatio) * totalDistanceKm * LOW_NATURE_ROUTE_PENALTY_PER_KM;
 }
 
-function scoreNaturalCorridorStep(edge: { lengthKm: number; highway: string; surface?: string }, state: BeamState): number {
+function scoreNaturalCorridorStep(edge: { lengthKm: number; highway: string; surface?: string; scenic?: boolean }, state: BeamState): number {
   if (!isNaturalCorridorEdge(edge)) {
     if (state.wasOnNaturalCorridor && state.naturalStreakKm < MIN_CORRIDOR_STREAK_KM) {
       return -SHORT_NATURE_FRAGMENT_PENALTY_PER_KM * edge.lengthKm;
@@ -223,7 +224,7 @@ function scoreNaturalCorridorStep(edge: { lengthKm: number; highway: string; sur
   return edge.lengthKm * (NATURAL_CORRIDOR_BASE_BONUS_PER_KM + streakBonus);
 }
 
-function advanceNaturalCorridorState(state: BeamState, edge: { lengthKm: number; highway: string; surface?: string }) {
+function advanceNaturalCorridorState(state: BeamState, edge: { lengthKm: number; highway: string; surface?: string; scenic?: boolean }) {
   const isNatural = isNaturalCorridorEdge(edge);
   const naturalStreakKm = isNatural
     ? (state.wasOnNaturalCorridor ? state.naturalStreakKm : 0) + edge.lengthKm

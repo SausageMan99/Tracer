@@ -177,8 +177,9 @@ function scoreQuietness(highway: string): number {
   return 0.5;
 }
 
-function isNaturalCorridorEdge(edge: { osmWayId: number; highway: string; surface?: string }, scenicWayIds: Set<string>): boolean {
+function isNaturalCorridorEdge(edge: { osmWayId: number; highway: string; surface?: string; scenic?: boolean }, scenicWayIds: Set<string>): boolean {
   return (
+    edge.scenic === true ||
     scenicWayIds.has(String(edge.osmWayId)) ||
     TRAIL_HIGHWAY_TYPES.has(edge.highway) ||
     (edge.surface != null && UNPAVED_SURFACES.has(edge.surface))
@@ -186,7 +187,7 @@ function isNaturalCorridorEdge(edge: { osmWayId: number; highway: string; surfac
 }
 
 function computeNaturalContinuityBoost(
-  edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string },
+  edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean },
   graph: EnrichedGraph,
   scenicWayIds: Set<string>
 ): number {
@@ -204,9 +205,10 @@ function computeNaturalContinuityBoost(
   return Math.min(0.15, naturalSuccessorCount * 0.08);
 }
 
-function scoreNature(edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string }, graph: EnrichedGraph, scenicWayIds: Set<string>): number {
+function scoreNature(edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean }, graph: EnrichedGraph, scenicWayIds: Set<string>): number {
   let baseScore = 0.25;
-  if (scenicWayIds.has(String(edge.osmWayId))) baseScore = 1.0;
+  if (edge.scenic === true) baseScore = 1.0;
+  else if (scenicWayIds.has(String(edge.osmWayId))) baseScore = 1.0;
   else if (TRAIL_HIGHWAY_TYPES.has(edge.highway)) baseScore = 0.85;
   else if (edge.surface && UNPAVED_SURFACES.has(edge.surface)) baseScore = 0.7;
   else if (edge.highway === "living_street" || edge.highway === "pedestrian") baseScore = 0.55;

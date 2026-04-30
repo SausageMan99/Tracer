@@ -65,8 +65,9 @@ function computeRadius(options: GraphBuildOptions = {}): number {
   return Math.max(1.2, Math.min(2.2, Number((targetDistanceKm / 6.25).toFixed(1))));
 }
 
-function getCacheKey(center: Coordinate, radiusKm: number): string {
-  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}.json`;
+function getCacheKey(center: Coordinate, radiusKm: number, includeScenicAreas: boolean): string {
+  const scenicSuffix = includeScenicAreas ? "scenic" : "roads";
+  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}_${scenicSuffix}.json`;
 }
 
 function tryLoadCache(cacheKey: string): CachedGraph | null {
@@ -98,13 +99,75 @@ function saveCache(cacheKey: string, data: CachedGraph): void {
   }
 }
 
+function isScenicArea(tags: Record<string, string>): boolean {
+  return Boolean(
+    tags.natural === "wood" ||
+      tags.natural === "forest" ||
+      tags.natural === "grassland" ||
+      tags.natural === "heath" ||
+      tags.natural === "scrub" ||
+      tags.natural === "wetland" ||
+      tags.landuse === "forest" ||
+      tags.landuse === "wood" ||
+      tags.landuse === "recreation_ground" ||
+      tags.leisure === "nature_reserve" ||
+      tags.leisure === "park" ||
+      tags.boundary === "protected_area"
+  );
+}
+
+function scenicCellKey(coord: { lat: number; lon: number }): string {
+  return `${Math.round(coord.lat * 1000)}:${Math.round(coord.lon * 1000)}`;
+}
+
+function buildScenicNodeIndex(
+  scenicNodeIds: Set<number>,
+  nodeCoords: Map<number, { lat: number; lon: number }>
+): Map<string, { lat: number; lon: number }[]> {
+  const index = new Map<string, { lat: number; lon: number }[]>();
+  for (const nodeId of Array.from(scenicNodeIds)) {
+    const coord = nodeCoords.get(nodeId);
+    if (!coord) continue;
+    const key = scenicCellKey(coord);
+    const bucket = index.get(key) ?? [];
+    bucket.push(coord);
+    index.set(key, bucket);
+  }
+  return index;
+}
+
+function isNearScenicArea(
+  coord: { lat: number; lon: number },
+  scenicIndex: Map<string, { lat: number; lon: number }[]>
+): boolean {
+  if (scenicIndex.size === 0) return false;
+
+  const baseLat = Math.round(coord.lat * 1000);
+  const baseLon = Math.round(coord.lon * 1000);
+  for (let dLat = -1; dLat <= 1; dLat += 1) {
+    for (let dLon = -1; dLon <= 1; dLon += 1) {
+      const bucket = scenicIndex.get(`${baseLat + dLat}:${baseLon + dLon}`);
+      if (!bucket) continue;
+      if (bucket.some((scenicCoord) => haversineKm(
+        { lat: coord.lat, lng: coord.lon },
+        { lat: scenicCoord.lat, lng: scenicCoord.lon }
+      ) <= 0.09)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export async function buildGraph(
   center: Coordinate,
   options: GraphBuildOptions = {}
 ): Promise<{ graph: EnrichedGraph; scenicWayIds: Set<string> }> {
   const radiusKm = computeRadius(options);
   const radiusM = Math.round(radiusKm * 1000);
-  const cacheKey = getCacheKey(center, radiusKm);
+  const includeScenicAreas = options.sport === "running" && radiusKm <= 2.5;
+  const cacheKey = getCacheKey(center, radiusKm, includeScenicAreas);
 
   const cached = tryLoadCache(cacheKey);
   if (cached) {
@@ -119,12 +182,18 @@ export async function buildGraph(
     };
   }
 
-  // Fetch only routable highway ways and their nodes.
-  // Dense city scenic nwr scans around 5–8 km can push public Overpass mirrors
-  // into 504/timeouts. Scenic scoring is derived from tags on highway ways plus
-  // trail/path/surface heuristics in edge-scorer.
+  // Fetch routable highway ways plus nearby natural areas. The natural polygons
+  // are not routed directly; they mark roads/paths that pass through or along
+  // woods/parks so the trail solver can prefer them over clean perimeter roads.
+  const scenicAreaQuery = includeScenicAreas
+    ? `
+nwr["natural"~"^(wood|forest|grassland|heath|scrub|wetland)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["landuse"~"^(forest|wood|recreation_ground)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["leisure"~"^(nature_reserve|park)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["boundary"="protected_area"](around:${radiusM},${center.lat},${center.lng});`
+    : "";
   const query = `[out:json][timeout:30];(
-way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"](around:${radiusM},${center.lat},${center.lng});
+way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"](around:${radiusM},${center.lat},${center.lng});${scenicAreaQuery}
 (._;>;);
 );out body qt;`;
 
@@ -174,24 +243,22 @@ way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"]
     }
   }
 
-  // Step 2: Identify scenic ways
+  // Step 2: Identify scenic ways and natural-area boundary nodes. Some OSM
+  // paths crossing woods are not tagged as forest themselves; proximity to the
+  // wood polygon is the only signal that they are useful for trail running.
   const scenicWayIds = new Set<string>();
+  const scenicNodeIds = new Set<number>();
   for (const el of data.elements) {
     if (el.type !== "way") continue;
     const tags = el.tags ?? {};
-    if (
-      tags.natural ||
-      tags.landuse === "forest" ||
-      tags.landuse === "wood" ||
-      tags.landuse === "recreation_ground" ||
-      tags.leisure === "nature_reserve" ||
-      tags.leisure === "park" ||
-      tags.route === "hiking" ||
-      tags.boundary === "protected_area"
-    ) {
+    if (isScenicArea(tags)) {
+      scenicWayIds.add(String(el.id));
+      for (const nodeId of el.nodes ?? []) scenicNodeIds.add(nodeId);
+    } else if (tags.route === "hiking") {
       scenicWayIds.add(String(el.id));
     }
   }
+  const scenicIndex = buildScenicNodeIndex(scenicNodeIds, nodeCoords);
 
   // Step 3: Build graph from highway ways
   const nodes = new Map<string, GraphNode>();
@@ -245,6 +312,15 @@ way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"]
         { lat: fromCoord.lat, lng: fromCoord.lon },
         { lat: toCoord.lat, lng: toCoord.lon }
       );
+      const midpoint = {
+        lat: (fromCoord.lat + toCoord.lat) / 2,
+        lon: (fromCoord.lon + toCoord.lon) / 2,
+      };
+      const scenic =
+        scenicWayIds.has(String(wayId)) ||
+        isNearScenicArea(fromCoord, scenicIndex) ||
+        isNearScenicArea(toCoord, scenicIndex) ||
+        isNearScenicArea(midpoint, scenicIndex);
 
       // Bidirectional edges
       const fwdId = `${fromId}-${toId}-${wayId}`;
@@ -264,6 +340,7 @@ way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"]
           bicycle,
           oneway,
           onewayViolation: isOnewayReverse && !bicycleExemptFromOneway,
+          scenic,
           osmWayId: wayId,
           score: 0,
         };
@@ -285,6 +362,7 @@ way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"]
           bicycle,
           oneway,
           onewayViolation: isOnewayForward && !bicycleExemptFromOneway,
+          scenic,
           osmWayId: wayId,
           score: 0,
         };

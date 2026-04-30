@@ -100,7 +100,7 @@ function isTrailRunning(profile: SessionProfile): boolean {
 }
 
 function isTrailLikeEdge(edge: EnrichedEdge, scenicWayIds: Set<string>): boolean {
-  return TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
+  return edge.scenic === true || TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
 }
 
 function isPavedLikeEdge(edge: EnrichedEdge): boolean {
@@ -202,7 +202,7 @@ export function assessRouteQuality(args: {
   const busyKm = edgeLengthSum(edges.filter((edge) => BUSY_HIGHWAY_TYPES.has(edge.highway)));
   const pavedKm = edgeLengthSum(edges.filter((edge) => isPavedLikeEdge(edge)));
   const forestOrParkKm = edgeLengthSum(
-    edges.filter((edge) => scenicWayIds.has(String(edge.osmWayId)))
+    edges.filter((edge) => edge.scenic === true || scenicWayIds.has(String(edge.osmWayId)))
   );
   const naturalKm = edgeLengthSum(
     edges.filter((edge) => isTrailLikeEdge(edge, scenicWayIds))

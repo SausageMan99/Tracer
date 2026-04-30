@@ -466,6 +466,8 @@ export interface EnrichedEdge {
   bicycle?: string;
   oneway?: string;
   onewayViolation?: boolean;
+  /** True when the edge belongs to or runs immediately along a wood/forest/park/natural area. */
+  scenic?: boolean;
   osmWayId: number;
   score: number;
 }
