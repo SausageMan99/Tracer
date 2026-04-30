@@ -40,4 +40,40 @@ describe('terrain audit', () => {
     expect(report.metrics.asphaltRatio).toBe(0.25);
     expect(report.metrics.scenicEdgeRatio).toBe(0.25);
   });
+
+  it('classifies high trail potential when path-like and scenic signals are strong', () => {
+    const report = auditTerrainData([
+      edge({ highway: 'path', surface: 'ground', scenic: true }),
+      edge({ highway: 'track', surface: 'unpaved', scenic: true }),
+      edge({ highway: 'path', surface: 'earth' }),
+      edge({ highway: 'residential', surface: 'asphalt' }),
+    ]);
+
+    expect(report.trailPotential).toBe('high');
+  });
+
+  it('classifies low trail potential when graph is asphalt-road heavy', () => {
+    const report = auditTerrainData([
+      edge({ highway: 'residential', surface: 'asphalt' }),
+      edge({ highway: 'tertiary', surface: 'asphalt' }),
+      edge({ highway: 'secondary', surface: 'asphalt' }),
+      edge({ highway: 'footway', surface: 'asphalt' }),
+    ]);
+
+    expect(report.trailPotential).toBe('low');
+    expect(report.warnings).toContain('Zone très routière pour une boucle trail.');
+  });
+
+  it('keeps confidence medium when trail potential is good but surfaces are poorly tagged', () => {
+    const report = auditTerrainData([
+      edge({ highway: 'path', scenic: true }),
+      edge({ highway: 'track', scenic: true }),
+      edge({ highway: 'path' }),
+      edge({ highway: 'residential', surface: 'asphalt' }),
+    ]);
+
+    expect(report.trailPotential).toBe('high');
+    expect(report.confidence).toBe('medium');
+    expect(report.warnings).toContain('Beaucoup de chemins existent mais les surfaces OSM sont peu renseignées.');
+  });
 });

@@ -60,6 +60,38 @@ export function createEmptyTerrainAuditReport(): TerrainAuditReport {
   };
 }
 
+function classifyTrailPotential(metrics: TerrainAuditMetrics): TrailPotential {
+  if (metrics.asphaltRatio >= 0.65 && metrics.scenicEdgeRatio < 0.2) return 'low';
+  if (metrics.pathLikeEdgeRatio >= 0.6 && metrics.naturalAreaSignal >= 0.35) return 'high';
+  if (metrics.pathLikeEdgeRatio >= 0.4 || metrics.naturalAreaSignal >= 0.25) return 'medium';
+  return 'low';
+}
+
+function classifyConfidence(
+  metrics: TerrainAuditMetrics,
+  trailPotential: TrailPotential,
+): TerrainAuditConfidence {
+  if (metrics.totalEdges < 3) return 'low';
+  if (metrics.unknownSurfaceRatio >= 0.5 && trailPotential !== 'low') return 'medium';
+  if (metrics.unknownSurfaceRatio >= 0.7) return 'low';
+  if (trailPotential === 'high') return 'high';
+  return 'medium';
+}
+
+function buildTerrainWarnings(metrics: TerrainAuditMetrics): string[] {
+  const warnings: string[] = [];
+
+  if (metrics.asphaltRatio >= 0.65 && metrics.scenicEdgeRatio < 0.2) {
+    warnings.push('Zone très routière pour une boucle trail.');
+  }
+
+  if (metrics.unknownSurfaceRatio >= 0.5 && metrics.pathLikeEdgeRatio >= 0.4) {
+    warnings.push('Beaucoup de chemins existent mais les surfaces OSM sont peu renseignées.');
+  }
+
+  return warnings;
+}
+
 export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
   if (edges.length === 0) return createEmptyTerrainAuditReport();
 
@@ -69,21 +101,23 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
   const unknownSurfaces = edges.filter((edge) => !edge.surface).length;
   const asphaltSurfaces = edges.filter((edge) => ASPHALT_SURFACES.has(edge.surface ?? '')).length;
   const scenicEdges = edges.filter((edge) => edge.scenic === true).length;
+  const metrics: TerrainAuditMetrics = {
+    totalEdges,
+    pathLikeEdgeRatio: ratio(pathLike, totalEdges),
+    naturalSurfaceRatio: ratio(naturalSurfaces, totalEdges),
+    unknownSurfaceRatio: ratio(unknownSurfaces, totalEdges),
+    scenicEdgeRatio: ratio(scenicEdges, totalEdges),
+    asphaltRatio: ratio(asphaltSurfaces, totalEdges),
+    naturalAreaSignal: ratio(scenicEdges + naturalSurfaces, totalEdges),
+    fragmentationScore: 0,
+  };
+  const trailPotential = classifyTrailPotential(metrics);
 
   return {
-    confidence: 'medium',
-    trailPotential: 'medium',
-    metrics: {
-      totalEdges,
-      pathLikeEdgeRatio: ratio(pathLike, totalEdges),
-      naturalSurfaceRatio: ratio(naturalSurfaces, totalEdges),
-      unknownSurfaceRatio: ratio(unknownSurfaces, totalEdges),
-      scenicEdgeRatio: ratio(scenicEdges, totalEdges),
-      asphaltRatio: ratio(asphaltSurfaces, totalEdges),
-      naturalAreaSignal: ratio(scenicEdges + naturalSurfaces, totalEdges),
-      fragmentationScore: 0,
-    },
-    warnings: [],
+    confidence: classifyConfidence(metrics, trailPotential),
+    trailPotential,
+    metrics,
+    warnings: buildTerrainWarnings(metrics),
     recommendations: [],
   };
 }
