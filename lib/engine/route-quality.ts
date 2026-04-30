@@ -265,7 +265,13 @@ export function assessRouteQuality(args: {
     ? clamp01(natureScore * 0.45 + trailBeautyScore * 0.55)
     : natureScore;
 
-  const productionScore =
+  const roadHeavyTrailPenalty = isTrailRunning(profile) &&
+    terrainAudit.metrics.asphaltRatio >= 0.65 &&
+    terrainAudit.metrics.scenicEdgeRatio < 0.2
+    ? 0.4
+    : 0;
+
+  const baseProductionScore =
     distanceScore * 0.22 +
     elevationScore * 0.16 +
     loopScore * 0.18 +
@@ -275,6 +281,7 @@ export function assessRouteQuality(args: {
     pathShapeScore * 0.03 +
     intersectionScore * 0.04 +
     routeEnvironmentScore * 0.04;
+  const productionScore = clamp01(baseProductionScore - roadHeavyTrailPenalty);
 
   const warnings: string[] = [];
   if (distanceErrorPct > 0.2) warnings.push("DISTANCE_OFF_TARGET");
@@ -288,6 +295,7 @@ export function assessRouteQuality(args: {
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
   if (isTrailRunning(profile) && pavedRatio > 0.45) warnings.push("TOO_MUCH_PAVEMENT");
+  if (roadHeavyTrailPenalty > 0) warnings.push("Boucle trop routière pour une sortie trail.");
   if (
     isTrailRunning(profile) &&
     terrainAudit.confidence === 'medium' &&

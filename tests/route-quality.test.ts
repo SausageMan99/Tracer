@@ -266,4 +266,41 @@ describe("assessRouteQuality", () => {
       "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM."
     );
   });
+
+  it("penalizes road-heavy loops for trail running", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.859, lng: 2.355, edges: ["cd"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 1, highway: "residential", surface: "asphalt", osmWayId: 50, score: 0.3 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 1, highway: "tertiary", surface: "asphalt", osmWayId: 51, score: 0.2 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 1, highway: "footway", surface: "asphalt", osmWayId: 52, score: 0.4 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c", "d"],
+      edgeIds: ["ab", "bc", "cd"],
+      distanceKm: 3,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 3, ascendM: 60 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 3,
+      targetElevationM: 60,
+    });
+
+    expect(quality.productionScore).toBeLessThan(0.6);
+    expect(quality.warnings).toContain("Boucle trop routière pour une sortie trail.");
+  });
 });
