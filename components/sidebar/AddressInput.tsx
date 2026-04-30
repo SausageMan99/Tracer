@@ -186,7 +186,7 @@ export default function AddressInput({
           aria-activedescendant={
             activeIndex >= 0 ? `${id}-opt-${activeIndex}` : undefined
           }
-          className={inputCls}
+          className={`${inputCls} ${dark ? "trailforge-address-input" : ""}`.trim()}
           style={dark ? {
             background: "var(--bg-elevated)",
             border: "1px solid var(--border)",

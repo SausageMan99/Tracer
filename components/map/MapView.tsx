@@ -532,6 +532,40 @@ export default function MapView() {
         aria-label="Carte interactive du parcours généré"
       />
 
+      {!best && status !== "loading" && (
+        <div
+          className="absolute inset-0 z-10 pointer-events-none"
+          style={{ display: "grid", placeItems: "center" }}
+          aria-hidden="true"
+        >
+          <div
+            style={{
+              width: "min(360px, calc(100vw - 48px))",
+              padding: "22px",
+              borderRadius: "var(--radius-card)",
+              border: "1px solid rgba(30,46,37,0.72)",
+              background: "rgba(5,8,6,0.58)",
+              backdropFilter: "blur(14px)",
+              textAlign: "center",
+              boxShadow: "0 24px 80px rgba(0,0,0,0.32)",
+            }}
+          >
+            <svg viewBox="0 0 160 72" fill="none" width="120" height="54" style={{ margin: "0 auto 12px", opacity: 0.5, color: "var(--accent-amber)" }}>
+              <path d="M4 48c22-18 44-18 66 0s44 18 66 0" stroke="currentColor" strokeWidth="1" />
+              <path d="M8 34c19-14 38-14 57 0s38 14 57 0" stroke="currentColor" strokeWidth="1" />
+              <path d="M26 58c17-10 34-10 51 0s34 10 51 0" stroke="currentColor" strokeWidth="1" />
+              <path d="M51 12l18 28 14-18 25 36H25l26-46z" stroke="var(--accent-lime)" strokeWidth="1.2" />
+            </svg>
+            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "18px", color: "var(--text-primary)", letterSpacing: "-0.02em", marginBottom: "6px" }}>
+              Choisis un point de départ.
+            </p>
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.45 }}>
+              TrailForge cherchera une boucle trail courte, puis affichera les compromis avant export GPX.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ── Loading overlay — pulsing radar while generating ──────────── */}
       {status === "loading" && (
         <div
@@ -550,7 +584,7 @@ export default function MapView() {
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(8,12,10,0.35)",
+              background: "rgba(5,8,6,0.48)",
             }}
           />
           {/* Radar pulse rings */}
@@ -561,7 +595,7 @@ export default function MapView() {
                 position: "absolute",
                 inset: 0,
                 borderRadius: "50%",
-                border: "2px solid var(--accent-lime)",
+                border: "1px solid rgba(163,201,106,0.48)",
                 opacity: 0,
               }}
             />
@@ -571,7 +605,7 @@ export default function MapView() {
                 position: "absolute",
                 inset: 0,
                 borderRadius: "50%",
-                border: "2px solid var(--accent-lime)",
+                border: "1px solid rgba(163,201,106,0.48)",
                 opacity: 0,
               }}
             />
@@ -618,28 +652,29 @@ export default function MapView() {
           <div
             style={{
               backdropFilter: "blur(16px)",
-              background: "rgba(8,12,10,0.82)",
-              border: "1px solid rgba(30,43,34,0.9)",
-              borderRadius: "var(--radius-control)",
-              padding: "10px 16px",
+              background: "rgba(5,8,6,0.82)",
+              border: "1px solid rgba(30,46,37,0.9)",
+              borderRadius: "var(--radius-card)",
+              padding: "10px 14px",
               display: "flex",
-              gap: "20px",
+              gap: "14px",
               alignItems: "center",
+              boxShadow: "0 18px 56px rgba(0,0,0,0.32)",
             }}
           >
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "9px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(92,115,99,0.9)", fontWeight: 600 }}>Distance</span>
-              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "13px", fontWeight: 500, color: "#E8EDE9" }}>{best.distanceKm.toFixed(1)} km</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700 }}>Distance</span>
+              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "14px", fontWeight: 500, color: "var(--text-primary)" }}>{best.distanceKm.toFixed(1)} km</span>
             </div>
-            <div style={{ width: "1px", background: "rgba(30,43,34,0.9)", alignSelf: "stretch" }} />
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "9px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(92,115,99,0.9)", fontWeight: 600 }}>D+</span>
-              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "13px", fontWeight: 500, color: "#A8D672" }}>{best.ascendM.toFixed(0)} m</span>
+            <div style={{ width: "1px", background: "rgba(125,143,130,0.16)", alignSelf: "stretch" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700 }}>D+</span>
+              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "14px", fontWeight: 500, color: "var(--accent-lime)" }}>{best.ascendM.toFixed(0)} m</span>
             </div>
-            <div style={{ width: "1px", background: "rgba(30,43,34,0.9)", alignSelf: "stretch" }} />
-            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "9px", letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(92,115,99,0.9)", fontWeight: 600 }}>Durée est.</span>
-              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "13px", fontWeight: 500, color: "#E8EDE9" }}>{formatDuration(best.durationSeconds)}</span>
+            <div style={{ width: "1px", background: "rgba(125,143,130,0.16)", alignSelf: "stretch" }} />
+            <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", letterSpacing: "0.22em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700 }}>Durée</span>
+              <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "14px", fontWeight: 500, color: "var(--text-primary)" }}>{formatDuration(best.durationSeconds)}</span>
             </div>
           </div>
         </div>

@@ -18,8 +18,9 @@ export default function AppPage() {
         {/* Backdrop overlay — mobile only */}
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-30 bg-black/50 md:hidden"
+            className="fixed inset-0 z-30 md:hidden"
             onClick={() => setSidebarOpen(false)}
+            style={{ background: "rgba(5,8,6,0.62)", backdropFilter: "blur(12px)" }}
           />
         )}
 
@@ -28,18 +29,18 @@ export default function AppPage() {
           className={`
             fixed inset-0 z-40 w-full
             transform transition-transform duration-300
-            md:relative md:w-[360px] md:flex-shrink-0 md:transform-none md:transition-none
+            md:relative md:w-[390px] md:flex-shrink-0 md:transform-none md:transition-none
             md:border-r md:border-[var(--border)]
             ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"}
           `}
           style={{
-            background: "linear-gradient(180deg, var(--bg-deep), var(--bg-surface))",
-            backgroundImage: "var(--topo-lines), linear-gradient(180deg, var(--bg-deep), var(--bg-surface))",
-            backgroundSize: "240px 240px, auto",
+            background: "linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 58%, var(--bg-elevated) 100%)",
+            backgroundImage: "var(--topo-lines), linear-gradient(180deg, var(--bg-deep) 0%, var(--bg-surface) 58%, var(--bg-elevated) 100%)",
+            backgroundSize: "320px 320px, auto",
             display: "flex",
             flexDirection: "column",
             overflow: "hidden",
-            boxShadow: "24px 0 80px rgba(0,0,0,0.22)",
+            boxShadow: "32px 0 96px rgba(0,0,0,0.52)",
           }}
           aria-label="Panneau de configuration du parcours"
         >

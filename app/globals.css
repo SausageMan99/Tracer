@@ -6,20 +6,21 @@
 
 :root {
   --bg-deep:      #050806;
-  --bg-surface:   #0B120E;
-  --bg-elevated:  #121D16;
-  --bg-panel:     #17231B;
-  --border:       #25382B;
-  --text-primary: #F2F0E8;
-  --text-muted:   #9AAA9B;
-  --accent-moss:  #47694F;
-  --accent-sage:  #A7C7A2;
-  --accent-lime:  #C4D86B;
-  --accent-amber: #C4A166;
-  --accent-trail: #B56B38;
-  --accent-danger:#D46A5B;
+  --bg-surface:   #0A0F0C;
+  --bg-elevated:  #111A15;
+  --bg-panel:     #161F1A;
+  --border:       #1E2E25;
+  --text-primary: #E8E6DF;
+  --text-muted:   #7D8F82;
+  --text-dim:     #4A5C50;
+  --accent-moss:  #3E5A46;
+  --accent-sage:  #8BAF85;
+  --accent-lime:  #A3C96A;
+  --accent-amber: #A68B5B;
+  --accent-trail: #A68B5B;
+  --accent-danger:#B85A4E;
   --gradient-hero: radial-gradient(circle at 75% 25%, rgba(196, 161, 102, 0.16), transparent 28%), linear-gradient(145deg, #F2F0E8 0%, #DAD2C3 48%, #162319 49%, #050806 100%);
-  --topo-lines: url("data:image/svg+xml,%3Csvg width='220' height='220' viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23C4A166' stroke-opacity='0.22' stroke-width='1'%3E%3Cpath d='M-20 55 C35 18 83 18 138 53 C183 82 224 83 252 58'/%3E%3Cpath d='M-24 106 C22 76 72 72 118 103 C163 133 206 137 242 110'/%3E%3Cpath d='M-16 158 C39 126 92 126 142 158 C179 181 214 184 246 162'/%3E%3Cpath d='M34 -10 C62 28 63 64 35 98 C7 132 11 173 42 226'/%3E%3Cpath d='M143 -16 C172 20 174 63 145 98 C113 136 117 176 151 234'/%3E%3C/g%3E%3C/svg%3E");
+  --topo-lines: url("data:image/svg+xml,%3Csvg width='220' height='220' viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23C4A166' stroke-opacity='0.1' stroke-width='1'%3E%3Cpath d='M-20 55 C35 18 83 18 138 53 C183 82 224 83 252 58'/%3E%3Cpath d='M-24 106 C22 76 72 72 118 103 C163 133 206 137 242 110'/%3E%3Cpath d='M-16 158 C39 126 92 126 142 158 C179 181 214 184 246 162'/%3E%3Cpath d='M34 -10 C62 28 63 64 35 98 C7 132 11 173 42 226'/%3E%3Cpath d='M143 -16 C172 20 174 63 145 98 C113 136 117 176 151 234'/%3E%3C/g%3E%3C/svg%3E");
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   /* Legacy compatibility */
   --primary:       #C4D86B;
@@ -53,6 +54,14 @@ body {
 .session-scroll::-webkit-scrollbar { display: none; }
 .session-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
+input.trailforge-address-input::placeholder {
+  color: rgba(125, 143, 130, 0.82);
+}
+
+button:disabled {
+  opacity: 1;
+}
+
 /* ── TrailForge custom range slider ──────────────────────────────────────── */
 
 input[type="range"].trailforge-slider {
@@ -74,14 +83,14 @@ input[type="range"].trailforge-slider::-webkit-slider-runnable-track {
 input[type="range"].trailforge-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent-lime);
-  margin-top: -6px;
+  margin-top: -5px;
   cursor: pointer;
   transition: transform 0.15s var(--ease-out-expo);
-  box-shadow: 0 0 8px rgba(168, 214, 114, 0.4);
+  box-shadow: none;
 }
 
 input[type="range"].trailforge-slider::-webkit-slider-thumb:hover {
@@ -95,8 +104,8 @@ input[type="range"].trailforge-slider::-moz-range-track {
 }
 
 input[type="range"].trailforge-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent-lime);
   border: none;
@@ -109,6 +118,13 @@ input[type="range"].trailforge-slider:disabled::-webkit-slider-thumb {
   box-shadow: none;
 }
 
+input[type="range"].trailforge-slider-amber::-webkit-slider-thumb {
+  background: var(--accent-amber);
+}
+input[type="range"].trailforge-slider-amber::-moz-range-thumb {
+  background: var(--accent-amber);
+}
+
 /* Legacy dark-slider ─────────────────────────────────────────────────────── */
 
 input[type="range"].dark-slider::-webkit-slider-runnable-track {
@@ -118,11 +134,11 @@ input[type="range"].dark-slider::-webkit-slider-runnable-track {
 input[type="range"].dark-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent-lime);
-  margin-top: -6px;
+  margin-top: -5px;
   cursor: pointer;
 }
 input[type="range"].dark-slider::-moz-range-track {
@@ -130,8 +146,8 @@ input[type="range"].dark-slider::-moz-range-track {
   background: var(--bg-elevated);
 }
 input[type="range"].dark-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   background: var(--accent-lime);
   border: none;
