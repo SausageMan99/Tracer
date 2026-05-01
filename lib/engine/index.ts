@@ -57,7 +57,7 @@ export async function generateRouteV2(
 
   // 6. Derive session weights and score edges
   const weights = deriveWeights(profile, request.scenicMode);
-  const { nodeElevation } = await scoreEdges(graph, weights, profile, scenicWayIds);
+  const { nodeElevation } = await scoreEdges(graph, weights, profile, scenicWayIds, routeIntent);
 
   // 6. Run solver
   const solverPaths = await solve(
@@ -65,7 +65,8 @@ export async function generateRouteV2(
     closestNodeId,
     request.targetDistanceKm,
     request.targetElevationM,
-    nodeElevation
+    nodeElevation,
+    routeIntent
   );
 
   if (solverPaths.length === 0) {

@@ -7,10 +7,10 @@ import {
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 describe("route production benchmarks", () => {
-  it("covers the 12 priority running/trail regression cases", () => {
+  it("covers the priority running/trail regression cases", () => {
     const ids = BENCHMARK_CASES.map((benchmark) => benchmark.id);
 
-    expect(BENCHMARK_CASES).toHaveLength(12);
+    expect(BENCHMARK_CASES.length).toBeGreaterThanOrEqual(14);
     expect(ids).toEqual(expect.arrayContaining([
       "tourville-pommiers-trail-5k",
       "tourville-pommiers-trail-8k",
@@ -24,6 +24,8 @@ describe("route production benchmarks", () => {
       "lille-10k-citadel-loop",
       "paris-19-canal-running",
       "nanterre-east-avoid-highways",
+      "osm-poor-rural-trail-8k",
+      "paris-buttes-chaumont-5k-constrained",
     ]));
   });
 
@@ -44,7 +46,7 @@ describe("route production benchmarks", () => {
       expect(benchmark.thresholds.distanceToleranceRatio).toBeGreaterThan(0);
       expect(benchmark.thresholds.distanceToleranceRatio).toBeLessThanOrEqual(0.15);
       expect(benchmark.thresholds.elevationToleranceM).toBeGreaterThan(0);
-      expect(benchmark.thresholds.minProductionScore).toBeGreaterThanOrEqual(0.65);
+      expect(benchmark.thresholds.minProductionScore).toBeGreaterThanOrEqual(0.6);
       expect(benchmark.thresholds.minProductionScore).toBeLessThanOrEqual(0.9);
       expect(benchmark.thresholds.maxLoopClosureKm).toBeGreaterThan(0);
       expect(benchmark.thresholds.maxBusyRoadRatio).toBeGreaterThanOrEqual(0);
@@ -183,6 +185,37 @@ describe("route production benchmarks", () => {
     ]));
   });
 
+  it("keeps naturalWayRatio separate from trailRatio and never masks paved failures", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 15,
+      ascendM: 210,
+      quality: {
+        productionScore: 0.9,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.02,
+        trailRatio: 0.2,
+        naturalWayRatio: 0.8,
+        pavedRatio: 0.65,
+        trailBeautyScore: 0.8,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.7,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.metrics.trailRatio).toBe(0.2);
+    expect(summary.metrics.naturalWayRatio).toBe(0.8);
+    expect(summary.metrics.pavedRatio).toBe(0.65);
+    expect(summary.failures).toContain("paved_ratio");
+    expect(summary.failures).not.toContain("natural_way_ratio");
+  });
+
   it("fails the Tourville trail benchmarks on U-turns and overlapping edges", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-12k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
@@ -243,5 +276,70 @@ describe("route production benchmarks", () => {
       "terrain_data_confidence",
       "trail_potential",
     ]));
+  });
+
+  it("fails geometry thresholds when a constrained park route becomes a fake loop", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 6,
+      ascendM: 80,
+      quality: {
+        productionScore: 0.82,
+        loopGapKm: 0.1,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.5,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.02,
+          geometryOverlapRatio: 0.04,
+          selfIntersectionCount: 1,
+          sharpTurnDensityPerKm: 4,
+          headingReversalRatio: 0.12,
+          outAndBackSimilarityRatio: 0.3,
+          startStemKm: 0.4,
+          maxDistanceFromStartKm: 0.3,
+        },
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "geometry_self_intersection",
+      "geometry_loop_compactness",
+      "geometry_start_end_stem",
+      "geometry_spatial_spread",
+    ]));
+  });
+
+  it("requires an honest OSM warning on the poor-data benchmark", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "osm-poor-rural-trail-8k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 8,
+      ascendM: 140,
+      quality: {
+        productionScore: 0.72,
+        loopGapKm: 0.1,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.4,
+        pavedRatio: 0.2,
+        trailBeautyScore: 0.55,
+        longestTrailSegmentKm: 1.4,
+        naturalCorridorRatio: 0.35,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "low",
+        trailPotential: "low",
+        warnings: [],
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("missing_honest_warning");
   });
 });

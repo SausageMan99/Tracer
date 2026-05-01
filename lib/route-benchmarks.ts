@@ -25,7 +25,18 @@ export interface RouteBenchmarkCase {
     minTerrainDataConfidence?: "low" | "medium" | "high";
     minTrailPotential?: "low" | "medium" | "high";
     maxDurationMs?: number;
+    maxGeometryOverlapRatio?: number;
+    maxSelfIntersectionCount?: number;
+    maxSharpTurnDensityPerKm?: number;
+    maxHeadingReversalRatio?: number;
+    maxOutAndBackSimilarityRatio?: number;
+    minLoopCompactness?: number;
+    maxStartEndStemKm?: number;
+    minMaxDistanceFromStartKm?: number;
   };
+  expectedWarnings?: string[];
+  allowedWarnings?: string[];
+  requireHonestWarnings?: boolean;
   blockingWarnings?: string[];
   notes: string;
 }
@@ -41,6 +52,7 @@ export interface BenchmarkRouteSample {
     naturalWayRatio?: number;
     trailRatio?: number;
     pavedRatio?: number;
+    scenicPavedRatio?: number;
     trailBeautyScore?: number;
     longestTrailSegmentKm?: number;
     naturalCorridorRatio?: number;
@@ -49,6 +61,23 @@ export interface BenchmarkRouteSample {
     terrainDataConfidence?: "low" | "medium" | "high";
     trailPotential?: "low" | "medium" | "high";
     warnings?: string[];
+    elevationDiagnostics?: {
+      absoluteErrorM?: number;
+      relativeErrorPct?: number;
+      withinAbsoluteTolerance?: boolean;
+      messageCode?: string;
+    };
+    geometry?: {
+      loopCompactness?: number;
+      geometryOverlapRatio?: number;
+      selfIntersectionCount?: number;
+      sharpTurnDensityPerKm?: number;
+      headingReversalRatio?: number;
+      outAndBackSimilarityRatio?: number;
+      startStemKm?: number;
+      endStemKm?: number;
+      maxDistanceFromStartKm?: number;
+    };
   };
   durationMs?: number;
 }
@@ -64,8 +93,10 @@ export interface BenchmarkSummary {
     productionScore: number;
     loopClosureKm: number;
     busyRoadRatio: number;
+    trailRatio: number;
     naturalWayRatio: number;
     pavedRatio: number;
+    scenicPavedRatio: number;
     trailBeautyScore: number;
     longestTrailSegmentKm: number;
     naturalCorridorRatio: number;
@@ -75,6 +106,20 @@ export interface BenchmarkSummary {
     trailPotential: "unknown" | "low" | "medium" | "high";
     durationMs: number | null;
     warnings: string[];
+    elevationErrorPct: number;
+    elevationWithinTolerance: boolean | null;
+    elevationDiagnosticCode: string | null;
+    geometry: {
+      loopCompactness: number;
+      geometryOverlapRatio: number;
+      selfIntersectionCount: number;
+      sharpTurnDensityPerKm: number;
+      headingReversalRatio: number;
+      outAndBackSimilarityRatio: number;
+      startStemKm: number;
+      endStemKm: number;
+      maxDistanceFromStartKm: number;
+    };
   };
 }
 
@@ -100,8 +145,10 @@ export function summarizeBenchmarkResult(
   const productionScore = quality.productionScore ?? 0;
   const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
-  const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
+  const trailRatio = quality.trailRatio ?? 0;
+  const naturalWayRatio = quality.naturalWayRatio ?? quality.trailRatio ?? 0;
   const pavedRatio = quality.pavedRatio ?? 0;
+  const scenicPavedRatio = quality.scenicPavedRatio ?? 0;
   const trailBeautyScore = quality.trailBeautyScore ?? 0;
   const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
   const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
@@ -111,6 +158,20 @@ export function summarizeBenchmarkResult(
   const trailPotential = quality.trailPotential ?? "unknown";
   const durationMs = route.durationMs ?? null;
   const warnings = quality.warnings ?? [];
+  const elevationErrorPct = benchmark.targetElevationM > 0 ? elevationErrorM / Math.max(benchmark.targetElevationM, 1) : 0;
+  const elevationWithinTolerance = quality.elevationDiagnostics?.withinAbsoluteTolerance ?? null;
+  const elevationDiagnosticCode = quality.elevationDiagnostics?.messageCode ?? null;
+  const geometry = {
+    loopCompactness: quality.geometry?.loopCompactness ?? 0,
+    geometryOverlapRatio: quality.geometry?.geometryOverlapRatio ?? 0,
+    selfIntersectionCount: quality.geometry?.selfIntersectionCount ?? 0,
+    sharpTurnDensityPerKm: quality.geometry?.sharpTurnDensityPerKm ?? 0,
+    headingReversalRatio: quality.geometry?.headingReversalRatio ?? 0,
+    outAndBackSimilarityRatio: quality.geometry?.outAndBackSimilarityRatio ?? 0,
+    startStemKm: quality.geometry?.startStemKm ?? 0,
+    endStemKm: quality.geometry?.endStemKm ?? 0,
+    maxDistanceFromStartKm: quality.geometry?.maxDistanceFromStartKm ?? 0,
+  };
 
   const failures: string[] = [];
 
@@ -190,6 +251,19 @@ export function summarizeBenchmarkResult(
   ) {
     failures.push("duration_ms");
   }
+  if (benchmark.thresholds.maxGeometryOverlapRatio !== undefined && geometry.geometryOverlapRatio > benchmark.thresholds.maxGeometryOverlapRatio) failures.push("geometry_overlap");
+  if (benchmark.thresholds.maxSelfIntersectionCount !== undefined && geometry.selfIntersectionCount > benchmark.thresholds.maxSelfIntersectionCount) failures.push("geometry_self_intersection");
+  if (benchmark.thresholds.maxSharpTurnDensityPerKm !== undefined && geometry.sharpTurnDensityPerKm > benchmark.thresholds.maxSharpTurnDensityPerKm) failures.push("geometry_sharp_turn_density");
+  if (benchmark.thresholds.maxHeadingReversalRatio !== undefined && geometry.headingReversalRatio > benchmark.thresholds.maxHeadingReversalRatio) failures.push("geometry_heading_reversal");
+  if (benchmark.thresholds.maxOutAndBackSimilarityRatio !== undefined && geometry.outAndBackSimilarityRatio > benchmark.thresholds.maxOutAndBackSimilarityRatio) failures.push("geometry_out_and_back_similarity");
+  if (benchmark.thresholds.minLoopCompactness !== undefined && geometry.loopCompactness < benchmark.thresholds.minLoopCompactness) failures.push("geometry_loop_compactness");
+  if (benchmark.thresholds.maxStartEndStemKm !== undefined && Math.max(geometry.startStemKm, geometry.endStemKm) > benchmark.thresholds.maxStartEndStemKm) failures.push("geometry_start_end_stem");
+  if (benchmark.thresholds.minMaxDistanceFromStartKm !== undefined && geometry.maxDistanceFromStartKm < benchmark.thresholds.minMaxDistanceFromStartKm) failures.push("geometry_spatial_spread");
+  if (benchmark.requireHonestWarnings === true) {
+    for (const expectedWarning of benchmark.expectedWarnings ?? []) {
+      if (!warnings.includes(expectedWarning)) failures.push("missing_honest_warning");
+    }
+  }
   for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
     if (warnings.includes(warning)) {
       failures.push(warningToFailure(warning));
@@ -207,8 +281,10 @@ export function summarizeBenchmarkResult(
       productionScore,
       loopClosureKm,
       busyRoadRatio,
+      trailRatio,
       naturalWayRatio,
       pavedRatio,
+      scenicPavedRatio,
       trailBeautyScore,
       longestTrailSegmentKm,
       naturalCorridorRatio,
@@ -218,6 +294,10 @@ export function summarizeBenchmarkResult(
       trailPotential,
       durationMs,
       warnings,
+      elevationErrorPct,
+      elevationWithinTolerance,
+      elevationDiagnosticCode,
+      geometry,
     },
   };
 }

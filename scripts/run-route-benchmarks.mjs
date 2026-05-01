@@ -17,6 +17,7 @@ const shouldWriteOutput = !args.includes("--no-output");
 const shouldSaveArtifacts = args.includes("--save-artifacts");
 const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
+const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 15_000);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: npm run benchmark:routes -- [options]
@@ -24,9 +25,10 @@ if (args.includes("--help") || args.includes("-h")) {
 Runs TrailForge route benchmarks against /api/generate-route and fails on quality threshold regressions.
 
 Environment:
-  ROUTE_BENCHMARK_BASE_URL     Target app URL. Default: http://localhost:3000
-  ROUTE_BENCHMARK_OUTPUT       JSON report path. Default: artifacts/route-benchmark-results/latest.json
-  ROUTE_BENCHMARK_ARTIFACT_DIR Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_BASE_URL          Target app URL. Default: http://localhost:3000
+  ROUTE_BENCHMARK_OUTPUT            JSON report path. Default: artifacts/route-benchmark-results/latest.json
+  ROUTE_BENCHMARK_ARTIFACT_DIR      Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS Extra timeout budget above each case maxDurationMs. Default: 15000
 
 Options:
   --case <id-or-prefix>        Run only matching benchmark id(s). Repeatable.
@@ -110,8 +112,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   const productionScore = quality.productionScore ?? 0;
   const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
-  const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
+  const trailRatio = quality.trailRatio ?? 0;
+  const naturalWayRatio = quality.naturalWayRatio ?? quality.trailRatio ?? 0;
   const pavedRatio = quality.pavedRatio ?? 0;
+  const scenicPavedRatio = quality.scenicPavedRatio ?? 0;
   const trailBeautyScore = quality.trailBeautyScore ?? 0;
   const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
   const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
@@ -120,6 +124,18 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   const terrainDataConfidence = quality.terrainDataConfidence ?? "unknown";
   const trailPotential = quality.trailPotential ?? "unknown";
   const warnings = quality.warnings ?? [];
+  const elevationErrorPct = benchmark.targetElevationM > 0 ? elevationErrorM / Math.max(benchmark.targetElevationM, 1) : 0;
+  const geometry = {
+    loopCompactness: quality.geometry?.loopCompactness ?? 0,
+    geometryOverlapRatio: quality.geometry?.geometryOverlapRatio ?? 0,
+    selfIntersectionCount: quality.geometry?.selfIntersectionCount ?? 0,
+    sharpTurnDensityPerKm: quality.geometry?.sharpTurnDensityPerKm ?? 0,
+    headingReversalRatio: quality.geometry?.headingReversalRatio ?? 0,
+    outAndBackSimilarityRatio: quality.geometry?.outAndBackSimilarityRatio ?? 0,
+    startStemKm: quality.geometry?.startStemKm ?? 0,
+    endStemKm: quality.geometry?.endStemKm ?? 0,
+    maxDistanceFromStartKm: quality.geometry?.maxDistanceFromStartKm ?? 0,
+  };
   const failures = [];
 
   if (distanceErrorRatio > benchmark.thresholds.distanceToleranceRatio) failures.push("distance_tolerance");
@@ -137,6 +153,19 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   if (benchmark.thresholds.minTerrainDataConfidence !== undefined && compareOrderedLevel(terrainDataConfidence, benchmark.thresholds.minTerrainDataConfidence) < 0) failures.push("terrain_data_confidence");
   if (benchmark.thresholds.minTrailPotential !== undefined && compareOrderedLevel(trailPotential, benchmark.thresholds.minTrailPotential) < 0) failures.push("trail_potential");
   if (benchmark.thresholds.maxDurationMs !== undefined && durationMs > benchmark.thresholds.maxDurationMs) failures.push("duration_ms");
+  if (benchmark.thresholds.maxGeometryOverlapRatio !== undefined && geometry.geometryOverlapRatio > benchmark.thresholds.maxGeometryOverlapRatio) failures.push("geometry_overlap");
+  if (benchmark.thresholds.maxSelfIntersectionCount !== undefined && geometry.selfIntersectionCount > benchmark.thresholds.maxSelfIntersectionCount) failures.push("geometry_self_intersection");
+  if (benchmark.thresholds.maxSharpTurnDensityPerKm !== undefined && geometry.sharpTurnDensityPerKm > benchmark.thresholds.maxSharpTurnDensityPerKm) failures.push("geometry_sharp_turn_density");
+  if (benchmark.thresholds.maxHeadingReversalRatio !== undefined && geometry.headingReversalRatio > benchmark.thresholds.maxHeadingReversalRatio) failures.push("geometry_heading_reversal");
+  if (benchmark.thresholds.maxOutAndBackSimilarityRatio !== undefined && geometry.outAndBackSimilarityRatio > benchmark.thresholds.maxOutAndBackSimilarityRatio) failures.push("geometry_out_and_back_similarity");
+  if (benchmark.thresholds.minLoopCompactness !== undefined && geometry.loopCompactness < benchmark.thresholds.minLoopCompactness) failures.push("geometry_loop_compactness");
+  if (benchmark.thresholds.maxStartEndStemKm !== undefined && Math.max(geometry.startStemKm, geometry.endStemKm) > benchmark.thresholds.maxStartEndStemKm) failures.push("geometry_start_end_stem");
+  if (benchmark.thresholds.minMaxDistanceFromStartKm !== undefined && geometry.maxDistanceFromStartKm < benchmark.thresholds.minMaxDistanceFromStartKm) failures.push("geometry_spatial_spread");
+  if (benchmark.requireHonestWarnings === true) {
+    for (const expectedWarning of benchmark.expectedWarnings ?? []) {
+      if (!warnings.includes(expectedWarning)) failures.push("missing_honest_warning");
+    }
+  }
 
   for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
     if (warnings.includes(warning)) failures.push(warningToFailure(warning));
@@ -155,8 +184,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
       productionScore,
       loopClosureKm,
       busyRoadRatio,
+      trailRatio,
       naturalWayRatio,
       pavedRatio,
+      scenicPavedRatio,
       trailBeautyScore,
       longestTrailSegmentKm,
       naturalCorridorRatio,
@@ -166,6 +197,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
       trailPotential,
       durationMs,
       warnings,
+      elevationErrorPct,
+      elevationWithinTolerance: quality.elevationDiagnostics?.withinAbsoluteTolerance ?? null,
+      elevationDiagnosticCode: quality.elevationDiagnostics?.messageCode ?? null,
+      geometry,
     },
     thresholds: benchmark.thresholds,
     blockingWarnings: benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"],
@@ -217,12 +252,19 @@ async function runBenchmark(benchmark) {
   }
 
   const started = Date.now();
+  const timeoutMs = Math.max(
+    1_000,
+    Number(benchmark.thresholds?.maxDurationMs ?? 90_000) + benchmarkTimeoutMarginMs
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(requestFrom(benchmark)),
+      signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     const durationMs = Date.now() - started;
@@ -254,16 +296,21 @@ async function runBenchmark(benchmark) {
       error: null,
     };
   } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
     return {
       id: benchmark.id,
       label: benchmark.label,
       passed: false,
-      failures: ["network_error"],
+      failures: [aborted ? "duration_timeout" : "network_error"],
       status: 0,
       durationMs: Date.now() - started,
-      errorCode: "NETWORK_ERROR",
-      error: error instanceof Error ? error.message : String(error),
+      errorCode: aborted ? "BENCHMARK_TIMEOUT" : "NETWORK_ERROR",
+      error: aborted
+        ? `Benchmark exceeded ${timeoutMs}ms fetch timeout for case ${benchmark.id}`
+        : error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

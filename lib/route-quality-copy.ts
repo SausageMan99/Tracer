@@ -10,7 +10,7 @@ export const QUALITY_WARNING_COPY: Record<string, QualityWarningCopy> = {
   },
   ELEVATION_OFF_TARGET: {
     label: "D+ approximatif",
-    description: "Le dénivelé trouvé ne colle pas parfaitement à la cible.",
+    description: "Le dénivelé estimé s’éloigne de la cible. TrailForge privilégie une boucle praticable quand le relief local ou les données d’altitude ne permettent pas mieux.",
   },
   LOOP_NOT_CLOSED: {
     label: "Boucle imparfaite",
@@ -52,13 +52,41 @@ export const QUALITY_WARNING_COPY: Record<string, QualityWarningCopy> = {
     label: "Demi-tour détecté",
     description: "Le tracé contient un retour immédiat qui risque de mal passer sur le terrain.",
   },
-  "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM.": {
-    label: "Donnée OSM partielle",
-    description: "TrailForge voit des chemins, mais les surfaces sont mal renseignées : le potentiel trail est probable, pas garanti.",
+  OSM_SURFACE_DATA_WEAK: {
+    label: "Données OSM incomplètes",
+    description: "Des chemins existent autour du départ, mais leurs surfaces sont peu renseignées dans OSM. Le tracé peut être intéressant, sans garantie trail.",
   },
-  "Boucle trop routière pour une sortie trail.": {
+  TRAIL_TOO_ROAD_HEAVY: {
     label: "Boucle trop routière",
-    description: "Le réseau local force trop de route par rapport à l'objectif trail.",
+    description: "Le réseau local force trop de route pour une vraie sortie trail. Essaie un départ plus proche des chemins ou une distance différente.",
+  },
+  ROUTE_INTENT_WEAK_MATCH: {
+    label: "Intention trail partielle",
+    description: "TrailForge a identifié une zone naturelle cible, mais la boucle ne l’exploite pas autant que prévu.",
+  },
+  NATURAL_BUT_PAVED: {
+    label: "Nature bitumée",
+    description: "Le tracé traverse un cadre naturel ou scénique, mais une partie importante reste sur revêtement dur.",
+  },
+  SELF_INTERSECTION_DETECTED: {
+    label: "Croisement suspect",
+    description: "La trace se croise ou se replie : vérifie le GPX avant de l’utiliser.",
+  },
+  OUT_AND_BACK_SHAPE: {
+    label: "Forme aller-retour",
+    description: "La boucle ressemble davantage à un aller-retour qu’à un vrai circuit.",
+  },
+  TOO_MANY_SHARP_TURNS: {
+    label: "Virages brusques",
+    description: "Le tracé contient beaucoup de changements de direction serrés.",
+  },
+  LOOP_TOO_CONSTRAINED: {
+    label: "Boucle très contrainte",
+    description: "Autour de ce départ, le réseau impose une trace compacte. Le parcours reste utilisable, mais il peut sembler moins fluide qu’une boucle en forêt.",
+  },
+  LOOP_GEOMETRY_WEAK: {
+    label: "Géométrie fragile",
+    description: "La forme générale de la boucle semble moins naturelle que prévu.",
   },
 };
 

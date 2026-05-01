@@ -265,10 +265,12 @@ describe("assessRouteQuality", () => {
     expect(quality.pavedRatio).toBe(1);
     expect(quality.scenicPavedRatio).toBe(1);
     expect(quality.forestOrParkRatio).toBe(1);
+    expect(quality.naturalWayRatio).toBe(1);
     expect(quality.trailRatio).toBe(0);
     expect(quality.longestNonPavedTrailStreakKm).toBe(0);
     expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
     expect(quality.warnings).toContain("NOT_ENOUGH_TRAIL");
+    expect(quality.warnings).toContain("NATURAL_BUT_PAVED");
     expect(quality.productionScore).toBeLessThan(0.75);
   });
 
@@ -305,6 +307,7 @@ describe("assessRouteQuality", () => {
 
     expect(quality.pavedRatio).toBeCloseTo(1 / 3);
     expect(quality.scenicPavedRatio).toBeCloseTo(1 / 3);
+    expect(quality.naturalWayRatio).toBe(1);
     expect(quality.trailRatio).toBeCloseTo(2 / 3);
     expect(quality.naturalCorridorRatio).toBeCloseTo(2 / 3);
     expect(quality.longestTrailSegmentKm).toBe(2);
@@ -345,9 +348,7 @@ describe("assessRouteQuality", () => {
       targetElevationM: 80,
     });
 
-    expect(quality.warnings).toContain(
-      "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM."
-    );
+    expect(quality.warnings).toContain("OSM_SURFACE_DATA_WEAK");
     expect(quality.terrainDataConfidence).toBe("medium");
     expect(quality.trailPotential).toBe("high");
     expect(quality.terrainUnknownSurfaceRatio).toBeGreaterThan(0.45);
@@ -387,6 +388,6 @@ describe("assessRouteQuality", () => {
     });
 
     expect(quality.productionScore).toBeLessThan(0.6);
-    expect(quality.warnings).toContain("Boucle trop routière pour une sortie trail.");
+    expect(quality.warnings).toContain("TRAIL_TOO_ROAD_HEAVY");
   });
 });

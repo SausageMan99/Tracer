@@ -547,6 +547,7 @@ export interface SolverPath {
   edgeIds: string[];
   totalScore: number;
   distanceKm: number;
+  relaxationsUsed?: string[];
 }
 
 export interface SolverOptions {
