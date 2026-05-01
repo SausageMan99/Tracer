@@ -122,6 +122,18 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   const terrainDataConfidence = quality.terrainDataConfidence ?? "unknown";
   const trailPotential = quality.trailPotential ?? "unknown";
   const warnings = quality.warnings ?? [];
+  const elevationErrorPct = benchmark.targetElevationM > 0 ? elevationErrorM / Math.max(benchmark.targetElevationM, 1) : 0;
+  const geometry = {
+    loopCompactness: quality.geometry?.loopCompactness ?? 0,
+    geometryOverlapRatio: quality.geometry?.geometryOverlapRatio ?? 0,
+    selfIntersectionCount: quality.geometry?.selfIntersectionCount ?? 0,
+    sharpTurnDensityPerKm: quality.geometry?.sharpTurnDensityPerKm ?? 0,
+    headingReversalRatio: quality.geometry?.headingReversalRatio ?? 0,
+    outAndBackSimilarityRatio: quality.geometry?.outAndBackSimilarityRatio ?? 0,
+    startStemKm: quality.geometry?.startStemKm ?? 0,
+    endStemKm: quality.geometry?.endStemKm ?? 0,
+    maxDistanceFromStartKm: quality.geometry?.maxDistanceFromStartKm ?? 0,
+  };
   const failures = [];
 
   if (distanceErrorRatio > benchmark.thresholds.distanceToleranceRatio) failures.push("distance_tolerance");
@@ -139,6 +151,19 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   if (benchmark.thresholds.minTerrainDataConfidence !== undefined && compareOrderedLevel(terrainDataConfidence, benchmark.thresholds.minTerrainDataConfidence) < 0) failures.push("terrain_data_confidence");
   if (benchmark.thresholds.minTrailPotential !== undefined && compareOrderedLevel(trailPotential, benchmark.thresholds.minTrailPotential) < 0) failures.push("trail_potential");
   if (benchmark.thresholds.maxDurationMs !== undefined && durationMs > benchmark.thresholds.maxDurationMs) failures.push("duration_ms");
+  if (benchmark.thresholds.maxGeometryOverlapRatio !== undefined && geometry.geometryOverlapRatio > benchmark.thresholds.maxGeometryOverlapRatio) failures.push("geometry_overlap");
+  if (benchmark.thresholds.maxSelfIntersectionCount !== undefined && geometry.selfIntersectionCount > benchmark.thresholds.maxSelfIntersectionCount) failures.push("geometry_self_intersection");
+  if (benchmark.thresholds.maxSharpTurnDensityPerKm !== undefined && geometry.sharpTurnDensityPerKm > benchmark.thresholds.maxSharpTurnDensityPerKm) failures.push("geometry_sharp_turn_density");
+  if (benchmark.thresholds.maxHeadingReversalRatio !== undefined && geometry.headingReversalRatio > benchmark.thresholds.maxHeadingReversalRatio) failures.push("geometry_heading_reversal");
+  if (benchmark.thresholds.maxOutAndBackSimilarityRatio !== undefined && geometry.outAndBackSimilarityRatio > benchmark.thresholds.maxOutAndBackSimilarityRatio) failures.push("geometry_out_and_back_similarity");
+  if (benchmark.thresholds.minLoopCompactness !== undefined && geometry.loopCompactness < benchmark.thresholds.minLoopCompactness) failures.push("geometry_loop_compactness");
+  if (benchmark.thresholds.maxStartEndStemKm !== undefined && Math.max(geometry.startStemKm, geometry.endStemKm) > benchmark.thresholds.maxStartEndStemKm) failures.push("geometry_start_end_stem");
+  if (benchmark.thresholds.minMaxDistanceFromStartKm !== undefined && geometry.maxDistanceFromStartKm < benchmark.thresholds.minMaxDistanceFromStartKm) failures.push("geometry_spatial_spread");
+  if (benchmark.requireHonestWarnings === true) {
+    for (const expectedWarning of benchmark.expectedWarnings ?? []) {
+      if (!warnings.includes(expectedWarning)) failures.push("missing_honest_warning");
+    }
+  }
 
   for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
     if (warnings.includes(warning)) failures.push(warningToFailure(warning));
@@ -170,6 +195,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
       trailPotential,
       durationMs,
       warnings,
+      elevationErrorPct,
+      elevationWithinTolerance: quality.elevationDiagnostics?.withinAbsoluteTolerance ?? null,
+      elevationDiagnosticCode: quality.elevationDiagnostics?.messageCode ?? null,
+      geometry,
     },
     thresholds: benchmark.thresholds,
     blockingWarnings: benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"],

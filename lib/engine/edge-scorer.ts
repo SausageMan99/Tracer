@@ -13,6 +13,7 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 import { getRouteIntention } from "../route-intentions";
+import type { RouteIntent } from "./terrain-planner";
 
 const MAX_ELEVATION_NODES = 1_000;
 
@@ -236,9 +237,15 @@ function scoreNature(
   edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean },
   graph: EnrichedGraph,
   scenicWayIds: Set<string>,
-  profile: SessionProfile
+  profile: SessionProfile,
+  routeIntent?: RouteIntent
 ): number {
-  if (isPavedScenicTrailEdge(edge, profile, scenicWayIds)) return 0.45;
+  if (isPavedScenicTrailEdge(edge, profile, scenicWayIds)) {
+    if (routeIntent?.type === "forest_loop" || routeIntent?.type === "transition_to_woods") return 0.28;
+    if (routeIntent?.type === "urban_nature_loop") return 0.38;
+    if (routeIntent?.type === "park_loop") return 0.5;
+    return 0.45;
+  }
 
   let baseScore = 0.25;
   if (edge.scenic === true) baseScore = 1.0;
@@ -266,7 +273,8 @@ export async function scoreEdges(
   graph: EnrichedGraph,
   weights: SessionWeights,
   profile: SessionProfile,
-  scenicWayIds: Set<string>
+  scenicWayIds: Set<string>,
+  routeIntent?: RouteIntent
 ): Promise<{ nodeElevation: Map<string, number> }> {
   // Fetch elevations for a bounded sample of nodes. Dense city graphs can contain
   // hundreds of thousands of OSM vertices; asking Open-Meteo for all of them
@@ -311,7 +319,7 @@ export async function scoreEdges(
     const surfaceScore = scoreSurface(edge, profile.sport, profile);
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
-    const natureScore = scoreNature(edge, graph, scenicWayIds, profile);
+    const natureScore = scoreNature(edge, graph, scenicWayIds, profile, routeIntent);
 
     // Elevation score: based on gradient
     const fromElev = nodeElevation.get(edge.from) ?? 0;
@@ -346,11 +354,20 @@ export async function scoreEdges(
       scoreReasons.push("paved scenic penalty");
     }
 
+    const intentMultiplier = routeIntent?.type === "forest_loop" || routeIntent?.type === "transition_to_woods"
+      ? (isPavedScenicTrailEdge(edge, profile, scenicWayIds) ? 0.78 : (TRAIL_HIGHWAY_TYPES.has(edge.highway) && edge.surface && UNPAVED_SURFACES.has(edge.surface) ? 1.08 : 1))
+      : routeIntent?.type === "park_loop"
+        ? 1.02
+        : 1;
+
     edge.score =
+      intentMultiplier * (
       weights.surface * surfaceScore +
       weights.elevation * elevScore +
       weights.nature * natureScore +
-      weights.quietness * quietnessScore;
+      weights.quietness * quietnessScore
+      );
+    if (intentMultiplier !== 1) scoreReasons.push(`intentMultiplier=${intentMultiplier.toFixed(2)}`);
     edge.scoreReason = scoreReasons.join(";");
   }
 

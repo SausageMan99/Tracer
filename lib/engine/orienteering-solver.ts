@@ -1,4 +1,5 @@
 import type { EnrichedGraph, SolverPath } from "../types";
+import type { RouteIntent } from "./terrain-planner";
 import { haversineKm } from "../route-generator-legacy";
 import { findShortestPath, ReturnDistanceCache } from "./pathfinder";
 
@@ -241,6 +242,33 @@ function advanceNaturalCorridorState(state: BeamState, edge: { lengthKm: number;
   };
 }
 
+
+function scoreIntentEdge(edge: { lengthKm: number; highway: string; surface?: string; scenic?: boolean }, state: BeamState, targetDistanceKm: number, intent?: RouteIntent): number {
+  if (!intent) return 0;
+  const progress = state.distanceKm / Math.max(targetDistanceKm, 0.1);
+  const paved = edge.surface != null && PAVED_SURFACES.has(edge.surface);
+  const nonPavedNatural = isNaturalCorridorEdge(edge);
+  let score = 0;
+
+  if (intent.type === "forest_loop" || intent.type === "transition_to_woods") {
+    if (nonPavedNatural) score += 0.12;
+    if (paved && edge.scenic === true) score -= 0.22;
+    if (state.longestNaturalStreakKm < (intent.minNonPavedTrailStreakKm ?? MIN_CORRIDOR_STREAK_KM) && nonPavedNatural) {
+      score += Math.min(0.22, edge.lengthKm * 0.16);
+    }
+  } else if (intent.type === "park_loop") {
+    if (progress > 0.55) score += 0.04;
+    if (paved && edge.scenic === true) score += 0.02;
+  } else if (intent.type === "urban_nature_loop") {
+    if (edge.scenic === true) score += paved ? 0.03 : 0.08;
+  }
+
+  const projectedPavedRatio = (paved ? edge.lengthKm : 0) / Math.max(state.distanceKm + edge.lengthKm, 0.1);
+  if (intent.maxPavedRatio != null && projectedPavedRatio > intent.maxPavedRatio) score -= 0.08;
+
+  return score;
+}
+
 function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]): number {
   let rawScore = 0;
   let totalDistanceKm = 0;
@@ -280,12 +308,13 @@ function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]
   return rawScore + corridorBonus + massifVisitBonus - fragmentationPenalty - lowNaturePenalty;
 }
 
-function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: string[], distanceKm: number): SolverPath {
+function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: string[], distanceKm: number, relaxationsUsed: string[] = []): SolverPath {
   return {
     nodeIds,
     edgeIds,
     totalScore: scorePathWithCorridorPreference(graph, edgeIds),
     distanceKm,
+    relaxationsUsed,
   };
 }
 
@@ -302,6 +331,37 @@ function cleanReturnPath(
   );
 
   return findShortestPath(graph, fromNodeId, startNodeId, { forbiddenUndirectedEdgeKeys });
+}
+
+function resolveReturnPath(
+  graph: EnrichedGraph,
+  fromNodeId: string,
+  startNodeId: string,
+  edgeVisits: Map<string, number>,
+  returnCache: ReturnDistanceCache,
+  mode: RouteIntent["cleanReturnMode"],
+  remainingBudgetKm: number
+): { path: ReturnType<typeof findShortestPath> | null; relaxationsUsed: string[] } {
+  const shortestPath = mode === "fallback_allowed"
+    ? returnCache.getPath(graph, fromNodeId, startNodeId)
+    : null;
+  if (shortestPath && shortestPath.distanceKm <= remainingBudgetKm) {
+    return { path: shortestPath, relaxationsUsed: ["clean_return"] };
+  }
+
+  const cleanPath = cleanReturnPath(graph, fromNodeId, startNodeId, edgeVisits);
+  if (cleanPath && cleanPath.distanceKm <= remainingBudgetKm) {
+    return { path: cleanPath, relaxationsUsed: [] };
+  }
+
+  if (mode === "strict") return { path: null, relaxationsUsed: [] };
+
+  const fallbackPath = returnCache.getPath(graph, fromNodeId, startNodeId);
+  if (fallbackPath && fallbackPath.distanceKm <= remainingBudgetKm) {
+    return { path: fallbackPath, relaxationsUsed: ["clean_return"] };
+  }
+
+  return { path: null, relaxationsUsed: [] };
 }
 
 function computeBearing(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
@@ -412,9 +472,13 @@ function solveWithConfig(
   targetDistanceKm: number,
   targetElevationM: number,
   nodeElevation: Map<string, number>,
-  config: SolverConfig
+  config: SolverConfig,
+  routeIntent?: RouteIntent
 ): SolverPath[] {
-  const { beamWidth, seedBearing } = config;
+  const beamWidth = routeIntent?.beamBudget.beamWidth ?? config.beamWidth;
+  const maxIterations = routeIntent?.beamBudget.maxIterations ?? MAX_ITERATIONS;
+  const { seedBearing } = config;
+  const cleanReturnMode = routeIntent?.cleanReturnMode ?? "prefer";
   const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
   const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
   const startNode = graph.nodes.get(startNodeId);
@@ -445,7 +509,7 @@ function solveWithConfig(
 
   const validPaths: SolverPath[] = [];
 
-  for (let iter = 0; iter < MAX_ITERATIONS && beam.length > 0; iter++) {
+  for (let iter = 0; iter < maxIterations && beam.length > 0; iter++) {
     const nextBeam: BeamState[] = [];
 
     for (const state of beam) {
@@ -531,6 +595,7 @@ function solveWithConfig(
         // reward access roads that reduce distance to large natural components.
         score += scoreNaturalAnchorPull(currentCoord, toCoord, state, targetDistanceKm, naturalAnchors);
         score += scoreNaturalAnchorEntry(state.currentNodeId, edge.to, state, targetDistanceKm, naturalAnchors);
+        score += scoreIntentEdge(edge, state, targetDistanceKm, routeIntent);
 
         // 4.1 Directional seeding: bias toward seed bearing in first 15%
         if (progress < 0.15) {
@@ -640,16 +705,23 @@ function solveWithConfig(
             if (newDist + returnDist >= minDist && newDist + returnDist <= maxDist) {
               // Close loop via A* return path
               const closedDistance = newDist + returnDist;
-              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
-              const returnPath = cleanPath && newDist + cleanPath.distanceKm <= maxDist
-                ? cleanPath
-                : returnCache.getPath(graph, selectedEdge.to, startNodeId);
+              const resolvedReturn = resolveReturnPath(
+                graph,
+                selectedEdge.to,
+                startNodeId,
+                newState.edgeVisits,
+                returnCache,
+                cleanReturnMode,
+                maxDist - newDist
+              );
+              const returnPath = resolvedReturn.path;
               if (returnPath) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  newDist + returnPath.distanceKm
+                  newDist + returnPath.distanceKm,
+                  resolvedReturn.relaxationsUsed
                 ));
               }
               if (closedDistance >= targetDistanceKm * 0.98) {
@@ -659,14 +731,23 @@ function solveWithConfig(
 
             // At 85%+, force closure for all reachable states
             if (newProgress >= 0.85) {
-              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
-              const returnPath = cleanPath ?? returnCache.getPath(graph, selectedEdge.to, startNodeId);
+              const resolvedReturn = resolveReturnPath(
+                graph,
+                selectedEdge.to,
+                startNodeId,
+                newState.edgeVisits,
+                returnCache,
+                cleanReturnMode,
+                maxDist * 1.1 - newDist
+              );
+              const returnPath = resolvedReturn.path;
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  newDist + returnPath.distanceKm
+                  newDist + returnPath.distanceKm,
+                  resolvedReturn.relaxationsUsed
                 ));
               }
               continue;
@@ -737,10 +818,11 @@ export async function solve(
   startNodeId: string,
   targetDistanceKm: number,
   targetElevationM: number = 0,
-  nodeElevation: Map<string, number> = new Map()
+  nodeElevation: Map<string, number> = new Map(),
+  routeIntent?: RouteIntent
 ): Promise<SolverPath[]> {
   const results = SOLVER_CONFIGS.map((config) =>
-    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config)
+    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent)
   );
 
   const allPaths = results.flat();

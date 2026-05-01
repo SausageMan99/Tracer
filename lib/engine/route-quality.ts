@@ -12,6 +12,8 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 import { auditTerrainData } from "./terrain-audit";
+import { computeRouteGeometryMetrics } from "./route-geometry-metrics";
+import type { RouteGeometryMetrics } from "./route-geometry-metrics";
 import type { RouteIntent } from "./terrain-planner";
 
 export interface RouteQualityMetrics {
@@ -37,6 +39,16 @@ export interface RouteQualityMetrics {
   terrainDataConfidence?: "low" | "medium" | "high";
   trailPotential?: "low" | "medium" | "high";
   terrainUnknownSurfaceRatio?: number;
+  elevationDiagnostics?: {
+    targetElevationM: number;
+    actualAscendM: number;
+    absoluteErrorM: number;
+    relativeErrorPct: number;
+    toleranceM: number | null;
+    withinAbsoluteTolerance: boolean;
+    messageCode: "ELEVATION_WITHIN_ABSOLUTE_TOLERANCE" | "ELEVATION_RELATIVE_ERROR_HIGH" | "ELEVATION_TARGET_UNREALISTIC_LOCALLY";
+  };
+  geometry?: RouteGeometryMetrics;
   uTurnRatio: number;
   restrictedAccessRatio: number;
   onewayViolationRatio: number;
@@ -248,6 +260,8 @@ function computeRouteIntentMatch(args: {
   pavedRatio: number;
   busyRoadRatio: number;
   repeatEdgeRatio: number;
+  geometryOverlapRatio: number;
+  loopAreaKm2: number;
 }): { score: number; failures: string[]; relaxationsUsed: string[] } {
   const { intent } = args;
   if (!intent) return { score: 1, failures: [], relaxationsUsed: [] };
@@ -272,6 +286,10 @@ function computeRouteIntentMatch(args: {
   }
   checks.push({ key: "busy_road", passed: args.busyRoadRatio <= intent.maxBusyRoadRatio, relaxed: args.busyRoadRatio <= intent.maxBusyRoadRatio + 0.03 });
   checks.push({ key: "repeat_edge", passed: args.repeatEdgeRatio <= intent.maxRepeatEdgeRatio, relaxed: args.repeatEdgeRatio <= intent.maxRepeatEdgeRatio + 0.03 });
+  checks.push({ key: "geometry_overlap", passed: args.geometryOverlapRatio <= intent.maxGeometryOverlapRatio, relaxed: args.geometryOverlapRatio <= intent.maxGeometryOverlapRatio + 0.04 });
+  if (intent.minLoopAreaKm2 != null) {
+    checks.push({ key: "loop_area", passed: args.loopAreaKm2 >= intent.minLoopAreaKm2, relaxed: args.loopAreaKm2 >= intent.minLoopAreaKm2 * 0.7 });
+  }
 
   const failures = checks.filter((check) => !check.passed).map((check) => check.key);
   const relaxationsUsed = checks.filter((check) => !check.passed && check.relaxed === true).map((check) => check.key);
@@ -349,6 +367,7 @@ export function assessRouteQuality(args: {
   const repeatEdgeRatio = computeRepeatRatio(edges, totalKm);
   const uTurnRatio = computeUTurnRatio(path, graph, totalKm);
   const intersectionDensityPerKm = computeIntersectionDensity(path, graph);
+  const geometry = computeRouteGeometryMetrics(candidate.points, totalKm);
   const terrainAudit = auditTerrainData(edges);
   const routeIntentMatch = computeRouteIntentMatch({
     intent: routeIntent,
@@ -357,6 +376,8 @@ export function assessRouteQuality(args: {
     pavedRatio,
     busyRoadRatio,
     repeatEdgeRatio,
+    geometryOverlapRatio: geometry.geometryOverlapRatio,
+    loopAreaKm2: geometry.loopAreaKm2,
   });
 
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
@@ -367,6 +388,13 @@ export function assessRouteQuality(args: {
   const noveltyScore = clamp01(1 - repeatEdgeRatio * 4);
   const pathShapeScore = clamp01(1 - uTurnRatio * 8);
   const intersectionScore = clamp01(1 - Math.max(0, intersectionDensityPerKm - 8) / 12);
+  const geometryScore = clamp01(
+    1 -
+      geometry.geometryOverlapRatio * 2.4 -
+      geometry.outAndBackSimilarityRatio * 0.7 -
+      Math.max(0, geometry.sharpTurnDensityPerKm - 3) * 0.08 -
+      Math.min(1, geometry.selfIntersectionCount * 0.25)
+  );
 
   const natureScore = profile.sport === "cycling_road"
     ? clamp01(0.65 + trailRatio * 0.35)
@@ -380,8 +408,15 @@ export function assessRouteQuality(args: {
     terrainAudit.metrics.scenicEdgeRatio < 0.2
     ? 0.4
     : 0;
+  const scenicPavedLimit = routeIntent?.type === "forest_loop" || routeIntent?.type === "transition_to_woods"
+    ? 0.15
+    : routeIntent?.type === "urban_nature_loop"
+      ? 0.28
+      : routeIntent?.type === "park_loop"
+        ? 0.5
+        : 0.2;
   const trailPavementPenalty = isTrailRunning(profile)
-    ? Math.max(0, pavedRatio - 0.45) * 0.45 + Math.max(0, scenicPavedRatio - 0.2) * 0.2
+    ? Math.max(0, pavedRatio - 0.45) * 0.45 + Math.max(0, scenicPavedRatio - scenicPavedLimit) * 0.45
     : 0;
 
   const baseProductionScore =
@@ -391,10 +426,27 @@ export function assessRouteQuality(args: {
     calmScore * 0.14 +
     safetyScore * 0.14 +
     noveltyScore * 0.05 +
-    pathShapeScore * 0.03 +
-    intersectionScore * 0.04 +
+    pathShapeScore * 0.025 +
+    intersectionScore * 0.035 +
+    geometryScore * 0.025 +
     routeEnvironmentScore * 0.04;
   const productionScore = clamp01(baseProductionScore - roadHeavyTrailPenalty - trailPavementPenalty);
+
+  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const absoluteElevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
+  const elevationDiagnostics = targetElevationM > 0 ? {
+    targetElevationM,
+    actualAscendM: candidate.ascendM,
+    absoluteErrorM: Number(absoluteElevationErrorM.toFixed(1)),
+    relativeErrorPct: Number(elevationErrorPct.toFixed(3)),
+    toleranceM: elevationToleranceM,
+    withinAbsoluteTolerance: absoluteElevationErrorM <= elevationToleranceM,
+    messageCode: absoluteElevationErrorM <= elevationToleranceM && elevationErrorPct > 0.5
+      ? "ELEVATION_WITHIN_ABSOLUTE_TOLERANCE" as const
+      : elevationErrorPct > 0.5
+        ? "ELEVATION_RELATIVE_ERROR_HIGH" as const
+        : "ELEVATION_WITHIN_ABSOLUTE_TOLERANCE" as const,
+  } : undefined;
 
   const warnings: string[] = [];
   if (distanceErrorPct > 0.2) warnings.push("DISTANCE_OFF_TARGET");
@@ -405,17 +457,22 @@ export function assessRouteQuality(args: {
   if (onewayViolationRatio > 0) warnings.push("ONEWAY_VIOLATION");
   if (uTurnRatio > 0.03) warnings.push("U_TURN_DETECTED");
   if (repeatEdgeRatio > 0.08) warnings.push("TOO_MUCH_BACKTRACKING");
+  if (geometry.geometryOverlapRatio > (routeIntent?.maxGeometryOverlapRatio ?? 0.18)) warnings.push("LOOP_GEOMETRY_WEAK");
+  if (geometry.outAndBackSimilarityRatio > 0.32) warnings.push("OUT_AND_BACK_SHAPE");
+  if (geometry.selfIntersectionCount > 0) warnings.push("SELF_INTERSECTION_DETECTED");
+  if (geometry.sharpTurnDensityPerKm > 3.5 || geometry.headingReversalRatio > 0.12) warnings.push("TOO_MANY_SHARP_TURNS");
+  if (routeIntent?.type === "park_loop" && geometry.loopCompactness < 0.06) warnings.push("LOOP_TOO_CONSTRAINED");
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
   if (isTrailRunning(profile) && pavedRatio > 0.45) warnings.push("TOO_MUCH_PAVEMENT");
   if (isTrailRunning(profile) && naturalWayRatio >= 0.5 && pavedRatio > 0.45) warnings.push("NATURAL_BUT_PAVED");
-  if (roadHeavyTrailPenalty > 0) warnings.push("Boucle trop routière pour une sortie trail.");
-  if (
+  if (roadHeavyTrailPenalty > 0)    warnings.push("TRAIL_TOO_ROAD_HEAVY");
+if (
     isTrailRunning(profile) &&
     terrainAudit.confidence === 'medium' &&
     terrainAudit.metrics.unknownSurfaceRatio >= 0.45
   ) {
-    warnings.push("Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM.");
+    warnings.push("OSM_SURFACE_DATA_WEAK");
   }
   if (
     isTrailRunning(profile) &&
@@ -445,11 +502,13 @@ export function assessRouteQuality(args: {
     scenicPavedRatio,
     routeIntentMatchScore: routeIntentMatch.score,
     routeIntentFailures: routeIntentMatch.failures,
-    relaxationsUsed: routeIntentMatch.relaxationsUsed,
+    relaxationsUsed: Array.from(new Set([...(routeIntentMatch.relaxationsUsed ?? []), ...(path.relaxationsUsed ?? [])])),
     trailBeautyScore,
     terrainDataConfidence: terrainAudit.confidence,
     trailPotential: terrainAudit.trailPotential,
     terrainUnknownSurfaceRatio: terrainAudit.metrics.unknownSurfaceRatio,
+    elevationDiagnostics,
+    geometry,
     uTurnRatio,
     restrictedAccessRatio,
     onewayViolationRatio,

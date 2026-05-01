@@ -53,7 +53,7 @@ export function buildRouteExplanation(
     compromises.push("Distance éloignée de la cible");
   }
   if (input.targetElevationM > 0 && (elevationError > 0.35 || warnings.includes("ELEVATION_OFF_TARGET"))) {
-    compromises.push("D+ imparfait par rapport à la demande");
+    compromises.push("D+ estimé au-dessus de la cible");
   }
   if (busyRoadRatio > 0.08 || warnings.includes("TOO_MUCH_BUSY_ROAD")) {
     compromises.push("Passage routier plus présent que souhaité");
@@ -66,6 +66,18 @@ export function buildRouteExplanation(
   }
   if (warnings.includes("TOO_MUCH_BACKTRACKING")) {
     compromises.push("Allers-retours détectés");
+  }
+  if (warnings.includes("OSM_SURFACE_DATA_WEAK")) {
+    compromises.push("Données terrain incomplètes");
+  }
+  if (warnings.includes("ROUTE_INTENT_WEAK_MATCH")) {
+    compromises.push("Zone naturelle peu exploitée");
+  }
+  if (warnings.includes("LOOP_TOO_CONSTRAINED")) {
+    compromises.push("Réseau local très contraint");
+  }
+  if (warnings.includes("OUT_AND_BACK_SHAPE") || warnings.includes("LOOP_GEOMETRY_WEAK")) {
+    compromises.push("Géométrie de boucle fragile");
   }
 
   const signals = [

@@ -76,6 +76,21 @@ function rankPathsForPostProcess(
     .slice(0, limit);
 }
 
+
+function resolveShortlistLimit(routeIntent: RouteIntent | undefined, profile: SessionProfile, graph: EnrichedGraph): number {
+  const legacy = profile.sessionType === "trail" ? 40 : 24;
+  if (!routeIntent) return legacy;
+
+  const base = routeIntent.beamBudget.shortlistSize;
+  const intentFloor = routeIntent.type === "forest_loop" || routeIntent.type === "transition_to_woods"
+    ? 32
+    : routeIntent.type === "urban_nature_loop"
+      ? 24
+      : 14;
+  const denseCap = graph.edges.size > 1800 ? 28 : 44;
+  return Math.min(denseCap, Math.max(base, intentFloor));
+}
+
 function candidateRankingScore(
   candidate: RouteCandidate,
   targetDistanceKm: number,
@@ -95,6 +110,8 @@ function candidateRankingScore(
   const longestNonPavedTrailStreakKm = quality?.longestNonPavedTrailStreakKm ?? 0;
   const scenicPavedRatio = quality?.scenicPavedRatio ?? 0;
   const routeIntentFailures = quality?.routeIntentFailures ?? [];
+  const routeIntentMatchScore = quality?.routeIntentMatchScore ?? 1;
+  const geometryOverlapRatio = quality?.geometry?.geometryOverlapRatio ?? 0;
   const forestOrParkRatio = quality?.forestOrParkRatio ?? 0;
   const trailDeficitPenalty = targetDistanceKm >= 8 ? Math.max(0, 0.2 - trailRatio) * 0.8 : 0;
 
@@ -121,11 +138,12 @@ function candidateRankingScore(
     (expectedNonPavedStreakKm - longestNonPavedTrailStreakKm) / expectedNonPavedStreakKm
   ) * 1.2;
   const routeIntentFailurePenalty = routeIntentFailures.filter((failure) =>
-    failure === "paved_ratio" || failure === "non_paved_streak"
-  ).length * 0.35;
+    failure === "paved_ratio" || failure === "non_paved_streak" || failure === "geometry_overlap"
+  ).length * 0.35 + Math.max(0, 1 - routeIntentMatchScore) * 0.35;
+  const geometryPenalty = geometryOverlapRatio * 1.4;
   const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
 
-  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - scenicPavedPenalty - nonPavedStreakPenalty - routeIntentFailurePenalty - benchmarkFailurePenalty;
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - scenicPavedPenalty - nonPavedStreakPenalty - routeIntentFailurePenalty - geometryPenalty - benchmarkFailurePenalty;
 }
 
 function isPavedLikeEdge(edge: EnrichedEdge): boolean {
@@ -253,7 +271,7 @@ export async function postProcess(
 
   // Keep a distance-aware shortlist. Raw solver score alone can prefer shorter
   // high-quality loops and discard the only path that actually matches the ask.
-  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, profile.sessionType === "trail" ? 40 : 24);
+  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, resolveShortlistLimit(routeIntent, profile, graph));
 
   const candidates: RouteCandidate[] = await mapWithConcurrency(
     topPaths,
