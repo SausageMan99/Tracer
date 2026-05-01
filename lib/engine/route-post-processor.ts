@@ -92,6 +92,9 @@ function candidateRankingScore(
   const uTurnRatio = quality?.uTurnRatio ?? 0;
   const trailBeautyScore = quality?.trailBeautyScore ?? 0;
   const naturalCorridorRatio = quality?.naturalCorridorRatio ?? 0;
+  const longestNonPavedTrailStreakKm = quality?.longestNonPavedTrailStreakKm ?? 0;
+  const scenicPavedRatio = quality?.scenicPavedRatio ?? 0;
+  const routeIntentFailures = quality?.routeIntentFailures ?? [];
   const forestOrParkRatio = quality?.forestOrParkRatio ?? 0;
   const trailDeficitPenalty = targetDistanceKm >= 8 ? Math.max(0, 0.2 - trailRatio) * 0.8 : 0;
 
@@ -104,13 +107,25 @@ function candidateRankingScore(
     (Math.abs(candidate.ascendM - targetElevationM) > (targetElevationM <= 50 ? 60 : 120) ? 5 : 0) +
     (distancePenalty > 0.1 ? 5 : 0) +
     (repeatEdgeRatio > 0.04 ? 3 : 0) +
+    (trailBeautyScore < 0.58 ? 2 : 0) +
+    (naturalCorridorRatio < 0.45 ? 2 : 0) +
+    (quality?.warnings.includes("TRAIL_TOO_FRAGMENTED") ? 0.8 : 0) +
     (uTurnRatio > 0.01 ? 2 : 0) +
     ((quality?.pavedRatio ?? 0) > 0.35 && targetDistanceKm >= 12 ? 2 : 0);
   const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.45 : 0;
   const pavementPenalty = Math.max(0, (quality?.pavedRatio ?? 0) - 0.42) * 0.9;
+  const scenicPavedPenalty = Math.max(0, scenicPavedRatio - 0.15) * 1.4;
+  const expectedNonPavedStreakKm = Math.min(3, Math.max(0.8, targetDistanceKm * 0.18));
+  const nonPavedStreakPenalty = Math.max(
+    0,
+    (expectedNonPavedStreakKm - longestNonPavedTrailStreakKm) / expectedNonPavedStreakKm
+  ) * 1.2;
+  const routeIntentFailurePenalty = routeIntentFailures.filter((failure) =>
+    failure === "paved_ratio" || failure === "non_paved_streak"
+  ).length * 0.35;
   const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
 
-  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - benchmarkFailurePenalty;
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - scenicPavedPenalty - nonPavedStreakPenalty - routeIntentFailurePenalty - benchmarkFailurePenalty;
 }
 
 function isPavedLikeEdge(edge: EnrichedEdge): boolean {
@@ -238,7 +253,7 @@ export async function postProcess(
 
   // Keep a distance-aware shortlist. Raw solver score alone can prefer shorter
   // high-quality loops and discard the only path that actually matches the ask.
-  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, 24);
+  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, profile.sessionType === "trail" ? 40 : 24);
 
   const candidates: RouteCandidate[] = await mapWithConcurrency(
     topPaths,
@@ -304,7 +319,7 @@ export async function postProcess(
         .map((eid) => graph.edges.get(eid)?.score ?? 0.5)
         .filter((s) => s > 0);
       const surfaceScore = edgeScores.length > 0
-        ? edgeScores.reduce((a, b) => a + b, 0) / edgeScores.length
+        ? Math.min(1, edgeScores.reduce((a, b) => a + b, 0) / edgeScores.length)
         : 0.5;
 
       const baseScore = scoreRoute(

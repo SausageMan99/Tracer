@@ -79,6 +79,19 @@ function computeRepeatRatio(edges: EnrichedEdge[], totalKm: number): number {
     else firstSeen.add(key);
   }
 
+  let terminalStemKm = 0;
+  let terminalStemEdges = 0;
+  const maxStemKm = Math.min(0.25, totalKm * 0.03);
+  for (let left = 0, right = edges.length - 1; left < right; left += 1, right -= 1) {
+    if (undirectedEdgeKey(edges[left]) !== undirectedEdgeKey(edges[right])) break;
+    const nextStemKm = terminalStemKm + Math.min(edges[left].lengthKm, edges[right].lengthKm);
+    if (nextStemKm > maxStemKm) break;
+    terminalStemKm = nextStemKm;
+    terminalStemEdges += 1;
+  }
+
+  if (terminalStemEdges >= 2) repeatedKm = Math.max(0, repeatedKm - terminalStemKm);
+
   return ratio(repeatedKm, totalKm);
 }
 
@@ -111,12 +124,14 @@ function isTrailRunning(profile: SessionProfile): boolean {
   return profile.sport === "running" && profile.sessionType === "trail";
 }
 
-function isTrailLikeEdge(edge: EnrichedEdge, scenicWayIds: Set<string>): boolean {
+function isTrailLikeEdge(edge: EnrichedEdge, scenicWayIds: Set<string>, profile?: SessionProfile): boolean {
+  if (profile != null && isTrailRunning(profile) && isPavedLikeEdge(edge)) return false;
   return edge.scenic === true || TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
 }
 
 function isPavedLikeEdge(edge: EnrichedEdge): boolean {
   if (edge.surface != null) return PAVED_SURFACES.has(edge.surface);
+  if (edge.scenic === true && !BUSY_HIGHWAY_TYPES.has(edge.highway)) return false;
   return BUSY_HIGHWAY_TYPES.has(edge.highway) || QUIET_HIGHWAY_TYPES.has(edge.highway);
 }
 
@@ -138,12 +153,12 @@ function computeLongestNonPavedTrailStreakKm(edges: EnrichedEdge[]): number {
   return longestKm;
 }
 
-function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<string>): number {
+function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<string>, profile: SessionProfile): number {
   let longestKm = 0;
   let currentKm = 0;
 
   for (const edge of edges) {
-    if (isTrailLikeEdge(edge, scenicWayIds)) {
+    if (isTrailLikeEdge(edge, scenicWayIds, profile)) {
       currentKm += edge.lengthKm;
       longestKm = Math.max(longestKm, currentKm);
     } else {
@@ -154,20 +169,20 @@ function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<s
   return longestKm;
 }
 
-function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<string>, totalKm: number): {
+function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<string>, totalKm: number, profile: SessionProfile): {
   naturalCorridorRatio: number;
   naturalZoneDwellKm: number;
   naturalZoneDwellRatio: number;
   naturalFragmentationPerKm: number;
 } {
-  const MIN_CORRIDOR_KM = 0.5;
+  const MIN_CORRIDOR_KM = 0.4;
   let corridorKm = 0;
   let currentNaturalKm = 0;
   let previousWasNatural: boolean | null = null;
   let transitionCount = 0;
 
   for (const edge of edges) {
-    const isNatural = isTrailLikeEdge(edge, scenicWayIds);
+    const isNatural = isTrailLikeEdge(edge, scenicWayIds, profile);
     if (previousWasNatural !== null && previousWasNatural !== isNatural) {
       transitionCount += 1;
     }
@@ -175,14 +190,14 @@ function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<st
     if (isNatural) {
       currentNaturalKm += edge.lengthKm;
     } else {
-      if (currentNaturalKm >= MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
+      if (currentNaturalKm > MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
       currentNaturalKm = 0;
     }
 
     previousWasNatural = isNatural;
   }
 
-  if (currentNaturalKm >= MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
+  if (currentNaturalKm > MIN_CORRIDOR_KM) corridorKm += currentNaturalKm;
 
   return {
     naturalCorridorRatio: ratio(corridorKm, totalKm),
@@ -202,10 +217,11 @@ function computeTrailBeautyScore(args: {
   longestTrailSegmentKm: number;
   totalKm: number;
 }): number {
-  const continuityRatio = ratio(args.longestTrailSegmentKm, Math.max(args.totalKm, 0.1));
-  const lowPavementScore = clamp01(1 - args.pavedRatio / 0.5);
+  const continuityTargetKm = Math.min(Math.max(args.totalKm * 0.35, 2.2), 5);
+  const continuityRatio = ratio(args.longestTrailSegmentKm, Math.max(continuityTargetKm, 0.1));
+  const lowPavementScore = clamp01(1 - args.pavedRatio / 1);
   const calmScore = clamp01(1 - args.busyRoadRatio * 8);
-  const lowFragmentationScore = clamp01(1 - args.naturalFragmentationPerKm / 1.2);
+  const lowFragmentationScore = clamp01(1 - args.naturalFragmentationPerKm / 6);
 
   return clamp01(
     args.trailRatio * 0.25 +
@@ -278,7 +294,7 @@ export function assessRouteQuality(args: {
     edges.filter((edge) => edge.scenic === true || scenicWayIds.has(String(edge.osmWayId)))
   );
   const naturalKm = edgeLengthSum(
-    edges.filter((edge) => isTrailLikeEdge(edge, scenicWayIds))
+    edges.filter((edge) => isTrailLikeEdge(edge, scenicWayIds, profile))
   );
   const restrictedKm = edgeLengthSum(edges.filter((edge) => hasRestrictedAccess(edge, profile)));
   const onewayViolationKm = edgeLengthSum(
@@ -298,13 +314,14 @@ export function assessRouteQuality(args: {
   const trailRatio = ratio(naturalKm, totalKm);
   const pavedRatio = ratio(pavedKm, totalKm);
   const forestOrParkRatio = ratio(forestOrParkKm, totalKm);
-  const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds);
+  const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds, profile);
   const longestNonPavedTrailStreakKm = computeLongestNonPavedTrailStreakKm(edges);
   const scenicPavedRatio = ratio(edgeLengthSum(edges.filter((edge) => isPavedLikeEdge(edge) && (edge.scenic === true || scenicWayIds.has(String(edge.osmWayId))))), totalKm);
   const { naturalCorridorRatio, naturalZoneDwellKm, naturalZoneDwellRatio, naturalFragmentationPerKm } = computeNaturalCorridorStats(
     edges,
     scenicWayIds,
-    totalKm
+    totalKm,
+    profile
   );
   const trailBeautyScore = computeTrailBeautyScore({
     trailRatio,
@@ -352,6 +369,9 @@ export function assessRouteQuality(args: {
     terrainAudit.metrics.scenicEdgeRatio < 0.2
     ? 0.4
     : 0;
+  const trailPavementPenalty = isTrailRunning(profile)
+    ? Math.max(0, pavedRatio - 0.45) * 0.45 + Math.max(0, scenicPavedRatio - 0.2) * 0.2
+    : 0;
 
   const baseProductionScore =
     distanceScore * 0.22 +
@@ -363,7 +383,7 @@ export function assessRouteQuality(args: {
     pathShapeScore * 0.03 +
     intersectionScore * 0.04 +
     routeEnvironmentScore * 0.04;
-  const productionScore = clamp01(baseProductionScore - roadHeavyTrailPenalty);
+  const productionScore = clamp01(baseProductionScore - roadHeavyTrailPenalty - trailPavementPenalty);
 
   const warnings: string[] = [];
   if (distanceErrorPct > 0.2) warnings.push("DISTANCE_OFF_TARGET");

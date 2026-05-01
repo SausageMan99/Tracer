@@ -62,6 +62,7 @@ const LOW_NATURE_ROUTE_PENALTY_PER_KM = 2.0;
 
 const NATURAL_HIGHWAY_TYPES = new Set(["path", "track", "footway", "bridleway"]);
 const NATURAL_SURFACES = new Set(["dirt", "earth", "grass", "ground", "unpaved", "compacted", "fine_gravel", "gravel", "sand"]);
+const PAVED_SURFACES = new Set(["asphalt", "concrete", "paving_stones", "sett", "cobblestone", "paved"]);
 
 // ── Utility functions ────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ function undirectedEdgeKey(from: string, to: string, wayId: number): string {
 }
 
 function isNaturalCorridorEdge(edge: { highway: string; surface?: string; scenic?: boolean }): boolean {
+  if (edge.surface != null && PAVED_SURFACES.has(edge.surface)) return false;
   return (
     edge.scenic === true ||
     NATURAL_HIGHWAY_TYPES.has(edge.highway) ||
