@@ -84,6 +84,7 @@ function requestFrom(benchmark) {
     targetElevationM: benchmark.targetElevationM,
     scenicMode: benchmark.scenicMode,
     includeEdgeDiagnostics: true,
+    includeGenerationDiagnostics: true,
   };
 }
 

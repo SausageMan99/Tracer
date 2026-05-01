@@ -57,6 +57,9 @@ describe("POST /api/generate-route", () => {
       errorCode: "NO_ROAD_NETWORK",
     });
     expect(generateRouteV2Mock).toHaveBeenCalledTimes(1);
+    expect(generateRouteV2Mock).toHaveBeenCalledWith(expect.objectContaining(baseBody), {
+      includeGenerationDiagnostics: false,
+    });
     expect(generateRouteLegacyMock).not.toHaveBeenCalled();
   });
 
@@ -95,7 +98,7 @@ describe("POST /api/generate-route", () => {
     expect(generateRouteLegacyMock).toHaveBeenCalledTimes(1);
   });
 
-  it("strips edge diagnostics from public API responses by default", async () => {
+  it("strips edge and generation diagnostics from public API responses by default", async () => {
     generateRouteV2Mock.mockResolvedValue({
       best: {
         id: "best",
@@ -110,6 +113,8 @@ describe("POST /api/generate-route", () => {
       candidates: [
         { id: "candidate", edgeDiagnostics: [{ edgeId: "candidate-edge" }] },
       ],
+      stageTimings: { totalMs: 12, stages: [{ stage: "total", durationMs: 12, ok: true }] },
+      diagnostics: { version: 1, strategy: "v2-local-graph" },
     });
 
     const { POST } = await import("@/app/api/generate-route/route");
@@ -117,6 +122,8 @@ describe("POST /api/generate-route", () => {
     const payload = await response.json();
 
     expect(response.status).toBe(200);
+    expect(payload.route.stageTimings).toBeUndefined();
+    expect(payload.route.diagnostics).toBeUndefined();
     expect(payload.route.best.edgeDiagnostics).toBeUndefined();
     expect(payload.route.candidates[0].edgeDiagnostics).toBeUndefined();
     expect(payload.route.best.quality).toMatchObject({
@@ -134,6 +141,8 @@ describe("POST /api/generate-route", () => {
       candidates: [
         { id: "candidate", edgeDiagnostics },
       ],
+      stageTimings: { totalMs: 12, stages: [{ stage: "total", durationMs: 12, ok: true }] },
+      diagnostics: { version: 1, strategy: "v2-local-graph" },
     });
 
     const { POST } = await import("@/app/api/generate-route/route");
@@ -143,5 +152,39 @@ describe("POST /api/generate-route", () => {
     expect(response.status).toBe(200);
     expect(payload.route.best.edgeDiagnostics).toEqual(edgeDiagnostics);
     expect(payload.route.candidates[0].edgeDiagnostics).toEqual(edgeDiagnostics);
+    expect(payload.route.stageTimings).toBeUndefined();
+    expect(payload.route.diagnostics).toBeUndefined();
+  });
+
+  it("keeps generation diagnostics separately from edge diagnostics", async () => {
+    const edgeDiagnostics = [{ edgeId: "candidate-edge" }];
+    const stageTimings = {
+      totalMs: 42,
+      stages: [{ stage: "profile.resolve", durationMs: 1, ok: true }],
+    };
+    const diagnostics = {
+      version: 1,
+      strategy: "v2-local-graph",
+      solver: { pathCount: 2, candidateCount: 1 },
+    };
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", edgeDiagnostics },
+      candidates: [{ id: "candidate", edgeDiagnostics }],
+      stageTimings,
+      diagnostics,
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({ ...baseBody, includeGenerationDiagnostics: true }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(generateRouteV2Mock).toHaveBeenCalledWith(expect.objectContaining(baseBody), {
+      includeGenerationDiagnostics: true,
+    });
+    expect(payload.route.stageTimings).toEqual(stageTimings);
+    expect(payload.route.diagnostics).toEqual(diagnostics);
+    expect(payload.route.best.edgeDiagnostics).toBeUndefined();
+    expect(payload.route.candidates[0].edgeDiagnostics).toBeUndefined();
   });
 });

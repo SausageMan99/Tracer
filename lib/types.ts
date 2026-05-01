@@ -200,6 +200,52 @@ export interface RouteCandidate {
   };
 }
 
+export interface RouteGenerationStageTiming {
+  /** Stable generation stage identifier */
+  stage: string;
+  /** Wall-clock duration for this stage in milliseconds */
+  durationMs: number;
+  /** True when the stage completed without throwing */
+  ok: boolean;
+  /** Machine-readable error code when a typed route error was captured */
+  errorCode?: string;
+}
+
+export interface RouteGenerationStageTimings {
+  /** Total measured route-generation time in milliseconds */
+  totalMs: number;
+  /** Per-stage timings in execution order */
+  stages: RouteGenerationStageTiming[];
+}
+
+export interface RouteGenerationDiagnostics {
+  /** Diagnostics schema version */
+  version: 1;
+  /** Generation strategy used by the engine */
+  strategy: "v2-local-graph";
+  profileId: string;
+  sport: Sport;
+  scenicMode: boolean;
+  targetDistanceKm: number;
+  targetElevationM: number;
+  graph: {
+    nodeCount: number;
+    edgeCount: number;
+    scenicWayCount: number;
+  };
+  closestNodeDistanceKm: number | null;
+  terrain: {
+    routeIntent: import("./engine/terrain-planner").RouteIntent | null;
+  };
+  solver: {
+    pathCount: number;
+    candidateCount: number;
+    bestTotalScore: number | null;
+    bestProductionScore: number | null;
+    warnings: string[];
+  };
+}
+
 export interface RouteEdgeDiagnostic {
   /** Position in the candidate path edge list */
   index: number;
@@ -294,6 +340,10 @@ export interface GeneratedRoute {
    * Present only when SmartRoute was successfully applied server-side.
    */
   smartRouteStats?: SmartRouteStats;
+  /** Optional lightweight generation timings for benchmarks/debug tooling */
+  stageTimings?: RouteGenerationStageTimings;
+  /** Optional lightweight generation diagnostics for benchmarks/debug tooling */
+  diagnostics?: RouteGenerationDiagnostics;
 }
 
 // ---- API contract ----
@@ -320,6 +370,8 @@ export interface GenerateRouteRequest {
   scenicMode?: boolean;
   /** Internal benchmark/debug flag: include heavy edge-level diagnostics in API response */
   includeEdgeDiagnostics?: boolean;
+  /** Internal benchmark/debug flag: include lightweight generation timings and diagnostics */
+  includeGenerationDiagnostics?: boolean;
 }
 
 /**

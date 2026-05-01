@@ -31,13 +31,21 @@ type RouteCandidateWithDiagnostics = RouteCandidate & { edgeDiagnostics?: unknow
 type RouteLikeWithDiagnostics = {
   best?: RouteCandidateWithDiagnostics;
   candidates?: RouteCandidateWithDiagnostics[];
+  stageTimings?: unknown;
+  diagnostics?: unknown;
   [key: string]: unknown;
 };
 
-function withoutEdgeDiagnostics<T>(route: T): T {
+type StripDiagnosticsOptions = {
+  includeEdgeDiagnostics: boolean;
+  includeGenerationDiagnostics: boolean;
+};
+
+function stripDiagnostics<T>(route: T, options: StripDiagnosticsOptions): T {
   if (route == null || typeof route !== "object") return route;
 
   const stripCandidate = (candidate: RouteCandidateWithDiagnostics): RouteCandidate => {
+    if (options.includeEdgeDiagnostics) return candidate;
     const stripped = { ...candidate };
     delete stripped.edgeDiagnostics;
     return stripped;
@@ -45,6 +53,10 @@ function withoutEdgeDiagnostics<T>(route: T): T {
   const current = route as RouteLikeWithDiagnostics;
   const next: RouteLikeWithDiagnostics = { ...current };
 
+  if (!options.includeGenerationDiagnostics) {
+    delete next.stageTimings;
+    delete next.diagnostics;
+  }
   if (current.best != null) next.best = stripCandidate(current.best);
   if (Array.isArray(current.candidates)) {
     next.candidates = current.candidates.map((candidate) => stripCandidate(candidate));
@@ -162,12 +174,15 @@ export async function POST(req: NextRequest) {
     if (shouldUseExternalRouting) {
       route = await generateRoute(routeRequest);
     } else {
-      route = await generateRouteV2(routeRequest);
+      route = await generateRouteV2(routeRequest, {
+        includeGenerationDiagnostics: body.includeGenerationDiagnostics === true,
+      });
     }
 
-    const responseRoute = body.includeEdgeDiagnostics === true
-      ? route
-      : withoutEdgeDiagnostics(route);
+    const responseRoute = stripDiagnostics(route, {
+      includeEdgeDiagnostics: body.includeEdgeDiagnostics === true,
+      includeGenerationDiagnostics: body.includeGenerationDiagnostics === true,
+    });
 
     return NextResponse.json({ success: true, route: responseRoute });
   } catch (err) {

@@ -142,7 +142,19 @@ describe("route benchmark edge artifacts", () => {
   });
 
   it("exports benchmark, route intent, candidate summaries, and raw edges", () => {
+    const stageTimings = {
+      totalMs: 123,
+      stages: [{ stage: "solver.solve", durationMs: 30, ok: true }],
+    };
+    const diagnostics = {
+      version: 1,
+      strategy: "v2-local-graph",
+      graph: { nodeCount: 10, edgeCount: 20, scenicWayCount: 3 },
+      solver: { pathCount: 4, candidateCount: 1, bestTotalScore: 0.77, warnings: [] },
+    };
     const artifact = routeToEdgeDiagnosticsArtifact(benchmark, {
+      stageTimings,
+      diagnostics,
       routeIntent: {
         type: "loop",
         strategy: "transition_to_woods",
@@ -195,6 +207,8 @@ describe("route benchmark edge artifacts", () => {
       targetComponents: ["component-woods"],
       terrainComponents: [{ id: "component-woods", entryNodeCount: 2 }],
     });
+    expect(artifact?.stageTimings).toEqual(stageTimings);
+    expect(artifact?.diagnostics).toEqual(diagnostics);
     expect(artifact?.candidates[0]).toMatchObject({
       candidateIndex: 0,
       isBest: true,
