@@ -241,6 +241,11 @@ export interface GeneratedRoute {
   /** Session profile used to generate this route */
   profile: SessionProfile;
   /**
+   * Read-only V2.5 route intent selected by the terrain planner.
+   * P0 keeps this diagnostic-only; later phases may feed it into solver budgets/ranking.
+   */
+  routeIntent?: import("./engine/terrain-planner").RouteIntent;
+  /**
    * SmartRoute post-processing statistics.
    * Present only when SmartRoute was successfully applied server-side.
    */

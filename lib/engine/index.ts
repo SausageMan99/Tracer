@@ -6,6 +6,8 @@ import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
+import { auditTerrainData } from "./terrain-audit";
+import { planRouteIntent } from "./terrain-planner";
 
 export async function generateRouteV2(
   request: RouteRequest
@@ -42,7 +44,18 @@ export async function generateRouteV2(
     throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });
   }
 
-  // 5. Derive session weights and score edges
+  // 5. Plan route intent in read-only mode for V2.5 diagnostics
+  const terrainAudit = auditTerrainData(Array.from(graph.edges.values()));
+  const routeIntent = planRouteIntent({
+    graph,
+    terrainAudit,
+    profile,
+    targetDistanceKm: request.targetDistanceKm,
+    targetElevationM: request.targetElevationM,
+    scenicMode: request.scenicMode,
+  });
+
+  // 6. Derive session weights and score edges
   const weights = deriveWeights(profile, request.scenicMode);
   const { nodeElevation } = await scoreEdges(graph, weights, profile, scenicWayIds);
 
@@ -94,5 +107,6 @@ export async function generateRouteV2(
     candidates,
     startCoordinate,
     profile,
+    routeIntent,
   };
 }
