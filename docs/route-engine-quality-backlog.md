@@ -1,6 +1,6 @@
 # Route engine quality backlog
 
-Dernière revue : 2026-05-01, après P0-2 natural dwell + test solver anti-overlap.
+Dernière revue : 2026-05-01, après P0-4 consolidation benchmarks Fondations V2.5.
 
 ## État actuel
 
@@ -24,6 +24,35 @@ Source après correction : `artifacts/route-benchmark-results/nightly-tourville-
 | 12 km | 11.60 km, score 0.804, paved 45.8 %, repeat 7.1 %, U-turn 0.6 %, échecs `paved_ratio`, `repeat_edge_ratio` | 11.79 km, score 0.804, paved 48.3 %, repeat 3.6 %, U-turn 0 %, échec `paved_ratio` | Backtracking résolu sous seuil, mais bitume et temps 70.8 s restent limites. |
 
 Conclusion : la correction est utile contre overlap/backtracking, surtout sur 5 km et 12 km. Le problème dominant restant n'est plus la fermeture de boucle, mais la sélection d'edges et/ou la classification surface/pavement sur Tourville. Les seuils `pavedRatio` restent rouges sur les 4 distances.
+
+## Consolidation P0-4 — benchmarks Fondations V2.5
+
+Commande cible relancée localement avec serveur Next dev sur `http://localhost:3000` et artifacts datés sous `artifacts/route-benchmark-results/p0-foundations-2026-05-01T2200/`.
+
+Synthèse décisionnelle : P0 Fondations est **partiel, pas prêt pour P1 moteur lourd**. Les briques de mesure, le planner en lecture/diagnostic, les artifacts edge-level et Fontainebleau sont verts, mais le panel P0 reste rouge sur backtracking Tourville court/long, durée Meudon/Caen, et pavedRatio Caen Colline. Le signal important est que `pavedRatio` Tourville s'améliore nettement sur 8/10/12 km, mais le correctif déplace le risque vers repeat/backtracking sur 5/12 km. Il ne faut donc pas pousser de tuning moteur supplémentaire sans isoler la fermeture propre et le ranking.
+
+| Cas P0 | Statut | Métriques clés | Lecture |
+| --- | --- | --- | --- |
+| Tourville 5 km | Rouge | 4.65 km, score 0.709, paved 38.3 %, repeat 14.8 %, U-turn 0 %, 38.2 s | Bitume sous seuil, mais backtracking/repeat critique. |
+| Tourville 8 km | Vert | 7.48 km, score 0.755, paved 39.8 %, repeat 0 %, U-turn 0 %, 53.2 s | Premier vrai vert Tourville sur distance intermédiaire. |
+| Tourville 10 km | Vert | 9.56 km, score 0.775, paved 41.7 %, repeat 0.6 %, U-turn 0 %, 56.9 s | Vert et nettement meilleur que les runs précédents sur bitume/D+. |
+| Tourville 12 km | Rouge | 11.65 km, score 0.766, paved 31.9 %, repeat 8.2 %, U-turn 0.2 %, 57.7 s | Bitume bon, mais clean return/ranking réintroduit backtracking. |
+| Fontainebleau 15 km | Vert | 15.04 km, score 0.985, paved 16.2 %, repeat 0 %, U-turn 0 %, 69.5 s | P0-3 confirmé : forêt massive stable et artifacts edge-level OK. |
+| Meudon 10 km | Rouge | 9.64 km, score 0.754, paved 25.8 %, repeat 0.1 %, U-turn 0.05 %, 169.3 s | Qualité route correcte, mais durée x2 au-dessus du seuil. Cause probable : graphe dense + shortlist/solver trop coûteux. |
+| Caen Colline 6 km | Rouge | 5.85 km, score 0.789, paved 75.5 %, repeat 0.07 %, U-turn 0 %, 101.4 s | Route propre mais trop bitumée et trop lente pour un petit parc. Probable stratégie `park_loop`/seuil paved à revoir, sans tricher sur OSM. |
+| Caen Prairie 8 km | Bloqué infra/moteur | timeout local à 130 s, pas de rapport JSON écrit | Requête trop lente ou bloquée ; à traiter comme P0 critique de budget temps. |
+
+Artifacts créés : rapports JSON agrégés par cas, GeoJSON route et diagnostics `<case>.edges.json` pour tous les cas terminés. Caen Prairie n'a pas d'artifact exploitable à cause du timeout.
+
+Décision P0 : **fondations de mesure validées, release moteur non validée**. On peut passer à P1 seulement sur des tâches de diagnostic/bornage, pas sur un tuning produit aveugle. Priorité immédiate : réduire le coût et stabiliser anti-overlap avant d'élargir les ambitions solver.
+
+Priorités P0/P1 réordonnées après consolidation :
+
+1. Borner le temps par stage et ajouter un timeout fetch/API dans `run-route-benchmarks.mjs`, pour éviter les runs silencieux de plusieurs minutes et séparer Overpass/elevation/solver/post-process.
+2. Isoler Tourville 5/12 avec edge diagnostics : identifier si `repeatEdgeRatio` vient du terminal stem, de la fermeture A*, ou du ranking qui sélectionne un candidat plus naturel mais superposé.
+3. Rendre la shortlist adaptative immédiatement : 40 candidats trail partout est trop cher pour Meudon/Caen ; garder large seulement quand le planner prouve un gain et quand le graphe est borné.
+4. Auditer Caen Colline edge-level : si les voies du parc sont réellement asphaltées, le cas doit être assumé comme running nature paved, pas trail non revêtu ; si c'est un manque OSM, exposer `surfaceUnknownRatio` au lieu de forcer paved.
+5. Rejouer Caen Prairie après timeout avec logs stage-level. Sans cela, impossible de savoir si le blocage est Overpass, élévation ou solver.
 
 ## Risques et angles morts
 
