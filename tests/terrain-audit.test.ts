@@ -85,6 +85,21 @@ describe('terrain audit', () => {
     ]);
 
     expect(report.metrics.fragmentationScore).toBeLessThan(0.35);
+    expect(report.metrics.naturalZoneDwellKm).toBe(3);
+    expect(report.metrics.naturalZoneDwellRatio).toBe(1);
+  });
+
+  it('measures natural dwell only on meaningful continuous natural zones', () => {
+    const report = auditTerrainData([
+      edge({ from: 'a', to: 'b', lengthKm: 0.3, highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'b', to: 'c', lengthKm: 1, highway: 'residential', surface: 'asphalt' }),
+      edge({ from: 'c', to: 'd', lengthKm: 0.4, highway: 'path', surface: 'ground', scenic: true }),
+      edge({ from: 'd', to: 'e', lengthKm: 0.9, highway: 'track', surface: 'unpaved', scenic: true }),
+      edge({ from: 'e', to: 'f', lengthKm: 0.4, highway: 'residential', surface: 'asphalt' }),
+    ]);
+
+    expect(report.metrics.naturalZoneDwellKm).toBeCloseTo(1.3);
+    expect(report.metrics.naturalZoneDwellRatio).toBeCloseTo(1.3 / 3);
   });
 
   it('detects high fragmentation when natural edges are isolated', () => {

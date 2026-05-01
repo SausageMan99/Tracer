@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from "@/lib/types";
 import { solve } from "@/lib/engine/orienteering-solver";
+import { assessRouteQuality } from "@/lib/engine/route-quality";
+import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 function makeNode(id: string, lat: number, lng: number): GraphNode {
   return { id, lat, lng, edges: [] };
@@ -496,6 +498,31 @@ describe("solve natural corridor preference", () => {
       "alt-b-start",
     ]);
     expect(paths[0].edgeIds).not.toContain("turnaround-start-short-overlap");
+
+    const quality = assessRouteQuality({
+      candidate: {
+        points: [
+          { lat: 49.14, lng: -0.5 },
+          { lat: 49.14, lng: -0.5 },
+        ],
+        distanceKm: paths[0].distanceKm,
+        durationSeconds: 1200,
+        ascendM: 0,
+        descendM: 0,
+        surfaceScore: 0.8,
+        loopScore: 1,
+        totalScore: 0.8,
+        geometry: { type: "LineString", coordinates: [] },
+      },
+      path: paths[0],
+      graph,
+      profile: PROFILES_BY_ID.get("running_trail")!,
+      targetDistanceKm: 3.2,
+      targetElevationM: 0,
+    });
+
+    expect(quality.repeatEdgeRatio).toBeLessThan(0.08);
+    expect(quality.warnings).not.toContain("TOO_MUCH_BACKTRACKING");
   });
 
   it("ranks a continuous natural corridor above a higher raw-score isolated trail fragment", async () => {

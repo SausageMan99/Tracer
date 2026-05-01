@@ -197,6 +197,8 @@ describe("assessRouteQuality", () => {
 
     expect(quality.trailRatio).toBeCloseTo(3 / 5);
     expect(quality.naturalCorridorRatio).toBeCloseTo(2.2 / 5);
+    expect(quality.naturalZoneDwellKm).toBeCloseTo(2.2);
+    expect(quality.naturalZoneDwellRatio).toBeCloseTo(2.2 / 5);
     expect(quality.naturalFragmentationPerKm).toBeCloseTo(4 / 5);
     expect(quality.warnings).toContain("TRAIL_TOO_FRAGMENTED");
   });

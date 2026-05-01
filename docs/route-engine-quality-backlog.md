@@ -1,10 +1,10 @@
 # Route engine quality backlog
 
-Dernière revue : 2026-05-01, après les missions nocturnes benchmarks + fiabilité Tourville.
+Dernière revue : 2026-05-01, après P0-2 natural dwell + test solver anti-overlap.
 
 ## État actuel
 
-Le socle de mesure a fortement progressé. `npm run benchmark:routes` centralise maintenant 12 cas Phase 1 trail/running dans `lib/route-benchmarks-data.json`, avec seuils explicites sur distance, D+, score production, fermeture de boucle, grands axes, ratios nature/bitume, overlap/backtracking, U-turn, potentiel terrain, confiance OSM et durée. Le runner sauvegarde un rapport JSON et, avec `--save-artifacts`, les payloads routes + GeoJSON inspectables.
+Le socle de mesure a fortement progressé. `npm run benchmark:routes` centralise maintenant 12 cas Phase 1 trail/running dans `lib/route-benchmarks-data.json`, avec seuils explicites sur distance, D+, score production, fermeture de boucle, grands axes, ratios nature/bitume, overlap/backtracking, U-turn, potentiel terrain, confiance OSM et durée. Le runner sauvegarde un rapport JSON et, avec `--save-artifacts`, les payloads routes + GeoJSON inspectables. P0-2 ajoute aussi des métriques de séjour en zone naturelle continue : `naturalZoneDwellKm` et `naturalZoneDwellRatio`, d'abord basées sur des séquences contiguës d'edges natural/scenic/non-paved d'au moins 500 m.
 
 Les changements moteur locaux de la mission fiabilité ajoutent une tentative de retour propre en fermeture de boucle : avant de fermer via le plus court chemin A*, le solver tente un retour qui évite les edges déjà utilisées. Le fallback A* classique reste gardé pour éviter de transformer un terrain routable en `NO_ROAD_NETWORK`. Le post-processing classe aussi plus durement les candidats avec repeat edges, U-turns et pavement élevé.
 
@@ -51,7 +51,7 @@ Les tests Vitest garantissent la structure des cas et le calcul des seuils. Ils 
 
 1. Auditer `pavedRatio` sur Tourville avec les artifacts route JSON/GeoJSON : extraire les 20 plus longs edges paved, leurs `highway`, `surface`, `osmWayId`, longueur, score et proximité bois. Objectif : savoir si le problème est classification, scoring ou manque de chemins réellement non-bitumés.
 
-2. Stabiliser le clean return avec un test solver de régression, pas seulement pathfinder. Le test doit construire un mini-graphe où la fermeture A* classique réutilise un tronçon et où la fermeture clean choisit une alternative sans faire échouer la boucle.
+2. ✅ P0-2 : stabiliser le clean return avec un test solver de régression. `tests/orienteering-solver.test.ts` construit maintenant un mini-graphe où la fermeture A* classique réutiliserait un tronçon et vérifie que le solver choisit l'alternative propre, avec `repeatEdgeRatio` sous seuil.
 
 3. Borner le coût du shortlist 24 candidats. Mesurer `durationMs` sur les 12 benchmarks, puis réduire ou rendre adaptatif si Paris/Meudon dépassent les seuils. Ne pas laisser Tourville 12 km devenir un cas à 70-80 s en production.
 

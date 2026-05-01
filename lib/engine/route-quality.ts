@@ -23,6 +23,8 @@ export interface RouteQualityMetrics {
   forestOrParkRatio?: number;
   longestTrailSegmentKm?: number;
   naturalCorridorRatio?: number;
+  naturalZoneDwellKm?: number;
+  naturalZoneDwellRatio?: number;
   naturalFragmentationPerKm?: number;
   trailBeautyScore?: number;
   terrainDataConfidence?: "low" | "medium" | "high";
@@ -130,6 +132,8 @@ function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<s
 
 function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<string>, totalKm: number): {
   naturalCorridorRatio: number;
+  naturalZoneDwellKm: number;
+  naturalZoneDwellRatio: number;
   naturalFragmentationPerKm: number;
 } {
   const MIN_CORRIDOR_KM = 0.5;
@@ -158,6 +162,8 @@ function computeNaturalCorridorStats(edges: EnrichedEdge[], scenicWayIds: Set<st
 
   return {
     naturalCorridorRatio: ratio(corridorKm, totalKm),
+    naturalZoneDwellKm: corridorKm,
+    naturalZoneDwellRatio: ratio(corridorKm, totalKm),
     naturalFragmentationPerKm: totalKm > 0 ? transitionCount / totalKm : 0,
   };
 }
@@ -230,7 +236,7 @@ export function assessRouteQuality(args: {
   const pavedRatio = ratio(pavedKm, totalKm);
   const forestOrParkRatio = ratio(forestOrParkKm, totalKm);
   const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds);
-  const { naturalCorridorRatio, naturalFragmentationPerKm } = computeNaturalCorridorStats(
+  const { naturalCorridorRatio, naturalZoneDwellKm, naturalZoneDwellRatio, naturalFragmentationPerKm } = computeNaturalCorridorStats(
     edges,
     scenicWayIds,
     totalKm
@@ -323,6 +329,8 @@ export function assessRouteQuality(args: {
     forestOrParkRatio,
     longestTrailSegmentKm,
     naturalCorridorRatio,
+    naturalZoneDwellKm,
+    naturalZoneDwellRatio,
     naturalFragmentationPerKm,
     trailBeautyScore,
     terrainDataConfidence: terrainAudit.confidence,

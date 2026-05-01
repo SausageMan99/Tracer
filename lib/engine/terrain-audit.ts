@@ -11,6 +11,8 @@ export interface TerrainAuditMetrics {
   scenicEdgeRatio: number;
   asphaltRatio: number;
   naturalAreaSignal: number;
+  naturalZoneDwellKm: number;
+  naturalZoneDwellRatio: number;
   fragmentationScore: number;
 }
 
@@ -53,6 +55,8 @@ export function createEmptyTerrainAuditReport(): TerrainAuditReport {
       scenicEdgeRatio: 0,
       asphaltRatio: 0,
       naturalAreaSignal: 0,
+      naturalZoneDwellKm: 0,
+      naturalZoneDwellRatio: 0,
       fragmentationScore: 1,
     },
     warnings: ['Aucune donnée routable analysée.'],
@@ -109,6 +113,32 @@ function calculateFragmentationScore(edges: EnrichedEdge[]): number {
 
   if (adjacency.size === 0) return 1;
   return 1 - largestComponentNodes / adjacency.size;
+}
+
+function calculateNaturalZoneDwell(edges: EnrichedEdge[]): {
+  naturalZoneDwellKm: number;
+  naturalZoneDwellRatio: number;
+} {
+  const MIN_ZONE_DWELL_KM = 0.5;
+  const totalKm = edges.reduce((sum, edge) => sum + edge.lengthKm, 0);
+  let dwellKm = 0;
+  let currentNaturalKm = 0;
+
+  for (const edge of edges) {
+    if (isNaturalLikeEdge(edge)) {
+      currentNaturalKm += edge.lengthKm;
+    } else {
+      if (currentNaturalKm >= MIN_ZONE_DWELL_KM) dwellKm += currentNaturalKm;
+      currentNaturalKm = 0;
+    }
+  }
+
+  if (currentNaturalKm >= MIN_ZONE_DWELL_KM) dwellKm += currentNaturalKm;
+
+  return {
+    naturalZoneDwellKm: dwellKm,
+    naturalZoneDwellRatio: totalKm > 0 ? dwellKm / totalKm : 0,
+  };
 }
 
 function classifyTrailPotential(metrics: TerrainAuditMetrics): TrailPotential {
@@ -170,6 +200,7 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
   const unknownSurfaces = edges.filter((edge) => !edge.surface).length;
   const asphaltSurfaces = edges.filter((edge) => ASPHALT_SURFACES.has(edge.surface ?? '')).length;
   const scenicEdges = edges.filter((edge) => edge.scenic === true).length;
+  const naturalZoneDwell = calculateNaturalZoneDwell(edges);
   const metrics: TerrainAuditMetrics = {
     totalEdges,
     pathLikeEdgeRatio: ratio(pathLike, totalEdges),
@@ -178,6 +209,7 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
     scenicEdgeRatio: ratio(scenicEdges, totalEdges),
     asphaltRatio: ratio(asphaltSurfaces, totalEdges),
     naturalAreaSignal: ratio(scenicEdges + naturalSurfaces, totalEdges),
+    ...naturalZoneDwell,
     fragmentationScore: calculateFragmentationScore(edges),
   };
   const trailPotential = classifyTrailPotential(metrics);

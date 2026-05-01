@@ -301,7 +301,7 @@ Faire entrer `RouteIntent` dans le post-processing pour calculer `routeIntentMat
 
 Remplacer les constantes globales de natural anchors par des objectifs du planner : target components, min dwell, min non-paved streak, clean return mode.
 
-Ajouter état solver pour `naturalZoneDwellKm`, `longestNonPavedTrailStreakKm`, `pavedKm`, `visitedComponentIds` et `usedUndirectedEdgeKeys`.
+Ajouter état solver pour `naturalZoneDwellKm`, `longestNonPavedTrailStreakKm`, `pavedKm`, `visitedComponentIds` et `usedUndirectedEdgeKeys`. P0-2 a déjà livré la première mesure route-level `naturalZoneDwellKm` / `naturalZoneDwellRatio` dans `route-quality` et `terrain-audit`; P1 doit maintenant la connecter aux objectifs du planner plutôt que la laisser purement diagnostique.
 
 Rendre clean return adaptatif : strict/prefer/fallback_allowed avec tracking des relaxations. Garder le fallback pour éviter les faux `NO_ROAD_NETWORK`, mais ne jamais masquer l’overlap dans les métriques.
 
