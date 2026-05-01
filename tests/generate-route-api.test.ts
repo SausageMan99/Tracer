@@ -94,4 +94,39 @@ describe("POST /api/generate-route", () => {
     expect(generateRouteV2Mock).not.toHaveBeenCalled();
     expect(generateRouteLegacyMock).toHaveBeenCalledTimes(1);
   });
+
+  it("strips edge diagnostics from public API responses by default", async () => {
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", edgeDiagnostics: [{ edgeId: "best-edge" }] },
+      candidates: [
+        { id: "candidate", edgeDiagnostics: [{ edgeId: "candidate-edge" }] },
+      ],
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest(baseBody) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route.best.edgeDiagnostics).toBeUndefined();
+    expect(payload.route.candidates[0].edgeDiagnostics).toBeUndefined();
+  });
+
+  it("keeps edge diagnostics when the benchmark runner explicitly asks for them", async () => {
+    const edgeDiagnostics = [{ edgeId: "candidate-edge" }];
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", edgeDiagnostics },
+      candidates: [
+        { id: "candidate", edgeDiagnostics },
+      ],
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({ ...baseBody, includeEdgeDiagnostics: true }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route.best.edgeDiagnostics).toEqual(edgeDiagnostics);
+    expect(payload.route.candidates[0].edgeDiagnostics).toEqual(edgeDiagnostics);
+  });
 });

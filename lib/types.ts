@@ -318,6 +318,8 @@ export interface GenerateRouteRequest {
   endAddress?: string;
   /** When true, boost nature/quietness weights for scenic routing */
   scenicMode?: boolean;
+  /** Internal benchmark/debug flag: include heavy edge-level diagnostics in API response */
+  includeEdgeDiagnostics?: boolean;
 }
 
 /**
