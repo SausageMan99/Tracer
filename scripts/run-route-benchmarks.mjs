@@ -17,6 +17,7 @@ const shouldWriteOutput = !args.includes("--no-output");
 const shouldSaveArtifacts = args.includes("--save-artifacts");
 const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
+const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 15_000);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: npm run benchmark:routes -- [options]
@@ -24,9 +25,10 @@ if (args.includes("--help") || args.includes("-h")) {
 Runs TrailForge route benchmarks against /api/generate-route and fails on quality threshold regressions.
 
 Environment:
-  ROUTE_BENCHMARK_BASE_URL     Target app URL. Default: http://localhost:3000
-  ROUTE_BENCHMARK_OUTPUT       JSON report path. Default: artifacts/route-benchmark-results/latest.json
-  ROUTE_BENCHMARK_ARTIFACT_DIR Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_BASE_URL          Target app URL. Default: http://localhost:3000
+  ROUTE_BENCHMARK_OUTPUT            JSON report path. Default: artifacts/route-benchmark-results/latest.json
+  ROUTE_BENCHMARK_ARTIFACT_DIR      Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS Extra timeout budget above each case maxDurationMs. Default: 15000
 
 Options:
   --case <id-or-prefix>        Run only matching benchmark id(s). Repeatable.
@@ -250,12 +252,19 @@ async function runBenchmark(benchmark) {
   }
 
   const started = Date.now();
+  const timeoutMs = Math.max(
+    1_000,
+    Number(benchmark.thresholds?.maxDurationMs ?? 90_000) + benchmarkTimeoutMarginMs
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(requestFrom(benchmark)),
+      signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     const durationMs = Date.now() - started;
@@ -287,16 +296,21 @@ async function runBenchmark(benchmark) {
       error: null,
     };
   } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
     return {
       id: benchmark.id,
       label: benchmark.label,
       passed: false,
-      failures: ["network_error"],
+      failures: [aborted ? "duration_timeout" : "network_error"],
       status: 0,
       durationMs: Date.now() - started,
-      errorCode: "NETWORK_ERROR",
-      error: error instanceof Error ? error.message : String(error),
+      errorCode: aborted ? "BENCHMARK_TIMEOUT" : "NETWORK_ERROR",
+      error: aborted
+        ? `Benchmark exceeded ${timeoutMs}ms fetch timeout for case ${benchmark.id}`
+        : error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
