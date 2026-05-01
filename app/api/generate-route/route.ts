@@ -21,11 +21,37 @@ import { generateRoute } from "@/lib/route-generator-legacy";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import { createRateLimiter } from "@/lib/rate-limiter";
 import { RouteGenerationError } from "@/lib/errors";
-import type { GenerateRouteRequest, GenerateRouteError } from "@/lib/types";
+import type { GenerateRouteRequest, GenerateRouteError, RouteCandidate } from "@/lib/types";
 
 // ── Rate limiting ─────────────────────────────────────────────────────────────
 
 const rateLimiter = createRateLimiter({ limit: 20, windowMs: 60 * 1000 });
+
+type RouteCandidateWithDiagnostics = RouteCandidate & { edgeDiagnostics?: unknown };
+type RouteLikeWithDiagnostics = {
+  best?: RouteCandidateWithDiagnostics;
+  candidates?: RouteCandidateWithDiagnostics[];
+  [key: string]: unknown;
+};
+
+function withoutEdgeDiagnostics<T>(route: T): T {
+  if (route == null || typeof route !== "object") return route;
+
+  const stripCandidate = (candidate: RouteCandidateWithDiagnostics): RouteCandidate => {
+    const stripped = { ...candidate };
+    delete stripped.edgeDiagnostics;
+    return stripped;
+  };
+  const current = route as RouteLikeWithDiagnostics;
+  const next: RouteLikeWithDiagnostics = { ...current };
+
+  if (current.best != null) next.best = stripCandidate(current.best);
+  if (Array.isArray(current.candidates)) {
+    next.candidates = current.candidates.map((candidate) => stripCandidate(candidate));
+  }
+
+  return next as T;
+}
 
 // ── French error messages by sub-code ─────────────────────────────────────────
 
@@ -139,7 +165,11 @@ export async function POST(req: NextRequest) {
       route = await generateRouteV2(routeRequest);
     }
 
-    return NextResponse.json({ success: true, route });
+    const responseRoute = body.includeEdgeDiagnostics === true
+      ? route
+      : withoutEdgeDiagnostics(route);
+
+    return NextResponse.json({ success: true, route: responseRoute });
   } catch (err) {
     // Typed route generation errors
     if (err instanceof RouteGenerationError) {
