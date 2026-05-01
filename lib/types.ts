@@ -186,12 +186,56 @@ export interface RouteCandidate {
   totalScore: number;
   /** Production-readiness guardrail metrics used to reject unsafe or weak routes */
   quality?: import("./engine/route-quality").RouteQualityMetrics;
+  /**
+   * Benchmark/debug-only edge trace for diagnosing surface, overlap and scoring.
+   * It is serialized in API responses so `npm run benchmark:routes -- --save-artifacts`
+   * can persist edge-level evidence without rebuilding the graph offline.
+   */
+  edgeDiagnostics?: RouteEdgeDiagnostic[];
   /** Full road-following geometry for map display (more points than `points`) */
   geometry: {
     type: "LineString";
     /** Coordinates in [lng, lat] order (GeoJSON convention) */
     coordinates: [number, number][];
   };
+}
+
+export interface RouteEdgeDiagnostic {
+  /** Position in the candidate path edge list */
+  index: number;
+  /** Directed edge id as stored in the V2 graph */
+  edgeId: string;
+  /** Undirected key used for repeat/backtracking diagnostics */
+  edgeKey: string;
+  /** OSM way id backing this edge segment */
+  osmWayId: number;
+  fromNodeId: string;
+  toNodeId: string;
+  from: Coordinate | null;
+  to: Coordinate | null;
+  highway: string;
+  surface: string | null;
+  access: string | null;
+  foot: string | null;
+  bicycle: string | null;
+  oneway: string | null;
+  lengthKm: number;
+  score: number;
+  name: string | null;
+  ref: string | null;
+  componentId: string | null;
+  scoreReason: string | null;
+  flags: {
+    trail: boolean;
+    paved: boolean;
+    natural: boolean;
+    scenic: boolean;
+    busy: boolean;
+    restricted: boolean;
+    onewayViolation: boolean;
+  };
+  repeatCount: number;
+  repeated: boolean;
 }
 
 /**
@@ -473,6 +517,11 @@ export interface EnrichedEdge {
   onewayViolation?: boolean;
   /** True when the edge belongs to or runs immediately along a wood/forest/park/natural area. */
   scenic?: boolean;
+  /** OSM way display name/ref, retained for edge-level benchmark diagnostics. */
+  name?: string;
+  ref?: string;
+  /** Human-readable reason for the final edge score, retained for benchmark diagnostics. */
+  scoreReason?: string;
   osmWayId: number;
   score: number;
 }

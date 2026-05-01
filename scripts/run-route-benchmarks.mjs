@@ -29,7 +29,7 @@ Options:
   --list                       Print benchmark ids and exit.
   --output <path>              Override JSON report path.
   --artifact-dir <path>        Override per-route artifact directory.
-  --save-artifacts             Save successful route payloads as JSON plus best-route GeoJSON artifacts.
+  --save-artifacts             Save route JSON, best-route GeoJSON, and candidate edge-diagnostics JSON artifacts.
   --no-output                  Do not write the aggregate JSON report.
   --help                       Show this help.
 
@@ -200,6 +200,124 @@ function routeToGeoJson(benchmark, route) {
   };
 }
 
+function summarizeEdgeDiagnostics(candidate) {
+  const edges = Array.isArray(candidate?.edgeDiagnostics) ? candidate.edgeDiagnostics : [];
+  const totalKm = edges.reduce((sum, edge) => sum + (edge.lengthKm ?? 0), 0);
+  const sumFlag = (flag) => edges
+    .filter((edge) => edge.flags?.[flag] === true)
+    .reduce((sum, edge) => sum + (edge.lengthKm ?? 0), 0);
+  const seenEdgeKeys = new Set();
+  const repeatedExtraKm = edges.reduce((sum, edge) => {
+    if (seenEdgeKeys.has(edge.edgeKey)) return sum + (edge.lengthKm ?? 0);
+    seenEdgeKeys.add(edge.edgeKey);
+    return sum;
+  }, 0);
+  return {
+    edgeCount: edges.length,
+    totalKm: Number(totalKm.toFixed(5)),
+    trailKm: Number(sumFlag("trail").toFixed(5)),
+    pavedKm: Number(sumFlag("paved").toFixed(5)),
+    naturalKm: Number(sumFlag("natural").toFixed(5)),
+    scenicKm: Number(sumFlag("scenic").toFixed(5)),
+    busyKm: Number(sumFlag("busy").toFixed(5)),
+    repeatedTraversalKm: Number(edges
+      .filter((edge) => edge.repeated === true)
+      .reduce((sum, edge) => sum + (edge.lengthKm ?? 0), 0)
+      .toFixed(5)),
+    repeatedExtraKm: Number(repeatedExtraKm.toFixed(5)),
+    availableFields: [
+      "index",
+      "edgeId",
+      "edgeKey",
+      "osmWayId",
+      "fromNodeId",
+      "toNodeId",
+      "from",
+      "to",
+      "highway",
+      "surface",
+      "access",
+      "foot",
+      "bicycle",
+      "oneway",
+      "lengthKm",
+      "score",
+      "scoreReason",
+      "name",
+      "ref",
+      "componentId",
+      "flags.trail",
+      "flags.paved",
+      "flags.natural",
+      "flags.scenic",
+      "flags.busy",
+      "flags.restricted",
+      "flags.onewayViolation",
+      "repeatCount",
+      "repeated",
+    ],
+    missingFields: [],
+  };
+}
+
+function summarizeRouteIntent(routeIntent) {
+  if (routeIntent == null) return null;
+  return {
+    type: routeIntent.type ?? null,
+    strategy: routeIntent.strategy ?? null,
+    targetComponents: routeIntent.targetComponents ?? [],
+    minNaturalZoneDwellKm: routeIntent.minNaturalZoneDwellKm ?? null,
+    minNonPavedTrailStreakKm: routeIntent.minNonPavedTrailStreakKm ?? null,
+    maxPavedRatio: routeIntent.maxPavedRatio ?? null,
+    maxBusyRoadRatio: routeIntent.maxBusyRoadRatio ?? null,
+    maxRepeatEdgeRatio: routeIntent.maxRepeatEdgeRatio ?? null,
+    cleanReturnMode: routeIntent.cleanReturnMode ?? null,
+    timeBudgetMs: routeIntent.timeBudgetMs ?? null,
+    beamBudget: routeIntent.beamBudget ?? null,
+    terrainComponents: Array.isArray(routeIntent.terrainComponents)
+      ? routeIntent.terrainComponents.slice(0, 8).map((component) => ({
+          id: component.id,
+          kind: component.kind,
+          center: component.center,
+          totalKm: component.totalKm,
+          nonPavedKm: component.nonPavedKm,
+          pavedKm: component.pavedKm,
+          unknownSurfaceKm: component.unknownSurfaceKm,
+          distanceFromStartKm: component.distanceFromStartKm,
+          entryNodeCount: Array.isArray(component.entryNodeIds) ? component.entryNodeIds.length : 0,
+        }))
+      : [],
+  };
+}
+
+function routeToEdgeDiagnosticsArtifact(benchmark, route) {
+  const candidates = Array.isArray(route?.candidates) ? route.candidates : [];
+  if (candidates.length === 0) return null;
+
+  return {
+    benchmark: {
+      id: benchmark.id,
+      label: benchmark.label,
+      address: benchmark.address,
+      profileId: benchmark.profileId,
+      targetDistanceKm: benchmark.targetDistanceKm,
+      targetElevationM: benchmark.targetElevationM,
+      scenicMode: benchmark.scenicMode === true,
+    },
+    routeIntent: summarizeRouteIntent(route.routeIntent),
+    candidates: candidates.map((candidate, candidateIndex) => ({
+      candidateIndex,
+      isBest: candidateIndex === 0,
+      distanceKm: candidate.distanceKm ?? null,
+      ascendM: candidate.ascendM ?? null,
+      totalScore: candidate.totalScore ?? null,
+      quality: candidate.quality ?? null,
+      edgeSummary: summarizeEdgeDiagnostics(candidate),
+      edges: Array.isArray(candidate.edgeDiagnostics) ? candidate.edgeDiagnostics : [],
+    })),
+  };
+}
+
 async function saveRouteArtifacts(benchmark, payload) {
   if (!shouldSaveArtifacts || payload?.route == null) return null;
   const absoluteArtifactDir = resolve(repoRoot, artifactDir);
@@ -217,6 +335,13 @@ async function saveRouteArtifacts(benchmark, payload) {
     const geoJsonArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.geojson`);
     await writeFile(geoJsonArtifactPath, `${JSON.stringify(geoJson, null, 2)}\n`, "utf8");
     artifacts.geoJson = geoJsonArtifactPath.replace(`${repoRoot}/`, "");
+  }
+
+  const edgeDiagnostics = routeToEdgeDiagnosticsArtifact(benchmark, payload.route);
+  if (edgeDiagnostics) {
+    const edgeDiagnosticsArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.edges.json`);
+    await writeFile(edgeDiagnosticsArtifactPath, `${JSON.stringify(edgeDiagnostics, null, 2)}\n`, "utf8");
+    artifacts.edgeDiagnosticsJson = edgeDiagnosticsArtifactPath.replace(`${repoRoot}/`, "");
   }
 
   return artifacts;

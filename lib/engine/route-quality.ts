@@ -12,6 +12,7 @@ import {
   TRAIL_HIGHWAY_TYPES,
 } from "../route-generator-legacy";
 import { auditTerrainData } from "./terrain-audit";
+import type { RouteIntent } from "./terrain-planner";
 
 export interface RouteQualityMetrics {
   distanceErrorPct: number;
@@ -26,6 +27,11 @@ export interface RouteQualityMetrics {
   naturalZoneDwellKm?: number;
   naturalZoneDwellRatio?: number;
   naturalFragmentationPerKm?: number;
+  longestNonPavedTrailStreakKm?: number;
+  scenicPavedRatio?: number;
+  routeIntentMatchScore?: number;
+  routeIntentFailures?: string[];
+  relaxationsUsed?: string[];
   trailBeautyScore?: number;
   terrainDataConfidence?: "low" | "medium" | "high";
   trailPotential?: "low" | "medium" | "high";
@@ -114,6 +120,24 @@ function isPavedLikeEdge(edge: EnrichedEdge): boolean {
   return BUSY_HIGHWAY_TYPES.has(edge.highway) || QUIET_HIGHWAY_TYPES.has(edge.highway);
 }
 
+function isNonPavedTrailEdge(edge: EnrichedEdge): boolean {
+  return TRAIL_HIGHWAY_TYPES.has(edge.highway) && !isPavedLikeEdge(edge);
+}
+
+function computeLongestNonPavedTrailStreakKm(edges: EnrichedEdge[]): number {
+  let longestKm = 0;
+  let currentKm = 0;
+  for (const edge of edges) {
+    if (isNonPavedTrailEdge(edge)) {
+      currentKm += edge.lengthKm;
+      longestKm = Math.max(longestKm, currentKm);
+    } else {
+      currentKm = 0;
+    }
+  }
+  return longestKm;
+}
+
 function computeLongestTrailSegmentKm(edges: EnrichedEdge[], scenicWayIds: Set<string>): number {
   let longestKm = 0;
   let currentKm = 0;
@@ -194,6 +218,44 @@ function computeTrailBeautyScore(args: {
   );
 }
 
+function computeRouteIntentMatch(args: {
+  intent?: RouteIntent;
+  naturalZoneDwellKm: number;
+  longestNonPavedTrailStreakKm: number;
+  pavedRatio: number;
+  busyRoadRatio: number;
+  repeatEdgeRatio: number;
+}): { score: number; failures: string[]; relaxationsUsed: string[] } {
+  const { intent } = args;
+  if (!intent) return { score: 1, failures: [], relaxationsUsed: [] };
+
+  const checks: Array<{ key: string; passed: boolean; relaxed?: boolean }> = [];
+  if (intent.minNaturalZoneDwellKm != null) {
+    checks.push({
+      key: "natural_dwell",
+      passed: args.naturalZoneDwellKm >= intent.minNaturalZoneDwellKm,
+      relaxed: args.naturalZoneDwellKm >= intent.minNaturalZoneDwellKm * 0.75,
+    });
+  }
+  if (intent.minNonPavedTrailStreakKm != null) {
+    checks.push({
+      key: "non_paved_streak",
+      passed: args.longestNonPavedTrailStreakKm >= intent.minNonPavedTrailStreakKm,
+      relaxed: args.longestNonPavedTrailStreakKm >= intent.minNonPavedTrailStreakKm * 0.7,
+    });
+  }
+  if (intent.maxPavedRatio != null) {
+    checks.push({ key: "paved_ratio", passed: args.pavedRatio <= intent.maxPavedRatio, relaxed: args.pavedRatio <= intent.maxPavedRatio + 0.08 });
+  }
+  checks.push({ key: "busy_road", passed: args.busyRoadRatio <= intent.maxBusyRoadRatio, relaxed: args.busyRoadRatio <= intent.maxBusyRoadRatio + 0.03 });
+  checks.push({ key: "repeat_edge", passed: args.repeatEdgeRatio <= intent.maxRepeatEdgeRatio, relaxed: args.repeatEdgeRatio <= intent.maxRepeatEdgeRatio + 0.03 });
+
+  const failures = checks.filter((check) => !check.passed).map((check) => check.key);
+  const relaxationsUsed = checks.filter((check) => !check.passed && check.relaxed === true).map((check) => check.key);
+  const score = checks.length > 0 ? checks.filter((check) => check.passed || check.relaxed).length / checks.length : 1;
+  return { score, failures, relaxationsUsed };
+}
+
 export function assessRouteQuality(args: {
   candidate: Omit<RouteCandidate, "totalScore"> & { totalScore?: number };
   path: SolverPath;
@@ -202,8 +264,9 @@ export function assessRouteQuality(args: {
   targetDistanceKm: number;
   targetElevationM: number;
   scenicWayIds?: Set<string>;
+  routeIntent?: RouteIntent;
 }): RouteQualityMetrics {
-  const { candidate, path, graph, profile, targetDistanceKm, targetElevationM, scenicWayIds = new Set() } = args;
+  const { candidate, path, graph, profile, targetDistanceKm, targetElevationM, scenicWayIds = new Set(), routeIntent } = args;
   const edges = path.edgeIds
     .map((edgeId) => graph.edges.get(edgeId))
     .filter((edge): edge is EnrichedEdge => edge != null);
@@ -236,6 +299,8 @@ export function assessRouteQuality(args: {
   const pavedRatio = ratio(pavedKm, totalKm);
   const forestOrParkRatio = ratio(forestOrParkKm, totalKm);
   const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds);
+  const longestNonPavedTrailStreakKm = computeLongestNonPavedTrailStreakKm(edges);
+  const scenicPavedRatio = ratio(edgeLengthSum(edges.filter((edge) => isPavedLikeEdge(edge) && (edge.scenic === true || scenicWayIds.has(String(edge.osmWayId))))), totalKm);
   const { naturalCorridorRatio, naturalZoneDwellKm, naturalZoneDwellRatio, naturalFragmentationPerKm } = computeNaturalCorridorStats(
     edges,
     scenicWayIds,
@@ -257,6 +322,14 @@ export function assessRouteQuality(args: {
   const uTurnRatio = computeUTurnRatio(path, graph, totalKm);
   const intersectionDensityPerKm = computeIntersectionDensity(path, graph);
   const terrainAudit = auditTerrainData(edges);
+  const routeIntentMatch = computeRouteIntentMatch({
+    intent: routeIntent,
+    naturalZoneDwellKm,
+    longestNonPavedTrailStreakKm,
+    pavedRatio,
+    busyRoadRatio,
+    repeatEdgeRatio,
+  });
 
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
   const elevationScore = clamp01(1 - elevationErrorPct / 0.45);
@@ -318,6 +391,9 @@ export function assessRouteQuality(args: {
   ) {
     warnings.push("TRAIL_TOO_FRAGMENTED");
   }
+  if (isTrailRunning(profile) && routeIntentMatch.failures.length > 0 && routeIntentMatch.score < 0.8) {
+    warnings.push("ROUTE_INTENT_WEAK_MATCH");
+  }
 
   return {
     distanceErrorPct,
@@ -332,6 +408,11 @@ export function assessRouteQuality(args: {
     naturalZoneDwellKm,
     naturalZoneDwellRatio,
     naturalFragmentationPerKm,
+    longestNonPavedTrailStreakKm,
+    scenicPavedRatio,
+    routeIntentMatchScore: routeIntentMatch.score,
+    routeIntentFailures: routeIntentMatch.failures,
+    relaxationsUsed: routeIntentMatch.relaxationsUsed,
     trailBeautyScore,
     terrainDataConfidence: terrainAudit.confidence,
     trailPotential: terrainAudit.trailPotential,

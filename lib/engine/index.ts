@@ -81,7 +81,8 @@ export async function generateRouteV2(
     request.targetDistanceKm,
     request.targetElevationM,
     nodeElevation,
-    scenicWayIds
+    scenicWayIds,
+    routeIntent
   );
 
   if (candidates.length === 0) {

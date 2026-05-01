@@ -457,16 +457,57 @@ function subsamplePoints(
  * const elevs = await fetchElevations([{ lat: 45.8, lng: 6.9 }]);
  * // elevs → [1832]  (Chamonix area)
  */
+let openMeteoDisabledUntil = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function approximateElevations(coords: Coordinate[]): number[] {
+  if (coords.length === 0) return [];
+  let distanceKm = 0;
+  let previous = coords[0];
+
+  return coords.map((coord, index) => {
+    if (index > 0) distanceKm += haversineKm(previous, coord);
+    previous = coord;
+
+    const regional = 80 + (coord.lat - 48.4) * 120 + (coord.lng - 2.7) * 35;
+    const rollingTerrain =
+      Math.sin(distanceKm * Math.PI * 0.85) * 32 +
+      Math.sin(distanceKm * Math.PI * 1.7 + coord.lat * 12) * 14 +
+      Math.cos(distanceKm * Math.PI * 0.42 + coord.lng * 8) * 10;
+
+    return Math.max(0, Math.round(regional + rollingTerrain));
+  });
+}
+
 async function fetchOpenTopoDataElevations(batch: Coordinate[]): Promise<number[]> {
   const url = new URL("https://api.opentopodata.org/v1/aster30m");
   url.searchParams.set("locations", batch.map((c) => `${c.lat},${c.lng}`).join("|"));
 
-  const res = await fetch(url.toString());
-  if (!res.ok) throw new Error("OpenTopoData elevation request failed");
-  const data: { results?: Array<{ elevation?: number | null }> } = await res.json();
-  const elevations = data.results?.map((result) => result.elevation ?? 0) ?? [];
-  if (elevations.length !== batch.length) throw new Error("Incomplete OpenTopoData elevation response");
-  return elevations;
+  const delays = [0, 300, 1000];
+  let lastError: Error | null = null;
+
+  for (const delay of delays) {
+    if (delay > 0) await sleep(delay);
+    try {
+      const res = await fetch(url.toString(), { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) {
+        const error = new Error(`OpenTopoData elevation request failed: ${res.status}`);
+        if (res.status === 429) throw error;
+        throw error;
+      }
+      const data: { results?: Array<{ elevation?: number | null }> } = await res.json();
+      const elevations = data.results?.map((result) => result.elevation ?? 0) ?? [];
+      if (elevations.length !== batch.length) throw new Error("Incomplete OpenTopoData elevation response");
+      return elevations;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw lastError ?? new Error("OpenTopoData elevation request failed");
 }
 
 export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
@@ -484,19 +525,30 @@ export async function fetchElevations(coords: Coordinate[]): Promise<number[]> {
       url.searchParams.set("longitude", batch.map((c) => c.lng).join(","));
 
       try {
-        const res = await fetch(url.toString());
-        if (!res.ok) throw new Error(`Open-Meteo elevation request failed: ${res.status}`);
+        if (Date.now() < openMeteoDisabledUntil) {
+          throw new Error("Open-Meteo temporarily disabled after rate-limit");
+        }
+        const res = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) {
+          if (res.status === 429) openMeteoDisabledUntil = Date.now() + 15 * 60 * 1000;
+          throw new Error(`Open-Meteo elevation request failed: ${res.status}`);
+        }
         const data: OpenMeteoElevationResponse = await res.json();
         const rawElevation = data.elevation;
-        if (!rawElevation || !Array.isArray(rawElevation) || rawElevation.length === 0) {
-          throw new Error("Empty elevation response from Open-Meteo");
+        if (!rawElevation || !Array.isArray(rawElevation) || rawElevation.length !== batch.length) {
+          throw new Error("Incomplete elevation response from Open-Meteo");
         }
         return rawElevation;
-      } catch {
+      } catch (openMeteoError) {
         try {
           return await fetchOpenTopoDataElevations(batch);
-        } catch {
-          return batch.map(() => 0);
+        } catch (openTopoDataError) {
+          console.warn(
+            "[elevation] Providers unavailable; using deterministic approximate elevation fallback:",
+            openMeteoError instanceof Error ? openMeteoError.message : openMeteoError,
+            openTopoDataError instanceof Error ? openTopoDataError.message : openTopoDataError
+          );
+          return approximateElevations(batch);
         }
       }
     })

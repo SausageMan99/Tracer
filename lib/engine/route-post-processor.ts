@@ -1,18 +1,25 @@
 import type {
   Coordinate,
+  EnrichedEdge,
   EnrichedGraph,
   RouteCandidate,
+  RouteEdgeDiagnostic,
   RoutePoint,
   SessionProfile,
   SolverPath,
 } from "../types";
 import {
+  BUSY_HIGHWAY_TYPES,
+  PAVED_SURFACES,
+  QUIET_HIGHWAY_TYPES,
+  TRAIL_HIGHWAY_TYPES,
   fetchElevations,
   computeAscent,
   scoreRoute,
   computeLoopScore,
 } from "../route-generator-legacy";
 import { assessRouteQuality } from "./route-quality";
+import type { RouteIntent, TerrainComponent } from "./terrain-planner";
 
 const MAX_ROUTE_POINTS = 200;
 
@@ -92,12 +99,128 @@ function candidateRankingScore(
     return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
   }
 
-  const backtrackingPenalty = repeatEdgeRatio * 2.8 + uTurnRatio * 3.5;
+  const backtrackingPenalty = repeatEdgeRatio * 8 + uTurnRatio * 5;
+  const benchmarkFailurePenalty =
+    (Math.abs(candidate.ascendM - targetElevationM) > (targetElevationM <= 50 ? 60 : 120) ? 5 : 0) +
+    (distancePenalty > 0.1 ? 5 : 0) +
+    (repeatEdgeRatio > 0.04 ? 3 : 0) +
+    (uTurnRatio > 0.01 ? 2 : 0) +
+    ((quality?.pavedRatio ?? 0) > 0.35 && targetDistanceKm >= 12 ? 2 : 0);
   const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.45 : 0;
   const pavementPenalty = Math.max(0, (quality?.pavedRatio ?? 0) - 0.42) * 0.9;
   const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
 
-  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty;
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - benchmarkFailurePenalty;
+}
+
+function isPavedLikeEdge(edge: EnrichedEdge): boolean {
+  if (edge.surface != null) return PAVED_SURFACES.has(edge.surface);
+  return BUSY_HIGHWAY_TYPES.has(edge.highway) || QUIET_HIGHWAY_TYPES.has(edge.highway);
+}
+
+function isNaturalLikeEdge(edge: EnrichedEdge, scenicWayIds: Set<string>): boolean {
+  return edge.scenic === true || TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
+}
+
+function isRestrictedForProfile(edge: EnrichedEdge, profile: SessionProfile): boolean {
+  if (edge.access === "private" || edge.access === "no") return true;
+  if (profile.sport === "running" && (edge.foot === "no" || edge.access === "customers")) return true;
+  if (profile.sport !== "running" && (edge.bicycle === "no" || edge.access === "customers")) return true;
+  return false;
+}
+
+function undirectedEdgeKey(edge: EnrichedEdge): string {
+  const [a, b] = edge.from < edge.to ? [edge.from, edge.to] : [edge.to, edge.from];
+  return `${a}-${b}-${edge.osmWayId}`;
+}
+
+function coordForNode(graph: EnrichedGraph, nodeId: string): Coordinate | null {
+  const node = graph.nodes.get(nodeId);
+  return node ? { lat: node.lat, lng: node.lng } : null;
+}
+
+function componentIdForEdge(edge: EnrichedEdge, components: TerrainComponent[]): string | null {
+  const match = components.find((component) => {
+    const nodeIds = new Set(component.nodeIds);
+    return nodeIds.has(edge.from) && nodeIds.has(edge.to);
+  });
+  return match?.id ?? null;
+}
+
+function buildEdgeDiagnostics(
+  path: SolverPath,
+  graph: EnrichedGraph,
+  profile: SessionProfile,
+  scenicWayIds: Set<string>,
+  routeIntent?: RouteIntent
+): RouteEdgeDiagnostic[] {
+  const repeatCounts = new Map<string, number>();
+  for (const edgeId of path.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const key = undirectedEdgeKey(edge);
+    repeatCounts.set(key, (repeatCounts.get(key) ?? 0) + 1);
+  }
+
+  return path.edgeIds.flatMap((edgeId, index) => {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) return [];
+    const edgeKey = undirectedEdgeKey(edge);
+    const repeatCount = repeatCounts.get(edgeKey) ?? 1;
+    return [{
+      index,
+      edgeId: edge.id,
+      edgeKey,
+      osmWayId: edge.osmWayId,
+      fromNodeId: edge.from,
+      toNodeId: edge.to,
+      from: coordForNode(graph, edge.from),
+      to: coordForNode(graph, edge.to),
+      highway: edge.highway,
+      surface: edge.surface ?? null,
+      access: edge.access ?? null,
+      foot: edge.foot ?? null,
+      bicycle: edge.bicycle ?? null,
+      oneway: edge.oneway ?? null,
+      name: edge.name ?? null,
+      ref: edge.ref ?? null,
+      componentId: componentIdForEdge(edge, routeIntent?.terrainComponents ?? []),
+      lengthKm: Number(edge.lengthKm.toFixed(5)),
+      score: Number(edge.score.toFixed(5)),
+      scoreReason: edge.scoreReason ?? null,
+      flags: {
+        trail: TRAIL_HIGHWAY_TYPES.has(edge.highway),
+        paved: isPavedLikeEdge(edge),
+        natural: isNaturalLikeEdge(edge, scenicWayIds),
+        scenic: edge.scenic === true,
+        busy: BUSY_HIGHWAY_TYPES.has(edge.highway),
+        restricted: isRestrictedForProfile(edge, profile),
+        onewayViolation: edge.onewayViolation === true,
+      },
+      repeatCount,
+      repeated: repeatCount > 1,
+    }];
+  });
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  worker: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  async function runWorker(): Promise<void> {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index]);
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runWorker()));
+  return results;
 }
 
 export async function postProcess(
@@ -108,7 +231,8 @@ export async function postProcess(
   targetDistanceKm: number,
   targetElevationM: number,
   nodeElevation: Map<string, number> = new Map(),
-  scenicWayIds: Set<string> = new Set()
+  scenicWayIds: Set<string> = new Set(),
+  routeIntent?: RouteIntent
 ): Promise<RouteCandidate[]> {
   if (paths.length === 0) return [];
 
@@ -116,8 +240,10 @@ export async function postProcess(
   // high-quality loops and discard the only path that actually matches the ask.
   const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, 24);
 
-  const candidates: RouteCandidate[] = await Promise.all(
-    topPaths.map(async (solverPath) => {
+  const candidates: RouteCandidate[] = await mapWithConcurrency(
+    topPaths,
+    6,
+    async (solverPath) => {
       // Reconstruct coordinates from nodeIds
       const fullCoords: Coordinate[] = solverPath.nodeIds
         .map((nid) => graph.nodes.get(nid))
@@ -142,11 +268,7 @@ export async function postProcess(
             )
           : sampled.map(() => 0);
       } else {
-        try {
-          elevations = await fetchElevations(sampled);
-        } catch {
-          elevations = sampled.map(() => 0);
-        }
+        elevations = await fetchElevations(sampled);
       }
 
       const points: RoutePoint[] = sampled.map((c, i) => ({
@@ -155,7 +277,9 @@ export async function postProcess(
         elevation: elevations[i] ?? undefined,
       }));
 
-      const elevationSmoothingThresholdM = targetElevationM <= 50 ? 35 : 20;
+      const elevationSmoothingThresholdM = profile.sessionType === "trail"
+        ? 35
+        : (targetElevationM <= 50 ? 35 : 20);
       const { ascendM, descendM } = computeAscent(
         elevations.filter((e): e is number => e != null),
         elevationSmoothingThresholdM
@@ -210,16 +334,20 @@ export async function postProcess(
         targetDistanceKm,
         targetElevationM,
         scenicWayIds,
+        routeIntent,
       });
 
       const totalScore = baseScore * 0.65 + quality.productionScore * 0.35;
+
+      const edgeDiagnostics = buildEdgeDiagnostics(solverPath, graph, profile, scenicWayIds, routeIntent);
 
       return {
         ...candidateWithoutQuality,
         totalScore,
         quality,
+        edgeDiagnostics,
       };
-    })
+    }
   );
 
   // Sort by totalScore descending

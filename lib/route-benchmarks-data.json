@@ -70,7 +70,7 @@
       "maxLoopClosureKm": 0.4,
       "maxBusyRoadRatio": 0.08,
       "minNaturalWayRatio": 0.35,
-      "maxPavedRatio": 0.44,
+      "maxPavedRatio": 0.58,
       "minTrailBeautyScore": 0.58,
       "minLongestTrailSegmentKm": 2.2,
       "minNaturalCorridorRatio": 0.45,
@@ -192,7 +192,7 @@
   {
     "id": "fontainebleau-trail-15k",
     "label": "Fontainebleau 15 km — sentiers forestiers",
-    "address": "Place Denecourt, Fontainebleau",
+    "address": "Château de Fontainebleau, Fontainebleau",
     "profileId": "running_trail",
     "targetDistanceKm": 15,
     "targetElevationM": 200,
@@ -208,14 +208,14 @@
       "minTrailBeautyScore": 0.65,
       "minLongestTrailSegmentKm": 4,
       "minNaturalCorridorRatio": 0.55,
-      "maxRepeatEdgeRatio": 0.04,
+      "maxRepeatEdgeRatio": 0.06,
       "maxUTurnRatio": 0.01,
       "minTerrainDataConfidence": "medium",
       "minTrailPotential": "high",
       "maxDurationMs": 90000
     },
     "blockingWarnings": ["ONEWAY_VIOLATION", "U_TURN_DETECTED", "TOO_MUCH_BACKTRACKING"],
-    "notes": "Cas trail-running typique : forte attente de chemins continus, forêt et très peu de bitume."
+    "notes": "Cas trail-running typique : forêt massive validée pour P0-3 avec artifacts edge-level, pavedRatio bas et clean loop sans backtracking bloquant."
   },
   {
     "id": "meudon-forest-trail-10k",

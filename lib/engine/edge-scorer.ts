@@ -284,6 +284,7 @@ export async function scoreEdges(
     // Skip private/restricted access edges entirely
     if (edge.access === "private" || edge.access === "no") {
       edge.score = 0;
+      edge.scoreReason = "restricted-access";
       continue;
     }
 
@@ -320,6 +321,12 @@ export async function scoreEdges(
       weights.elevation * elevScore +
       weights.nature * natureScore +
       weights.quietness * quietnessScore;
+    edge.scoreReason = [
+      `surface=${surfaceScore.toFixed(2)}`,
+      `elevation=${elevScore.toFixed(2)}`,
+      `nature=${natureScore.toFixed(2)}`,
+      `quietness=${quietnessScore.toFixed(2)}`,
+    ].join(";");
   }
 
   return { nodeElevation };

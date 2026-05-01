@@ -278,6 +278,8 @@ out body qt;`;
     const bicycle = el.tags.bicycle;
     const oneway = el.tags.oneway;
     const onewayBicycle = el.tags["oneway:bicycle"];
+    const name = el.tags.name;
+    const ref = el.tags.ref;
     const wayId = el.id;
     const isOnewayForward = oneway === "yes" || oneway === "1" || oneway === "true";
     const isOnewayReverse = oneway === "-1";
@@ -344,6 +346,8 @@ out body qt;`;
           oneway,
           onewayViolation: isOnewayReverse && !bicycleExemptFromOneway,
           scenic,
+          name,
+          ref,
           osmWayId: wayId,
           score: 0,
         };
@@ -366,6 +370,8 @@ out body qt;`;
           oneway,
           onewayViolation: isOnewayForward && !bicycleExemptFromOneway,
           scenic,
+          name,
+          ref,
           osmWayId: wayId,
           score: 0,
         };
