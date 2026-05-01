@@ -110,8 +110,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
   const productionScore = quality.productionScore ?? 0;
   const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
   const busyRoadRatio = quality.busyRoadRatio ?? 1;
-  const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
+  const trailRatio = quality.trailRatio ?? 0;
+  const naturalWayRatio = quality.naturalWayRatio ?? quality.trailRatio ?? 0;
   const pavedRatio = quality.pavedRatio ?? 0;
+  const scenicPavedRatio = quality.scenicPavedRatio ?? 0;
   const trailBeautyScore = quality.trailBeautyScore ?? 0;
   const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
   const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
@@ -155,8 +157,10 @@ function summarizeBenchmarkResult(benchmark, route, durationMs) {
       productionScore,
       loopClosureKm,
       busyRoadRatio,
+      trailRatio,
       naturalWayRatio,
       pavedRatio,
+      scenicPavedRatio,
       trailBeautyScore,
       longestTrailSegmentKm,
       naturalCorridorRatio,

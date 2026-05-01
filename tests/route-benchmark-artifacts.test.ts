@@ -101,6 +101,14 @@ describe("route benchmark edge artifacts", () => {
     expect(summary.pavedKm).toBe(0.25);
     expect(summary.naturalKm).toBe(0.8);
     expect(summary.scenicKm).toBe(0.8);
+    expect(summary.trailRatio).toBeCloseTo(0.8 / 1.05);
+    expect(summary.rawTrailRatio).toBeCloseTo(0.8 / 1.05);
+    expect(summary.naturalWayRatio).toBeCloseTo(0.8 / 1.05);
+    expect(summary.rawNaturalRatio).toBeCloseTo(0.8 / 1.05);
+    expect(summary.pavedRatio).toBeCloseTo(0.25 / 1.05);
+    expect(summary.rawPavedRatio).toBeCloseTo(0.25 / 1.05);
+    expect(summary.scenicPavedRatio).toBe(0);
+    expect(summary.rawFlagSemantics).toContain("raw OSM/post-processor");
     expect(summary.busyKm).toBe(0);
     expect(summary.repeatedTraversalKm).toBe(0.8);
     expect(summary.repeatedExtraKm).toBe(0.4);
@@ -163,7 +171,14 @@ describe("route benchmark edge artifacts", () => {
         distanceKm: 9.87,
         ascendM: 92,
         totalScore: 0.77,
-        quality: { productionScore: 0.74, pavedRatio: 0.42, warnings: [] },
+        quality: {
+          productionScore: 0.74,
+          trailRatio: 0.25,
+          naturalWayRatio: 0.68,
+          pavedRatio: 0.42,
+          scenicPavedRatio: 0.2,
+          warnings: [],
+        },
         edgeDiagnostics: [edgeA, edgeB],
       }],
     });
@@ -188,8 +203,70 @@ describe("route benchmark edge artifacts", () => {
       totalScore: 0.77,
     });
     expect(artifact?.candidates[0].summary.edgeCount).toBe(2);
+    expect(artifact?.candidates[0].productSurfaceSummary).toMatchObject({
+      trailRatio: 0.25,
+      naturalWayRatio: 0.68,
+      pavedRatio: 0.42,
+      scenicPavedRatio: 0.2,
+      trailKm: 2.4675,
+      naturalWayKm: 6.7116,
+      pavedKm: 4.1454,
+      scenicPavedKm: 1.974,
+    });
+    expect(artifact?.candidates[0].rawFlagSummary.rawTrailRatio).toBeCloseTo(0.4 / 0.65);
+    expect(artifact?.candidates[0].rawFlagSummary.rawPavedRatio).toBeCloseTo(0.25 / 0.65);
     expect(artifact?.candidates[0].edgeSummary.edgeCount).toBe(2);
     expect(artifact?.candidates[0].edges).toEqual([edgeA, edgeB]);
+  });
+
+  it("keeps raw edge flags separate from product surface quality ratios", () => {
+    const pavedTrailEdge = {
+      ...edgeA,
+      edgeId: "edge-paved-trail",
+      edgeKey: "node-x-node-y-103",
+      osmWayId: 103,
+      highway: "path",
+      surface: "asphalt",
+      lengthKm: 1,
+      flags: {
+        ...edgeA.flags,
+        trail: true,
+        paved: true,
+        natural: true,
+        scenic: true,
+      },
+      repeatCount: 1,
+      repeated: false,
+    };
+
+    const artifact = routeToEdgeDiagnosticsArtifact(benchmark, {
+      candidates: [{
+        distanceKm: 1,
+        quality: {
+          trailRatio: 0,
+          naturalWayRatio: 1,
+          pavedRatio: 1,
+          scenicPavedRatio: 1,
+        },
+        edgeDiagnostics: [pavedTrailEdge],
+      }],
+    });
+
+    const candidate = artifact?.candidates[0];
+    expect(candidate?.productSurfaceSummary).toMatchObject({
+      trailRatio: 0,
+      naturalWayRatio: 1,
+      pavedRatio: 1,
+      scenicPavedRatio: 1,
+    });
+    expect(candidate?.rawFlagSummary).toMatchObject({
+      rawTrailRatio: 1,
+      rawNaturalRatio: 1,
+      rawPavedRatio: 1,
+      rawScenicPavedRatio: 1,
+    });
+    expect(candidate?.rawFlagSummary.rawFlagSemantics).toContain("productSurfaceSummary");
+    expect(candidate?.productSurfaceSummary.trailRatio).not.toBe(candidate?.rawFlagSummary.rawTrailRatio);
   });
 
   it("does not create an edge artifact when the route has no candidates", () => {
@@ -207,7 +284,10 @@ describe("route benchmark edge artifacts", () => {
           repeatEdgeRatio: 0.01,
           uTurnRatio: 0,
           busyRoadRatio: 0.03,
+          trailRatio: 0.23,
           naturalWayRatio: 0.51,
+          pavedRatio: 0.42,
+          scenicPavedRatio: 0.18,
         },
         geometry: {
           type: "LineString",
@@ -232,7 +312,10 @@ describe("route benchmark edge artifacts", () => {
           repeatEdgeRatio: 0.01,
           uTurnRatio: 0,
           busyRoadRatio: 0.03,
+          trailRatio: 0.23,
           naturalWayRatio: 0.51,
+          pavedRatio: 0.42,
+          scenicPavedRatio: 0.18,
         }),
         geometry: {
           type: "LineString",

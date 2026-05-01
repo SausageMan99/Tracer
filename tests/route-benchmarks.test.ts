@@ -183,6 +183,37 @@ describe("route production benchmarks", () => {
     ]));
   });
 
+  it("keeps naturalWayRatio separate from trailRatio and never masks paved failures", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 15,
+      ascendM: 210,
+      quality: {
+        productionScore: 0.9,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.02,
+        trailRatio: 0.2,
+        naturalWayRatio: 0.8,
+        pavedRatio: 0.65,
+        trailBeautyScore: 0.8,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.7,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.metrics.trailRatio).toBe(0.2);
+    expect(summary.metrics.naturalWayRatio).toBe(0.8);
+    expect(summary.metrics.pavedRatio).toBe(0.65);
+    expect(summary.failures).toContain("paved_ratio");
+    expect(summary.failures).not.toContain("natural_way_ratio");
+  });
+
   it("fails the Tourville trail benchmarks on U-turns and overlapping edges", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-12k")!;
     const summary = summarizeBenchmarkResult(benchmark, {

@@ -20,6 +20,7 @@ export interface RouteQualityMetrics {
   loopGapKm: number;
   busyRoadRatio: number;
   trailRatio: number;
+  naturalWayRatio: number;
   pavedRatio?: number;
   forestOrParkRatio?: number;
   longestTrailSegmentKm?: number;
@@ -126,6 +127,12 @@ function isTrailRunning(profile: SessionProfile): boolean {
 
 function isTrailLikeEdge(edge: EnrichedEdge, scenicWayIds: Set<string>, profile?: SessionProfile): boolean {
   if (profile != null && isTrailRunning(profile) && isPavedLikeEdge(edge)) return false;
+  return edge.scenic === true || TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
+}
+
+function isNaturalWayEdge(edge: EnrichedEdge, scenicWayIds: Set<string>): boolean {
+  // Volontairement plus large que isTrailLikeEdge : naturalWay peut inclure
+  // des voies pavées scéniques/naturelles, alors que trailRatio les exclut en trail running.
   return edge.scenic === true || TRAIL_HIGHWAY_TYPES.has(edge.highway) || scenicWayIds.has(String(edge.osmWayId));
 }
 
@@ -293,6 +300,9 @@ export function assessRouteQuality(args: {
   const forestOrParkKm = edgeLengthSum(
     edges.filter((edge) => edge.scenic === true || scenicWayIds.has(String(edge.osmWayId)))
   );
+  const naturalWayKm = edgeLengthSum(
+    edges.filter((edge) => isNaturalWayEdge(edge, scenicWayIds))
+  );
   const naturalKm = edgeLengthSum(
     edges.filter((edge) => isTrailLikeEdge(edge, scenicWayIds, profile))
   );
@@ -312,6 +322,7 @@ export function assessRouteQuality(args: {
 
   const busyRoadRatio = ratio(busyKm, totalKm);
   const trailRatio = ratio(naturalKm, totalKm);
+  const naturalWayRatio = ratio(naturalWayKm, totalKm);
   const pavedRatio = ratio(pavedKm, totalKm);
   const forestOrParkRatio = ratio(forestOrParkKm, totalKm);
   const longestTrailSegmentKm = computeLongestTrailSegmentKm(edges, scenicWayIds, profile);
@@ -397,6 +408,7 @@ export function assessRouteQuality(args: {
   if (intersectionDensityPerKm > 14) warnings.push("TOO_MANY_INTERSECTIONS");
   if (isTrailRunning(profile) && trailRatio < 0.35) warnings.push("NOT_ENOUGH_TRAIL");
   if (isTrailRunning(profile) && pavedRatio > 0.45) warnings.push("TOO_MUCH_PAVEMENT");
+  if (isTrailRunning(profile) && naturalWayRatio >= 0.5 && pavedRatio > 0.45) warnings.push("NATURAL_BUT_PAVED");
   if (roadHeavyTrailPenalty > 0) warnings.push("Boucle trop routière pour une sortie trail.");
   if (
     isTrailRunning(profile) &&
@@ -421,6 +433,7 @@ export function assessRouteQuality(args: {
     loopGapKm,
     busyRoadRatio,
     trailRatio,
+    naturalWayRatio,
     pavedRatio,
     forestOrParkRatio,
     longestTrailSegmentKm,

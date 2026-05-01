@@ -42,6 +42,9 @@ export function buildRouteExplanation(
   );
   const busyRoadRatio = qualityNumber(quality?.busyRoadRatio, 0);
   const trailRatio = qualityNumber(quality?.trailRatio, 0);
+  const naturalWayRatio = qualityNumber(quality?.naturalWayRatio, trailRatio);
+  const pavedRatio = qualityNumber(quality?.pavedRatio, 0);
+  const scenicPavedRatio = qualityNumber(quality?.scenicPavedRatio, 0);
   const loopGapKm = qualityNumber(quality?.loopGapKm, Math.max(0, 1 - best.loopScore) * 5);
   const warnings = quality?.warnings ?? [];
 
@@ -55,6 +58,9 @@ export function buildRouteExplanation(
   if (busyRoadRatio > 0.08 || warnings.includes("TOO_MUCH_BUSY_ROAD")) {
     compromises.push("Passage routier plus présent que souhaité");
   }
+  if ((naturalWayRatio >= 0.5 && pavedRatio > 0.45) || warnings.includes("TOO_MUCH_PAVEMENT") || warnings.includes("NATURAL_BUT_PAVED")) {
+    compromises.push("Cadre naturel mais trop bitumé");
+  }
   if (loopGapKm > 0.5 || warnings.includes("LOOP_NOT_CLOSED")) {
     compromises.push("Boucle moins bien refermée");
   }
@@ -66,7 +72,10 @@ export function buildRouteExplanation(
     `Intention : ${intention.label}`,
     `Écart distance : ${pct(distanceError)}`,
     `Écart D+ : ${pct(elevationError)}`,
-    `Chemins/nature : ${pct(trailRatio)}`,
+    `Sentiers non bitumés : ${pct(trailRatio)}`,
+    `Cadre naturel/scénique : ${pct(naturalWayRatio)}`,
+    `Revêtement bitumé : ${pct(pavedRatio)}`,
+    `Bitumé scénique : ${pct(scenicPavedRatio)}`,
     `Grands axes : ${pct(busyRoadRatio)}`,
   ];
 

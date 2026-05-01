@@ -97,7 +97,16 @@ describe("POST /api/generate-route", () => {
 
   it("strips edge diagnostics from public API responses by default", async () => {
     generateRouteV2Mock.mockResolvedValue({
-      best: { id: "best", edgeDiagnostics: [{ edgeId: "best-edge" }] },
+      best: {
+        id: "best",
+        quality: {
+          trailRatio: 0.2,
+          naturalWayRatio: 0.8,
+          pavedRatio: 0.65,
+          scenicPavedRatio: 0.5,
+        },
+        edgeDiagnostics: [{ edgeId: "best-edge" }],
+      },
       candidates: [
         { id: "candidate", edgeDiagnostics: [{ edgeId: "candidate-edge" }] },
       ],
@@ -110,6 +119,12 @@ describe("POST /api/generate-route", () => {
     expect(response.status).toBe(200);
     expect(payload.route.best.edgeDiagnostics).toBeUndefined();
     expect(payload.route.candidates[0].edgeDiagnostics).toBeUndefined();
+    expect(payload.route.best.quality).toMatchObject({
+      trailRatio: 0.2,
+      naturalWayRatio: 0.8,
+      pavedRatio: 0.65,
+      scenicPavedRatio: 0.5,
+    });
   });
 
   it("keeps edge diagnostics when the benchmark runner explicitly asks for them", async () => {

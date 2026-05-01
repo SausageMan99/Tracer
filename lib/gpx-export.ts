@@ -113,7 +113,10 @@ function buildQualityExtensions(quality: GeneratedRoute["best"]["quality"]): str
         <trailforge:productionScore>${formatMetric(quality.productionScore)}</trailforge:productionScore>
         <trailforge:loopClosureKm>${formatMetric(quality.loopGapKm)}</trailforge:loopClosureKm>
         <trailforge:busyRoadRatio>${formatMetric(quality.busyRoadRatio)}</trailforge:busyRoadRatio>
-        <trailforge:naturalWayRatio>${formatMetric(quality.trailRatio)}</trailforge:naturalWayRatio>${warningTags ? `\n${warningTags}` : ""}
+        <trailforge:trailRatio>${formatMetric(quality.trailRatio)}</trailforge:trailRatio>
+        <trailforge:naturalWayRatio>${formatMetric(quality.naturalWayRatio ?? quality.trailRatio)}</trailforge:naturalWayRatio>
+        <trailforge:pavedRatio>${formatMetric(quality.pavedRatio)}</trailforge:pavedRatio>
+        <trailforge:scenicPavedRatio>${formatMetric(quality.scenicPavedRatio)}</trailforge:scenicPavedRatio>${warningTags ? `\n${warningTags}` : ""}
       </trailforge:quality>
     </extensions>`;
 }
