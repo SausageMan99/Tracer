@@ -425,7 +425,79 @@ function makeMappedWoodRoadVsOpenRoadGraph(): EnrichedGraph {
   return graph;
 }
 
+function makeCleanReturnClosureGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.500)],
+    ["turnaround", makeNode("turnaround", 49.142, -0.500)],
+    ["alt-a", makeNode("alt-a", 49.142, -0.497)],
+    ["alt-b", makeNode("alt-b", 49.140, -0.497)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 2,
+  };
+
+  // Outbound edge and classical A* closure represent the same physical OSM way.
+  // The unconstrained shortest return is therefore an overlap/backtrack.
+  addEdge(graph, "start-turnaround-outbound", "start", "turnaround", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.9,
+    lengthKm: 2.1,
+    osmWayId: 101,
+  });
+  addEdge(graph, "turnaround-start-short-overlap", "turnaround", "start", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.9,
+    lengthKm: 1.0,
+    osmWayId: 101,
+  });
+
+  // Longer but clean return that stays within the target tolerance.
+  addEdge(graph, "turnaround-alt-a", "turnaround", "alt-a", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.65,
+    lengthKm: 0.5,
+    osmWayId: 201,
+  });
+  addEdge(graph, "alt-a-alt-b", "alt-a", "alt-b", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.65,
+    lengthKm: 0.5,
+    osmWayId: 202,
+  });
+  addEdge(graph, "alt-b-start", "alt-b", "start", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.65,
+    lengthKm: 0.4,
+    osmWayId: 203,
+  });
+
+  return graph;
+}
+
 describe("solve natural corridor preference", () => {
+  it("closes with a clean alternative instead of reusing the outbound edge when both are routable", async () => {
+    const graph = makeCleanReturnClosureGraph();
+
+    const paths = await solve(graph, "start", 3.2, 0, new Map());
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-turnaround-outbound",
+      "turnaround-alt-a",
+      "alt-a-alt-b",
+      "alt-b-start",
+    ]);
+    expect(paths[0].edgeIds).not.toContain("turnaround-start-short-overlap");
+  });
+
   it("ranks a continuous natural corridor above a higher raw-score isolated trail fragment", async () => {
     const graph = makeCorridorVsFragmentLoopGraph();
 

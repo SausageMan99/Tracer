@@ -1,12 +1,14 @@
 import type { EnrichedEdge, EnrichedGraph, SessionProfile } from '../types';
 import type { TerrainAuditReport } from './terrain-audit';
 
-export type RouteStrategy =
-  | 'natural_massif_loop'
-  | 'trail_sparse_compromise'
+export type RouteIntentType =
+  | 'forest_loop'
+  | 'park_loop'
   | 'urban_nature_loop'
-  | 'corridor_out_and_loop_back'
-  | 'fail_or_relax';
+  | 'transition_to_woods'
+  | 'low_trail_potential';
+
+export type RouteStrategy = RouteIntentType;
 
 export type SurfaceClass = 'paved' | 'unpaved' | 'unknown' | 'mixed';
 
@@ -18,6 +20,7 @@ export interface TerrainComponent {
   nonPavedKm: number;
   pavedKm: number;
   unknownSurfaceKm: number;
+  distanceFromStartKm: number;
   entryNodeIds: string[];
   exitNodeIds: string[];
   nodeIds: string[];
@@ -25,7 +28,8 @@ export interface TerrainComponent {
 }
 
 export interface RouteIntent {
-  strategy: RouteStrategy;
+  type: RouteIntentType;
+  strategy: RouteIntentType;
   targetDistanceKm: number;
   targetElevationM: number;
   targetComponents: string[];
@@ -67,8 +71,6 @@ export interface PlanRouteIntentInput {
 const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway']);
 const UNPAVED_SURFACES = new Set(['ground', 'dirt', 'earth', 'grass', 'unpaved', 'gravel', 'fine_gravel', 'sand', 'compacted']);
 const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'sett', 'paving_stones']);
-const BUSY_HIGHWAYS = new Set(['secondary', 'primary', 'trunk']);
-
 function isPathLike(edge: EnrichedEdge): boolean {
   return PATH_LIKE_HIGHWAYS.has(edge.highway);
 }
@@ -85,14 +87,27 @@ function isNaturalCandidate(edge: EnrichedEdge): boolean {
   return edge.scenic === true || isPathLike(edge) || isUnpaved(edge);
 }
 
-function componentKind(edges: EnrichedEdge[]): TerrainComponent['kind'] {
+function haversineKm(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const earthRadiusKm = 6371;
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180;
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180;
+  const lat1 = (a.lat * Math.PI) / 180;
+  const lat2 = (b.lat * Math.PI) / 180;
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLng * sinLng;
+  return 2 * earthRadiusKm * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function componentKind(edges: EnrichedEdge[], totalKm: number): TerrainComponent['kind'] {
   const scenicKm = edges.filter((edge) => edge.scenic === true).reduce((sum, edge) => sum + edge.lengthKm, 0);
   const pavedKm = edges.filter(isPaved).reduce((sum, edge) => sum + edge.lengthKm, 0);
   const pathKm = edges.filter(isPathLike).reduce((sum, edge) => sum + edge.lengthKm, 0);
-  const totalKm = edges.reduce((sum, edge) => sum + edge.lengthKm, 0);
+  const unpavedKm = edges.filter(isUnpaved).reduce((sum, edge) => sum + edge.lengthKm, 0);
 
   if (totalKm > 0 && pavedKm / totalKm >= 0.65 && scenicKm / totalKm >= 0.45) return 'scenic_paved';
-  if (totalKm > 0 && scenicKm / totalKm >= 0.5 && pathKm / totalKm >= 0.45) return 'forest';
+  if (totalKm >= 1.5 && totalKm > 0 && scenicKm / totalKm >= 0.45 && (pathKm + unpavedKm) / totalKm >= 0.45) return 'forest';
+  if (totalKm < 1.5 && scenicKm / Math.max(totalKm, 0.1) >= 0.35) return 'park';
   if (pathKm > 0) return 'trail_cluster';
   return 'unknown_natural';
 }
@@ -123,6 +138,10 @@ function buildComponent(
   const nonPavedKm = componentEdges.filter((edge) => !isPaved(edge)).reduce((sum, edge) => sum + edge.lengthKm, 0);
   const unknownSurfaceKm = componentEdges.filter((edge) => !edge.surface).reduce((sum, edge) => sum + edge.lengthKm, 0);
   const nodeSet = new Set(nodeIds);
+  const center = {
+    lat: coords.length > 0 ? coords.reduce((sum, node) => sum + node.lat, 0) / coords.length : graph.center.lat,
+    lng: coords.length > 0 ? coords.reduce((sum, node) => sum + node.lng, 0) / coords.length : graph.center.lng,
+  };
   const entryNodeIds = nodeIds.filter((nodeId) => {
     const node = graph.nodes.get(nodeId);
     return (node?.edges ?? []).some((edgeId) => {
@@ -133,15 +152,13 @@ function buildComponent(
 
   return {
     id,
-    kind: componentKind(componentEdges),
-    center: {
-      lat: coords.length > 0 ? coords.reduce((sum, node) => sum + node.lat, 0) / coords.length : graph.center.lat,
-      lng: coords.length > 0 ? coords.reduce((sum, node) => sum + node.lng, 0) / coords.length : graph.center.lng,
-    },
+    kind: componentKind(componentEdges, totalKm),
+    center,
     totalKm: Number(totalKm.toFixed(3)),
     nonPavedKm: Number(nonPavedKm.toFixed(3)),
     pavedKm: Number(pavedKm.toFixed(3)),
     unknownSurfaceKm: Number(unknownSurfaceKm.toFixed(3)),
+    distanceFromStartKm: Number(haversineKm(graph.center, center).toFixed(3)),
     entryNodeIds,
     exitNodeIds: entryNodeIds,
     nodeIds,
@@ -191,96 +208,112 @@ export function extractTerrainComponents(graph: EnrichedGraph, audit: TerrainAud
   return components.sort((a, b) => b.totalKm - a.totalKm);
 }
 
-function selectStrategy(audit: TerrainAuditReport, components: TerrainComponent[], targetDistanceKm: number): RouteStrategy {
+function selectIntentType(audit: TerrainAuditReport, components: TerrainComponent[], targetDistanceKm: number): RouteIntentType {
+  if (audit.metrics.totalEdges === 0) return 'low_trail_potential';
+
   const largest = components[0];
-  const hasLargeNaturalComponent = Boolean(
+  const hasForestCandidate = Boolean(
     largest &&
       largest.totalKm >= Math.max(1.8, targetDistanceKm * 0.18) &&
       largest.nonPavedKm >= Math.max(1.2, targetDistanceKm * 0.12),
   );
 
-  if ((audit.trailPotential === 'high' || audit.trailPotential === 'medium') && hasLargeNaturalComponent) {
-    return 'natural_massif_loop';
+  if (hasForestCandidate && largest) {
+    return largest.distanceFromStartKm > 0.45 ? 'transition_to_woods' : 'forest_loop';
   }
 
-  if (audit.trailPotential !== 'low' && audit.metrics.fragmentationScore >= 0.45) {
-    return 'trail_sparse_compromise';
+  const hasSmallPark = components.some((component) =>
+    component.kind === 'park' ||
+    (component.totalKm >= 0.45 && component.totalKm < 1.8 && component.distanceFromStartKm <= 0.6 && component.pavedKm / Math.max(component.totalKm, 0.1) < 0.85),
+  );
+  if (hasSmallPark) return 'park_loop';
+
+  if (audit.trailPotential !== 'low' || audit.metrics.scenicEdgeRatio >= 0.18 || components.length > 0) {
+    return 'urban_nature_loop';
   }
 
-  if (audit.trailPotential === 'medium' && largest) {
-    return 'corridor_out_and_loop_back';
-  }
-
-  if (audit.metrics.totalEdges === 0) return 'fail_or_relax';
-  return 'urban_nature_loop';
+  return 'low_trail_potential';
 }
 
-function buildWarnings(strategy: RouteStrategy): string[] {
-  if (strategy === 'trail_sparse_compromise') {
-    return ['Terrain naturel fragmenté : TrailForge peut devoir relier des sections par route.'];
+function buildWarnings(type: RouteIntentType): string[] {
+  if (type === 'transition_to_woods') {
+    return ['Massif naturel détecté hors du départ : accepter une section d’accès puis rester dans les bois.'];
   }
-  if (strategy === 'urban_nature_loop') {
-    return ['Potentiel trail faible : route plutôt nature urbaine que vraie sortie trail.'];
+  if (type === 'park_loop') {
+    return ['Petit parc urbain : boucle courte ou compromis probable, éviter le clean return strict.'];
   }
-  if (strategy === 'fail_or_relax') {
-    return ['Données terrain insuffisantes : génération à refuser ou à relaxer explicitement.'];
+  if (type === 'urban_nature_loop') {
+    return ['Terrain mixte : route plutôt nature urbaine que vrai trail continu.'];
+  }
+  if (type === 'low_trail_potential') {
+    return ['Potentiel trail faible : refuser ou relaxer explicitement la promesse terrain.'];
   }
   return [];
 }
 
-function cleanReturnMode(strategy: RouteStrategy, audit: TerrainAuditReport): RouteIntent['cleanReturnMode'] {
-  if (strategy === 'natural_massif_loop' && audit.metrics.fragmentationScore < 0.25) return 'prefer';
-  if (strategy === 'trail_sparse_compromise' || strategy === 'fail_or_relax') return 'fallback_allowed';
+function cleanReturnMode(type: RouteIntentType): RouteIntent['cleanReturnMode'] {
+  if (type === 'forest_loop') return 'prefer';
+  if (type === 'transition_to_woods') return 'prefer';
+  if (type === 'park_loop' || type === 'low_trail_potential') return 'fallback_allowed';
   return 'prefer';
 }
 
-function beamBudget(strategy: RouteStrategy, graph: EnrichedGraph): RouteIntent['beamBudget'] {
+function beamBudget(type: RouteIntentType, graph: EnrichedGraph): RouteIntent['beamBudget'] {
   const denseGraph = graph.edges.size > 1800;
   if (denseGraph) return { beamWidth: 28, maxIterations: 650, shortlistSize: 16 };
-  if (strategy === 'natural_massif_loop') return { beamWidth: 44, maxIterations: 900, shortlistSize: 24 };
-  if (strategy === 'trail_sparse_compromise') return { beamWidth: 36, maxIterations: 760, shortlistSize: 20 };
+  if (type === 'forest_loop' || type === 'transition_to_woods') return { beamWidth: 44, maxIterations: 900, shortlistSize: 24 };
+  if (type === 'urban_nature_loop') return { beamWidth: 34, maxIterations: 720, shortlistSize: 18 };
   return { beamWidth: 30, maxIterations: 650, shortlistSize: 14 };
+}
+
+function graphTimeBudget(graph: EnrichedGraph, type: RouteIntentType): number {
+  if (graph.edges.size > 1800) return 4500;
+  if (type === 'forest_loop' || type === 'transition_to_woods') return 6500;
+  if (type === 'urban_nature_loop') return 5000;
+  return 4000;
 }
 
 export function planRouteIntent(input: PlanRouteIntentInput): RouteIntent {
   const components = extractTerrainComponents(input.graph, input.terrainAudit);
-  const strategy = selectStrategy(input.terrainAudit, components, input.targetDistanceKm);
+  const type = selectIntentType(input.terrainAudit, components, input.targetDistanceKm);
   const mainComponent = components[0];
   const trailLikeRequest = input.profile.sessionType === 'trail' || input.scenicMode === true;
-  const targetComponents = strategy === 'natural_massif_loop' && mainComponent ? [mainComponent.id] : [];
-  const dwellRatio = strategy === 'natural_massif_loop' ? 0.35 : strategy === 'trail_sparse_compromise' ? 0.18 : 0.08;
-  const pavedCap = strategy === 'natural_massif_loop'
+  const targetComponents = (type === 'forest_loop' || type === 'transition_to_woods') && mainComponent ? [mainComponent.id] : [];
+  const dwellRatio = type === 'forest_loop' || type === 'transition_to_woods'
+    ? 0.35
+    : type === 'park_loop'
+      ? 0.12
+      : type === 'urban_nature_loop'
+        ? 0.16
+        : 0.05;
+  const pavedCap = type === 'forest_loop' || type === 'transition_to_woods'
     ? 0.45
-    : strategy === 'trail_sparse_compromise'
-      ? 0.62
-      : 0.78;
+    : type === 'park_loop'
+      ? 0.68
+      : type === 'urban_nature_loop'
+        ? 0.72
+        : 0.85;
 
   return {
-    strategy,
+    type,
+    strategy: type,
     targetDistanceKm: input.targetDistanceKm,
     targetElevationM: input.targetElevationM,
     targetComponents,
     minNaturalZoneDwellKm: Number((input.targetDistanceKm * dwellRatio).toFixed(2)),
     minNonPavedTrailStreakKm: trailLikeRequest ? Number(Math.min(3, Math.max(0.8, input.targetDistanceKm * 0.18)).toFixed(2)) : undefined,
     maxPavedRatio: pavedCap,
-    maxBusyRoadRatio: BUSY_HIGHWAYS.size > 0 ? 0.08 : 0.1,
-    maxRepeatEdgeRatio: strategy === 'natural_massif_loop' ? 0.08 : 0.12,
-    maxGeometryOverlapRatio: strategy === 'natural_massif_loop' ? 0.12 : 0.18,
+    maxBusyRoadRatio: 0.08,
+    maxRepeatEdgeRatio: type === 'forest_loop' || type === 'transition_to_woods' ? 0.08 : 0.12,
+    maxGeometryOverlapRatio: type === 'forest_loop' || type === 'transition_to_woods' ? 0.12 : 0.18,
     minLoopAreaKm2: Number(Math.max(0.05, input.targetDistanceKm * 0.015).toFixed(3)),
-    cleanReturnMode: cleanReturnMode(strategy, input.terrainAudit),
-    timeBudgetMs: graphTimeBudget(input.graph, strategy),
-    beamBudget: beamBudget(strategy, input.graph),
-    relaxationOrder: strategy === 'natural_massif_loop'
+    cleanReturnMode: cleanReturnMode(type),
+    timeBudgetMs: graphTimeBudget(input.graph, type),
+    beamBudget: beamBudget(type, input.graph),
+    relaxationOrder: type === 'forest_loop' || type === 'transition_to_woods'
       ? ['elevation', 'distance', 'clean_return', 'natural_dwell', 'paved_ratio']
       : ['elevation', 'distance', 'natural_dwell', 'clean_return', 'paved_ratio'],
-    userWarningsIfRelaxed: buildWarnings(strategy),
+    userWarningsIfRelaxed: buildWarnings(type),
     terrainComponents: components,
   };
-}
-
-function graphTimeBudget(graph: EnrichedGraph, strategy: RouteStrategy): number {
-  if (graph.edges.size > 1800) return 4500;
-  if (strategy === 'natural_massif_loop') return 6500;
-  if (strategy === 'trail_sparse_compromise') return 5500;
-  return 4000;
 }

@@ -7,6 +7,16 @@ interface PathResult {
   edgeIds: string[];
 }
 
+interface PathfindingOptions {
+  forbiddenUndirectedEdgeKeys?: Set<string>;
+}
+
+function undirectedEdgeKey(from: string, to: string, wayId: number): string {
+  return from < to
+    ? `${from}-${to}-${wayId}`
+    : `${to}-${from}-${wayId}`;
+}
+
 /**
  * Min-heap (binary heap) priority queue for A* pathfinding.
  * Stores [priority, nodeId] pairs sorted by ascending priority.
@@ -65,7 +75,8 @@ class MinHeap {
 export function findShortestPath(
   graph: EnrichedGraph,
   fromNodeId: string,
-  toNodeId: string
+  toNodeId: string,
+  options: PathfindingOptions = {}
 ): PathResult | null {
   const toNode = graph.nodes.get(toNodeId);
   if (!toNode) return null;
@@ -114,6 +125,9 @@ export function findShortestPath(
     for (const edgeId of currentNode.edges) {
       const edge = graph.edges.get(edgeId);
       if (!edge) continue;
+
+      const edgeKey = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
+      if (options.forbiddenUndirectedEdgeKeys?.has(edgeKey)) continue;
 
       const neighborId = edge.to === currentId ? edge.from : edge.to;
       // Only follow edges in the correct direction (from → to)

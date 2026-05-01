@@ -92,11 +92,12 @@ function candidateRankingScore(
     return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
   }
 
-  const backtrackingPenalty = repeatEdgeRatio * 1.8 + uTurnRatio * 2.5;
-  const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.22 : 0;
+  const backtrackingPenalty = repeatEdgeRatio * 2.8 + uTurnRatio * 3.5;
+  const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.45 : 0;
+  const pavementPenalty = Math.max(0, (quality?.pavedRatio ?? 0) - 0.42) * 0.9;
   const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
 
-  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty;
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty;
 }
 
 export async function postProcess(
@@ -113,7 +114,7 @@ export async function postProcess(
 
   // Keep a distance-aware shortlist. Raw solver score alone can prefer shorter
   // high-quality loops and discard the only path that actually matches the ask.
-  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, 8);
+  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, 24);
 
   const candidates: RouteCandidate[] = await Promise.all(
     topPaths.map(async (solverPath) => {

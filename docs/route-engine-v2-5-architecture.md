@@ -69,17 +69,17 @@ Responsabilité : transformer une demande utilisateur et un audit terrain en int
 
 Cette couche est la vraie nouveauté V2.5. Elle doit rester déterministe, testable et simple. Elle ne trace pas la route. Elle choisit une stratégie.
 
-Exemples de stratégies :
+Stratégies P0 implémentées :
 
-`natural_massif_loop` : rejoindre un massif identifié, y rester un minimum de distance, revenir proprement.
+`forest_loop` : départ déjà dans ou très proche d’un massif naturel exploitable ; y rester un minimum de distance, revenir proprement.
 
-`corridor_out_and_loop_back` : suivre un corridor naturel ou canal/parc, puis fermer par une alternative propre sans overlap.
+`transition_to_woods` : départ résidentiel ou routier, mais massif exploitable proche ; accepter une section d’accès puis maximiser le dwell time dans les bois.
 
-`urban_nature_loop` : accepter plus de bitume mais maximiser sécurité, parc/canal et absence de grands axes.
+`park_loop` : petit parc urbain contraint ; garder une boucle propre, avec clean return fallback autorisé pour éviter les faux `SOLVER_EMPTY`.
 
-`trail_sparse_compromise` : terrain trail faible ou fragmenté ; générer une boucle running nature avec warning explicite.
+`urban_nature_loop` : accepter plus de bitume mais maximiser sécurité, parc/canal/corridor et absence de grands axes.
 
-`fail_or_relax` : si le potentiel est trop faible ou OSM trop ambigu pour la promesse trail, refuser ou proposer de relâcher surface/distance.
+`low_trail_potential` : potentiel trail trop faible ; refuser ou proposer de relâcher explicitement la promesse terrain.
 
 ### 4. Edge Scorer
 
@@ -103,7 +103,7 @@ Responsabilité : ranker, expliquer, accepter/refuser.
 
 À garder : ranking multi-candidats, `assessRouteQuality`, warnings bloquants, seuils benchmarks.
 
-À changer : le ranking final doit comparer la route à son `RouteIntent`, pas seulement à un score composite. Une route peut avoir un bon score mais échouer son intention : par exemple stratégie `natural_massif_loop` sans dwell time suffisant dans la zone naturelle, ou stratégie `trail_sparse_compromise` qui cache trop de bitume sans warning.
+À changer : le ranking final doit comparer la route à son `RouteIntent`, pas seulement à un score composite. Une route peut avoir un bon score mais échouer son intention : par exemple stratégie `forest_loop` sans dwell time suffisant dans la zone naturelle, ou stratégie `low_trail_potential` qui cache trop de bitume sans warning/refus.
 
 ## Rôle détaillé du Terrain / Route Intent Planner
 
@@ -122,12 +122,12 @@ Quatrième question : quels compromis sont acceptables ? Il produit un plan avec
 Ces interfaces sont indicatives. Elles décrivent le contrat cible sans imposer une implémentation immédiate.
 
 ```ts
-type RouteStrategy =
-  | "natural_massif_loop"
-  | "corridor_out_and_loop_back"
+type RouteIntentType =
+  | "forest_loop"
+  | "park_loop"
   | "urban_nature_loop"
-  | "trail_sparse_compromise"
-  | "fail_or_relax";
+  | "transition_to_woods"
+  | "low_trail_potential";
 
 type SurfaceClass = "paved" | "unpaved" | "unknown" | "mixed";
 
@@ -146,7 +146,8 @@ type TerrainComponent = {
 };
 
 type RouteIntent = {
-  strategy: RouteStrategy;
+  type: RouteIntentType;
+  strategy: RouteIntentType;
   targetDistanceKm: number;
   targetElevationM: number;
   targetComponents: string[];
@@ -212,7 +213,7 @@ Règle pratique : si une nouvelle logique utilise l’historique du chemin ou la
 
 Le solver V2.5 doit évoluer par petites étapes, pas être remplacé brutalement.
 
-La première évolution est l’entrée en zone naturelle. Si le planner choisit `natural_massif_loop`, le solver doit recevoir des `targetComponents` avec portes d’entrée. Pendant les premiers 30–45 % de la distance, il peut accepter une route d’accès moins bonne localement si elle rapproche d’un massif exploitable. Ce comportement existe déjà partiellement avec `NaturalAnchor`, mais il doit devenir une décision planner, pas une constante globale.
+La première évolution est l’entrée en zone naturelle. Si le planner choisit `forest_loop` ou `transition_to_woods`, le solver doit recevoir des `targetComponents` avec portes d’entrée. Pendant les premiers 30–45 % de la distance, il peut accepter une route d’accès moins bonne localement si elle rapproche d’un massif exploitable. Ce comportement existe déjà partiellement avec `NaturalAnchor`, mais il doit devenir une décision planner, pas une constante globale.
 
 La deuxième évolution est le maintien dans les corridors. Une fois dans un composant naturel ou non revêtu, le solver doit valoriser la durée de séjour et la continuité : `naturalZoneDwellKm`, `longestNonPavedStreakKm`, `naturalCorridorRatio`. Il doit pénaliser les fragments : entrer 200 m dans un bois puis ressortir sur route ne satisfait pas une intention trail.
 
@@ -272,6 +273,16 @@ Artifacts P0 : ajouter un export edge-level dans les artifacts benchmark, comme 
 
 Règle de décision : si lint/tests/build passent mais que le benchmark ciblé demandé reste rouge, ne pas pousser de changement moteur. Pour un document d’architecture seul, un build complet n’est pas nécessaire ; le diff doit être vérifié.
 
+## État P0-0 — fondations stabilisées
+
+État au 2026-05-01 : le repo contient une base V2.5 documentée et des travaux locaux cohérents issus des missions précédentes : clean return anti-overlap, tests de régression pathfinder/solver, audit Tourville pavedRatio et backlog qualité. Ces changements ne doivent pas être écrasés : ils forment le socle de diagnostic de P0-1.
+
+Validations P0-0 attendues avant push : `npm run lint`, `npm run test:run`, `npm run build`. Le benchmark live complet reste requis avant tout changement moteur produit, mais il n’est pas bloquant pour cette mission de cadrage tant qu’aucun nouveau patch moteur n’est ajouté sans mesure.
+
+Décision d’équipe simulée : CTO Route Engine valide l’ajout du planner comme couche de clarification, Senior Algorithm Engineer insiste sur clean return avec fallback mesuré, QA Benchmark Lead impose artifacts edge-level avant nouveau tuning, Product Lead Trail refuse de masquer le bitume Tourville en succès, YC/Business Angel rappelle que l’architecture doit accélérer 20 testeurs qualifiés et pas devenir une refonte longue.
+
+Blocage principal pour P0-1 : il manque encore un contrat exécutable minimal du `RouteIntent` branché en lecture seule. Le prochain incrément doit donc livrer peu de code mais beaucoup de visibilité : types, planner déterministe, logs/artifacts et tests de stratégie. Ne pas commencer par modifier lourdement le solver.
+
 ## Plan d’exécution
 
 ### P0 — V2.5-alpha : rendre l’intention explicite sans refonte
@@ -282,7 +293,7 @@ Ajouter l’export diagnostic edge-level dans les artifacts benchmark. C’est l
 
 Brancher le planner en lecture seule : générer et logger l’intention choisie sans modifier le solver. Vérifier sur les 12 benchmarks que les stratégies choisies sont cohérentes.
 
-Ajouter tests unitaires planner : Tourville -> `natural_massif_loop` ou `trail_sparse_compromise` selon composants ; Paris 19 -> `urban_nature_loop`/`corridor_out_and_loop_back`; Fontainebleau -> `natural_massif_loop`; Nanterre -> sécurité/avoid highways prioritaire.
+Ajouter tests unitaires planner : Tourville -> `transition_to_woods` ou `forest_loop` selon distance au massif ; Paris 19 -> `urban_nature_loop` ; Fontainebleau -> `forest_loop` ; petit parc urbain -> `park_loop` ; zone routière pauvre -> `low_trail_potential`.
 
 Faire entrer `RouteIntent` dans le post-processing pour calculer `routeIntentMatchScore`, `routeIntentFailures` et `relaxationsUsed` sans encore bloquer toutes les routes.
 

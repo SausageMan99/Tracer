@@ -1,6 +1,6 @@
 import type { EnrichedGraph, SolverPath } from "../types";
 import { haversineKm } from "../route-generator-legacy";
-import { ReturnDistanceCache } from "./pathfinder";
+import { findShortestPath, ReturnDistanceCache } from "./pathfinder";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,6 +285,21 @@ function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: strin
     totalScore: scorePathWithCorridorPreference(graph, edgeIds),
     distanceKm,
   };
+}
+
+function cleanReturnPath(
+  graph: EnrichedGraph,
+  fromNodeId: string,
+  startNodeId: string,
+  edgeVisits: Map<string, number>
+) {
+  const forbiddenUndirectedEdgeKeys = new Set(
+    Array.from(edgeVisits.entries())
+      .filter(([, visits]) => visits > 0)
+      .map(([key]) => key)
+  );
+
+  return findShortestPath(graph, fromNodeId, startNodeId, { forbiddenUndirectedEdgeKeys });
 }
 
 function computeBearing(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
@@ -623,13 +638,16 @@ function solveWithConfig(
             if (newDist + returnDist >= minDist && newDist + returnDist <= maxDist) {
               // Close loop via A* return path
               const closedDistance = newDist + returnDist;
-              const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
+              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
+              const returnPath = cleanPath && newDist + cleanPath.distanceKm <= maxDist
+                ? cleanPath
+                : returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  closedDistance
+                  newDist + returnPath.distanceKm
                 ));
               }
               if (closedDistance >= targetDistanceKm * 0.98) {
@@ -639,7 +657,8 @@ function solveWithConfig(
 
             // At 85%+, force closure for all reachable states
             if (newProgress >= 0.85) {
-              const returnPath = returnCache.getPath(graph, selectedEdge.to, startNodeId);
+              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
+              const returnPath = cleanPath ?? returnCache.getPath(graph, selectedEdge.to, startNodeId);
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
                 validPaths.push(buildSolverPath(
                   graph,
