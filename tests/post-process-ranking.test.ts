@@ -135,4 +135,89 @@ describe("postProcess candidate ranking", () => {
 
     expect(candidates[0].quality?.repeatEdgeRatio).toBeLessThan(0.08);
   });
+
+  it("prefers a continuous non-paved trail over a higher raw-score scenic paved corridor for trail runs", async () => {
+    const nodes = new Map<string, GraphNode>();
+    const edges = new Map<string, EnrichedEdge>();
+
+    for (const prefix of ["trail", "paved"]) {
+      for (let i = 0; i <= 10; i++) {
+        const id = `${prefix}-${i}`;
+        nodes.set(id, {
+          id,
+          lat: 48.8,
+          lng: 2.3 + i * 0.001,
+          edges: i < 10 ? [`${prefix}-${i}-${i + 1}`] : [],
+        });
+      }
+    }
+
+    for (let i = 0; i < 10; i++) {
+      edges.set(`trail-${i}-${i + 1}`, {
+        id: `trail-${i}-${i + 1}`,
+        from: `trail-${i}`,
+        to: `trail-${i + 1}`,
+        lengthKm: 1,
+        highway: "path",
+        surface: "ground",
+        osmWayId: 1000 + i,
+        score: 0.2,
+      });
+
+      edges.set(`paved-${i}-${i + 1}`, {
+        id: `paved-${i}-${i + 1}`,
+        from: `paved-${i}`,
+        to: `paved-${i + 1}`,
+        lengthKm: 1,
+        highway: "footway",
+        surface: "asphalt",
+        scenic: true,
+        osmWayId: 2000 + i,
+        score: 4,
+      });
+    }
+
+    const graph: EnrichedGraph = {
+      nodes,
+      edges,
+      center: { lat: 48.8, lng: 2.3 },
+      radiusKm: 2,
+    };
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const nodeElevation = new Map(Array.from(nodes.keys()).map((id) => [id, 100]));
+
+    const nonPavedTrailPath: SolverPath = {
+      nodeIds: Array.from({ length: 11 }, (_, i) => `trail-${i}`),
+      edgeIds: Array.from({ length: 10 }, (_, i) => `trail-${i}-${i + 1}`),
+      distanceKm: 10,
+      totalScore: 20,
+    };
+    const scenicPavedPath: SolverPath = {
+      nodeIds: Array.from({ length: 11 }, (_, i) => `paved-${i}`),
+      edgeIds: Array.from({ length: 10 }, (_, i) => `paved-${i}-${i + 1}`),
+      distanceKm: 10,
+      totalScore: 400,
+    };
+
+    const candidates = await postProcess(
+      [scenicPavedPath, nonPavedTrailPath],
+      graph,
+      { lat: 48.8, lng: 2.3 },
+      trailProfile,
+      10,
+      0,
+      nodeElevation
+    );
+
+    expect(candidates[0].edgeDiagnostics?.map((edge) => edge.surface)).toEqual(
+      Array(10).fill("ground")
+    );
+    expect(candidates[0].quality?.longestNonPavedTrailStreakKm).toBe(10);
+    expect(candidates[0].quality?.pavedRatio).toBe(0);
+
+    const scenicPavedCandidate = candidates.find((candidate) =>
+      candidate.edgeDiagnostics?.every((edge) => edge.surface === "asphalt")
+    );
+    expect(scenicPavedCandidate?.quality?.scenicPavedRatio).toBe(1);
+  });
 });

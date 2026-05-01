@@ -391,28 +391,24 @@ function makeMappedWoodRoadVsOpenRoadGraph(): EnrichedGraph {
   });
   addEdge(graph, "forest-gate-forest-a", "forest-gate", "forest-a", {
     highway: "residential",
-    surface: "asphalt",
     scenic: true,
     score: 0.62,
     lengthKm: 0.6,
   });
   addEdge(graph, "forest-a-forest-b", "forest-a", "forest-b", {
     highway: "unclassified",
-    surface: "asphalt",
     scenic: true,
     score: 0.62,
     lengthKm: 0.6,
   });
   addEdge(graph, "forest-b-forest-c", "forest-b", "forest-c", {
     highway: "residential",
-    surface: "asphalt",
     scenic: true,
     score: 0.62,
     lengthKm: 0.6,
   });
   addEdge(graph, "forest-c-forest-exit", "forest-c", "forest-exit", {
     highway: "unclassified",
-    surface: "asphalt",
     scenic: true,
     score: 0.62,
     lengthKm: 0.6,
@@ -422,6 +418,70 @@ function makeMappedWoodRoadVsOpenRoadGraph(): EnrichedGraph {
     surface: "asphalt",
     score: 0.38,
     lengthKm: 5.2,
+  });
+
+  return graph;
+}
+
+function makeCleanReturnOverBudgetGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.500)],
+    ["turnaround", makeNode("turnaround", 49.142, -0.500)],
+    ["late-a", makeNode("late-a", 49.144, -0.497)],
+    ["late-b", makeNode("late-b", 49.141, -0.494)],
+    ["late-c", makeNode("late-c", 49.139, -0.497)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 2,
+  };
+
+  addEdge(graph, "start-turnaround-outbound", "start", "turnaround", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.9,
+    lengthKm: 2.7,
+    osmWayId: 101,
+  });
+  addEdge(graph, "turnaround-start-short-overlap", "turnaround", "start", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.95,
+    lengthKm: 1.0,
+    osmWayId: 101,
+  });
+
+  // At the first closure opportunity this clean return is over budget, but if
+  // the solver keeps exploring one more natural segment it can close cleanly.
+  addEdge(graph, "turnaround-late-a", "turnaround", "late-a", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.58,
+    lengthKm: 0.8,
+    osmWayId: 201,
+  });
+  addEdge(graph, "late-a-late-b", "late-a", "late-b", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.58,
+    lengthKm: 0.8,
+    osmWayId: 202,
+  });
+  addEdge(graph, "late-b-late-c", "late-b", "late-c", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.58,
+    lengthKm: 0.6,
+    osmWayId: 203,
+  });
+  addEdge(graph, "late-c-start", "late-c", "start", {
+    highway: "path",
+    surface: "dirt",
+    score: 0.58,
+    lengthKm: 0.5,
+    osmWayId: 204,
   });
 
   return graph;
@@ -525,6 +585,48 @@ describe("solve natural corridor preference", () => {
     expect(quality.warnings).not.toContain("TOO_MUCH_BACKTRACKING");
   });
 
+  it("continues past an early dirty fallback when a later clean closure is possible", async () => {
+    const graph = makeCleanReturnOverBudgetGraph();
+
+    const paths = await solve(graph, "start", 4.8, 0, new Map());
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-turnaround-outbound",
+      "turnaround-late-a",
+      "late-a-late-b",
+      "late-b-late-c",
+      "late-c-start",
+    ]);
+    expect(paths[0].edgeIds).not.toContain("turnaround-start-short-overlap");
+
+    const quality = assessRouteQuality({
+      candidate: {
+        points: [
+          { lat: 49.14, lng: -0.5 },
+          { lat: 49.14, lng: -0.5 },
+        ],
+        distanceKm: paths[0].distanceKm,
+        durationSeconds: 1200,
+        ascendM: 0,
+        descendM: 0,
+        surfaceScore: 0.8,
+        loopScore: 1,
+        totalScore: 0.8,
+        geometry: { type: "LineString", coordinates: [] },
+      },
+      path: paths[0],
+      graph,
+      profile: PROFILES_BY_ID.get("running_trail")!,
+      targetDistanceKm: 4.8,
+      targetElevationM: 0,
+    });
+
+    expect(quality.repeatEdgeRatio).toBeLessThan(0.04);
+    expect(quality.uTurnRatio).toBeLessThan(0.01);
+    expect(quality.warnings).not.toContain("TOO_MUCH_BACKTRACKING");
+  });
+
   it("ranks a continuous natural corridor above a higher raw-score isolated trail fragment", async () => {
     const graph = makeCorridorVsFragmentLoopGraph();
 
@@ -586,7 +688,7 @@ describe("solve natural corridor preference", () => {
     ]);
   });
 
-  it("treats roads through mapped woods as natural corridors when no dirt surface is tagged", async () => {
+  it("treats roads through mapped woods as natural corridors only when no paved surface is tagged", async () => {
     const graph = makeMappedWoodRoadVsOpenRoadGraph();
 
     const paths = await solve(graph, "start", 10, 0, new Map());

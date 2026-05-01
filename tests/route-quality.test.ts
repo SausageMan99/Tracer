@@ -229,6 +229,87 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
   });
 
+  it("treats scenic asphalt forest corridors as paved, not fake non-paved trail", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.859, lng: 2.355, edges: ["cd"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 1, highway: "footway", surface: "asphalt", scenic: true, osmWayId: 60, score: 0.95 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 1, highway: "footway", surface: "asphalt", scenic: true, osmWayId: 61, score: 0.95 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 1, highway: "footway", surface: "asphalt", scenic: true, osmWayId: 62, score: 0.95 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c", "d"],
+      edgeIds: ["ab", "bc", "cd"],
+      distanceKm: 3,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 3, ascendM: 60 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 3,
+      targetElevationM: 60,
+    });
+
+    expect(quality.pavedRatio).toBe(1);
+    expect(quality.scenicPavedRatio).toBe(1);
+    expect(quality.forestOrParkRatio).toBe(1);
+    expect(quality.trailRatio).toBe(0);
+    expect(quality.longestNonPavedTrailStreakKm).toBe(0);
+    expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
+    expect(quality.warnings).toContain("NOT_ENOUGH_TRAIL");
+    expect(quality.productionScore).toBeLessThan(0.75);
+  });
+
+  it("credits unknown-surface scenic rural corridors without treating explicit asphalt as trail", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 2, highway: "unclassified", scenic: true, osmWayId: 70, score: 0.75 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 1, highway: "unclassified", surface: "asphalt", scenic: true, osmWayId: 71, score: 0.45 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b", "c"],
+      edgeIds: ["ab", "bc"],
+      distanceKm: 3,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 3, ascendM: 60 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 3,
+      targetElevationM: 60,
+    });
+
+    expect(quality.pavedRatio).toBeCloseTo(1 / 3);
+    expect(quality.scenicPavedRatio).toBeCloseTo(1 / 3);
+    expect(quality.trailRatio).toBeCloseTo(2 / 3);
+    expect(quality.naturalCorridorRatio).toBeCloseTo(2 / 3);
+    expect(quality.longestTrailSegmentKm).toBe(2);
+  });
+
   it("surfaces medium terrain data warning when many path-like edges lack surface tags", () => {
     const graph: EnrichedGraph = {
       center: { lat: 48.8566, lng: 2.3522 },

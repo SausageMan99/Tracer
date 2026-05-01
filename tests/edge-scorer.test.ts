@@ -225,6 +225,27 @@ describe("scoreEdges trail running surface preferences", () => {
     expect(graph.edges.get("1-2-10")!.score).toBeGreaterThan(0.91);
   });
 
+  it("records an explicit paved-scenic penalty reason for trail running", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+    const graph = makeSingleEdgeGraph({
+      highway: "footway",
+      surface: "asphalt",
+      scenic: true,
+      osmWayId: 4,
+    });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(graph, weights, trailProfile, new Set());
+
+    const edge = graph.edges.get("1-2-10")!;
+    expect(edge.scoreReason).toMatch(/paved.*scenic.*penalty|scenic.*paved.*penalty/i);
+    expect(edge.score).toBeLessThan(0.75);
+  });
+
   it("normal running still prefers paved over unpaved (no regression)", async () => {
     const endurance = PROFILES_BY_ID.get("running_endurance")!;
     const weights = deriveWeights(endurance, false);

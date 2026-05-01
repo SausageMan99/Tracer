@@ -200,6 +200,19 @@ function isNaturalCorridorEdge(edge: { osmWayId: number; highway: string; surfac
   );
 }
 
+function isPavedScenicTrailEdge(
+  edge: { osmWayId: number; surface?: string; scenic?: boolean },
+  profile: SessionProfile,
+  scenicWayIds: Set<string>
+): boolean {
+  return (
+    isTrailRunning(profile) &&
+    edge.surface != null &&
+    PAVED_SURFACES.has(edge.surface) &&
+    (edge.scenic === true || scenicWayIds.has(String(edge.osmWayId)))
+  );
+}
+
 function computeNaturalContinuityBoost(
   edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean },
   graph: EnrichedGraph,
@@ -219,7 +232,14 @@ function computeNaturalContinuityBoost(
   return Math.min(0.15, naturalSuccessorCount * 0.08);
 }
 
-function scoreNature(edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean }, graph: EnrichedGraph, scenicWayIds: Set<string>): number {
+function scoreNature(
+  edge: { from: string; to: string; osmWayId: number; highway: string; surface?: string; scenic?: boolean },
+  graph: EnrichedGraph,
+  scenicWayIds: Set<string>,
+  profile: SessionProfile
+): number {
+  if (isPavedScenicTrailEdge(edge, profile, scenicWayIds)) return 0.45;
+
   let baseScore = 0.25;
   if (edge.scenic === true) baseScore = 1.0;
   else if (scenicWayIds.has(String(edge.osmWayId))) baseScore = 1.0;
@@ -291,7 +311,7 @@ export async function scoreEdges(
     const surfaceScore = scoreSurface(edge, profile.sport, profile);
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
-    const natureScore = scoreNature(edge, graph, scenicWayIds);
+    const natureScore = scoreNature(edge, graph, scenicWayIds, profile);
 
     // Elevation score: based on gradient
     const fromElev = nodeElevation.get(edge.from) ?? 0;
@@ -316,17 +336,22 @@ export async function scoreEdges(
       else elevScore = Math.max(0.3, 1 - (gradient - 0.05) * 5);
     }
 
+    const scoreReasons = [
+      `surface=${surfaceScore.toFixed(2)}`,
+      `elevation=${elevScore.toFixed(2)}`,
+      `nature=${natureScore.toFixed(2)}`,
+      `quietness=${quietnessScore.toFixed(2)}`,
+    ];
+    if (isPavedScenicTrailEdge(edge, profile, scenicWayIds)) {
+      scoreReasons.push("paved scenic penalty");
+    }
+
     edge.score =
       weights.surface * surfaceScore +
       weights.elevation * elevScore +
       weights.nature * natureScore +
       weights.quietness * quietnessScore;
-    edge.scoreReason = [
-      `surface=${surfaceScore.toFixed(2)}`,
-      `elevation=${elevScore.toFixed(2)}`,
-      `nature=${natureScore.toFixed(2)}`,
-      `quietness=${quietnessScore.toFixed(2)}`,
-    ].join(";");
+    edge.scoreReason = scoreReasons.join(";");
   }
 
   return { nodeElevation };
