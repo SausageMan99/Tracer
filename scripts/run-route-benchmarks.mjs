@@ -8,6 +8,7 @@ import {
 } from "../lib/route-benchmarks-core.mjs";
 import {
   routeToEdgeDiagnosticsArtifact,
+  routeToEdgesGeoJson,
   routeToGeoJson,
 } from "../lib/route-benchmark-artifacts.mjs";
 
@@ -39,7 +40,7 @@ Options:
   --list                       Print benchmark ids and exit.
   --output <path>              Override JSON report path.
   --artifact-dir <path>        Override per-route artifact directory.
-  --save-artifacts             Save route JSON, best-route GeoJSON, and candidate edge-diagnostics JSON artifacts.
+  --save-artifacts             Save route JSON, best-route GeoJSON, candidate edge-diagnostics JSON, and edge-level GeoJSON artifacts.
   --no-output                  Do not write the aggregate JSON report.
   --help                       Show this help.
 
@@ -118,6 +119,13 @@ async function saveRouteArtifacts(benchmark, payload) {
     const edgeDiagnosticsArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.edges.json`);
     await writeFile(edgeDiagnosticsArtifactPath, `${JSON.stringify(edgeDiagnostics, null, 2)}\n`, "utf8");
     artifacts.edgeDiagnosticsJson = edgeDiagnosticsArtifactPath.replace(`${repoRoot}/`, "");
+  }
+
+  const edgeGeoJson = routeToEdgesGeoJson(benchmark, payload.route);
+  if (edgeGeoJson) {
+    const edgeGeoJsonArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.edges.geojson`);
+    await writeFile(edgeGeoJsonArtifactPath, `${JSON.stringify(edgeGeoJson, null, 2)}\n`, "utf8");
+    artifacts.edgeDiagnosticsGeoJson = edgeGeoJsonArtifactPath.replace(`${repoRoot}/`, "");
   }
 
   return artifacts;

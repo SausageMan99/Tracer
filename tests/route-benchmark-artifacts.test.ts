@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   routeToEdgeDiagnosticsArtifact,
+  routeToEdgesGeoJson,
   routeToGeoJson,
   summarizeEdgeDiagnostics,
 } from "../lib/route-benchmark-artifacts.mjs";
@@ -112,6 +113,29 @@ describe("route benchmark edge artifacts", () => {
     expect(summary.busyKm).toBe(0);
     expect(summary.repeatedTraversalKm).toBe(0.8);
     expect(summary.repeatedExtraKm).toBe(0.4);
+    expect(summary.worstSegments.paved).toEqual([
+      expect.objectContaining({
+        edgeId: "edge-b",
+        highway: "residential",
+        surface: "asphalt",
+        lengthKm: 0.25,
+        reason: "paved",
+      }),
+    ]);
+    expect(summary.worstSegments.repeated).toEqual([
+      expect.objectContaining({
+        edgeId: "edge-a",
+        lengthKm: 0.4,
+        repeatCount: 2,
+        reason: "repeated",
+      }),
+      expect.objectContaining({
+        edgeId: "edge-a-reverse",
+        lengthKm: 0.4,
+        repeatCount: 2,
+        reason: "repeated",
+      }),
+    ]);
     expect(summary.diagnosticsAvailable).toBe(true);
     expect(summary.missingFields).toEqual([]);
     expect(summary.availableFields).toEqual(expect.arrayContaining([
@@ -230,7 +254,79 @@ describe("route benchmark edge artifacts", () => {
     expect(artifact?.candidates[0].rawFlagSummary.rawTrailRatio).toBeCloseTo(0.4 / 0.65);
     expect(artifact?.candidates[0].rawFlagSummary.rawPavedRatio).toBeCloseTo(0.25 / 0.65);
     expect(artifact?.candidates[0].edgeSummary.edgeCount).toBe(2);
+    expect(artifact?.candidates[0].worstSegments).toMatchObject({
+      paved: [{ edgeId: "edge-b", lengthKm: 0.25, reason: "paved" }],
+      repeated: [{ edgeId: "edge-a", lengthKm: 0.4, reason: "repeated" }],
+    });
     expect(artifact?.candidates[0].edges).toEqual([edgeA, edgeB]);
+  });
+
+  it("exports edge-level GeoJSON for map inspection without changing raw edge flags", () => {
+    const geoJson = routeToEdgesGeoJson(benchmark, {
+      candidates: [{
+        distanceKm: 9.87,
+        edgeDiagnostics: [edgeA, edgeB],
+      }],
+    });
+
+    expect(geoJson).toEqual({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: expect.objectContaining({
+            benchmarkId: benchmark.id,
+            candidateIndex: 0,
+            isBest: true,
+            edgeIndex: 0,
+            edgeId: "edge-a",
+            osmWayId: 101,
+            highway: "path",
+            surface: "dirt",
+            lengthKm: 0.4,
+            paved: false,
+            trail: true,
+            repeated: true,
+            repeatCount: 2,
+          }),
+          geometry: {
+            type: "LineString",
+            coordinates: [[-0.47, 49.12], [-0.471, 49.121]],
+          },
+        },
+        {
+          type: "Feature",
+          properties: expect.objectContaining({
+            candidateIndex: 0,
+            edgeIndex: 1,
+            edgeId: "edge-b",
+            surface: "asphalt",
+            paved: true,
+            trail: false,
+            repeated: false,
+          }),
+          geometry: {
+            type: "LineString",
+            coordinates: [[-0.471, 49.121], [-0.472, 49.122]],
+          },
+        },
+      ],
+    });
+  });
+
+  it("filters invalid edge-level GeoJSON coordinates instead of emitting broken features", () => {
+    expect(routeToEdgesGeoJson(benchmark, { candidates: [] })).toBeNull();
+    expect(routeToEdgesGeoJson(benchmark, { candidates: [{ edgeDiagnostics: [] }] })).toBeNull();
+
+    const invalidEdge = {
+      ...edgeA,
+      edgeId: "edge-invalid",
+      from: { lat: Number.NaN, lng: -0.47 },
+    };
+
+    expect(routeToEdgesGeoJson(benchmark, {
+      candidates: [{ edgeDiagnostics: [invalidEdge] }],
+    })).toBeNull();
   });
 
   it("keeps raw edge flags separate from product surface quality ratios", () => {

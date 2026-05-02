@@ -48,15 +48,16 @@ artifacts/route-benchmark-results/latest.json
 
 Ce dossier est ignoré par git via `/artifacts/`. Utilise `--no-output` pour ne rien écrire, ou `--output <path>` pour choisir un fichier.
 
-Avec `--save-artifacts`, le runner sauvegarde aussi le payload `route` complet de chaque succès, un GeoJSON exploitable pour inspection carto, et un artifact diagnostic edge-level par candidat :
+Avec `--save-artifacts`, le runner sauvegarde aussi le payload `route` complet de chaque succès, un GeoJSON exploitable pour inspection carto, un GeoJSON edge-level, et un artifact diagnostic edge-level par candidat :
 
 ```text
 artifacts/route-benchmark-results/routes/<benchmark-id>.json
 artifacts/route-benchmark-results/routes/<benchmark-id>.geojson
 artifacts/route-benchmark-results/routes/<benchmark-id>.edges.json
+artifacts/route-benchmark-results/routes/<benchmark-id>.edges.geojson
 ```
 
-Le `.json` conserve tous les candidats et métriques moteur. Le `.geojson` contient la meilleure route sous forme de `FeatureCollection` LineString avec les métriques clés en propriétés (`distanceKm`, `ascendM`, `productionScore`, `repeatEdgeRatio`, `uTurnRatio`, ratios route/nature). Le `.edges.json` contient les métadonnées du benchmark, le résumé `routeIntent`, puis `candidates[]` avec `summary`/`edgeSummary` et les segments bruts (`edgeId`, `osmWayId`, `highway`, `surface`, `lengthKm`, `score`, flags trail/natural/paved/busy/scenic/restricted/oneway, `repeatCount`). Cet artifact est observation-only : il n'abaisse aucun seuil et ne change pas le résultat pass/fail du benchmark. Le runner ne masque pas les erreurs réseau/API : les échecs HTTP, Overpass, 429/504 ou serveur local absent sortent dans le rapport avec `errorCode`, `status` et `durationMs`.
+Le `.json` conserve tous les candidats et métriques moteur. Le `.geojson` contient la meilleure route sous forme de `FeatureCollection` LineString avec les métriques clés en propriétés (`distanceKm`, `ascendM`, `productionScore`, `repeatEdgeRatio`, `uTurnRatio`, ratios route/nature). Le `.edges.json` contient les métadonnées du benchmark, le résumé `routeIntent`, puis `candidates[]` avec `summary`/`edgeSummary`, `worstSegments.paved`, `worstSegments.repeated` et les segments bruts (`edgeId`, `osmWayId`, `highway`, `surface`, `lengthKm`, `score`, flags trail/natural/paved/busy/scenic/restricted/oneway, `repeatCount`). Le `.edges.geojson` est référencé dans le rapport sous `routeArtifacts.edgeDiagnosticsGeoJson` et expose chaque segment comme LineString avec les flags bruts en propriétés pour inspection carto. Ces artifacts sont observation-only : ils n'abaissent aucun seuil et ne changent pas le résultat pass/fail du benchmark. Le runner ne masque pas les erreurs réseau/API : les échecs HTTP, Overpass, 429/504 ou serveur local absent sortent dans le rapport avec `errorCode`, `status` et `durationMs`.
 
 ## Interprétation
 
