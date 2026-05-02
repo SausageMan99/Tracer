@@ -1,0 +1,52 @@
+import { describe, expect, it } from "vitest";
+import { buildSegmentCollection } from "@/lib/map-route-geojson";
+import type { RouteCandidate } from "@/lib/types";
+
+function candidateWithDifferentDisplayGeometry(): RouteCandidate {
+  return {
+    points: [
+      { lat: 49.18, lng: -0.62, elevation: 10 },
+      { lat: 49.19, lng: -0.61, elevation: 20 },
+      { lat: 49.2, lng: -0.6, elevation: 15 },
+    ],
+    distanceKm: 3,
+    durationSeconds: 1200,
+    ascendM: 10,
+    descendM: 5,
+    surfaceScore: 0.8,
+    loopScore: 0.9,
+    totalScore: 0.85,
+    geometry: {
+      type: "LineString",
+      coordinates: [
+        [-0.62, 49.18],
+        [-0.621, 49.181],
+        [-0.615, 49.186],
+        [-0.61, 49.19],
+        [-0.605, 49.195],
+        [-0.6, 49.2],
+      ],
+    },
+  };
+}
+
+describe("buildSegmentCollection", () => {
+  it("draws slope-coloured segments on the same geometry as the map base route", () => {
+    const candidate = candidateWithDifferentDisplayGeometry();
+
+    const collection = buildSegmentCollection(candidate);
+
+    expect(collection.features).toHaveLength(candidate.geometry.coordinates.length - 1);
+    expect(collection.features[0].geometry).toEqual({
+      type: "LineString",
+      coordinates: [candidate.geometry.coordinates[0], candidate.geometry.coordinates[1]],
+    });
+    expect(collection.features.at(-1)?.geometry).toEqual({
+      type: "LineString",
+      coordinates: [
+        candidate.geometry.coordinates.at(-2),
+        candidate.geometry.coordinates.at(-1),
+      ],
+    });
+  });
+});

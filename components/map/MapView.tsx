@@ -4,16 +4,12 @@ import { useEffect, useRef, type RefObject } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppStore } from "@/lib/store";
-import type { GeneratedRoute, RouteCandidate } from "@/lib/types";
+import { buildSegmentCollection, EMPTY_COLLECTION } from "@/lib/map-route-geojson";
+import type { GeneratedRoute } from "@/lib/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const EMPTY_COLLECTION: GeoJSON.FeatureCollection = {
-  type: "FeatureCollection",
-  features: [],
-};
 
 const EMPTY_LINESTRING: GeoJSON.Feature = {
   type: "Feature",
@@ -54,55 +50,6 @@ const SLOPE_COLOR_EXPR = [
   10,  "#ef4444",
   14,  "#7f1d1d",
 ] as unknown as mapboxgl.Expression;
-
-// ── Haversine (meters) ────────────────────────────────────────────────────────
-
-function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6_371_000;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const dφ = ((lat2 - lat1) * Math.PI) / 180;
-  const dλ = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-// ── Build slope-coloured segment FeatureCollection ───────────────────────────
-
-function buildSegmentCollection(candidate: RouteCandidate): GeoJSON.FeatureCollection {
-  const pts = candidate.points;
-  if (pts.length < 2) return EMPTY_COLLECTION;
-
-  const rawSlopes: number[] = pts.slice(0, -1).map((a, i) => {
-    const b = pts[i + 1];
-    const distM = haversineM(a.lat, a.lng, b.lat, b.lng);
-    const elevDiff = (b.elevation ?? 0) - (a.elevation ?? 0);
-    return distM > 0.5 ? (elevDiff / distM) * 100 : 0;
-  });
-
-  const slopes = rawSlopes.map((_, i) => {
-    const lo = Math.max(0, i - 1);
-    const hi = Math.min(rawSlopes.length - 1, i + 1);
-    const slice = rawSlopes.slice(lo, hi + 1);
-    return slice.reduce((s, v) => s + v, 0) / slice.length;
-  });
-
-  const features: GeoJSON.Feature[] = pts.slice(0, -1).map((a, i) => {
-    const b = pts[i + 1];
-    return {
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: [[a.lng, a.lat], [b.lng, b.lat]],
-      },
-      properties: { slope: Math.max(-20, Math.min(20, slopes[i])) },
-    };
-  });
-
-  return { type: "FeatureCollection", features };
-}
 
 // ── Create an arrow image via canvas ─────────────────────────────────────────
 
