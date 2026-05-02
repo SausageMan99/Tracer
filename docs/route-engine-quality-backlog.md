@@ -110,6 +110,38 @@ Les tests Vitest garantissent la structure des cas et le calcul des seuils. Ils 
 
 4. Documenter les limites connues par région : dense city Overpass, zones boisées avec surfaces OSM incomplètes, départs résidentiels avec peu de chemins directs.
 
+## Hardening P0 — rattrapage 2 du 2026-05-02
+
+Revue autonome effectuée sur la branche `feat/p1-2-quality-ratio-interpretation`, commit courant `159a9bc`. Le repo est propre et aligné avec son remote de branche, mais il n'est pas encore mergé dans `main` : `main` pointe sur `037d5dc`, avant les commits P1 `quality ratios`, `contextual intent`, `benchmark timeout` et `generation diagnostics`.
+
+Verdict technique P0 : **partiel**. Les fondations sont traçables et les validations globales passent, mais la release moteur n'est pas prête tant que le panel live garde des rouges objectifs sur géométrie/overlap et budget temps. Ne pas masquer ces rouges par un seuil plus laxiste.
+
+Traceabilité des 10 items P0 vérifiés :
+
+| Item P0 | Preuve code/docs/tests/artifacts | Statut |
+| --- | --- | --- |
+| 1. Repo propre et validations | `git status --short --branch`, `npm run lint`, `npm run test:run`, `npm run build` | Vert technique |
+| 2. Architecture V2.5 cadrée | `docs/route-engine-v2-5-architecture.md` | Vert |
+| 3. Benchmark panel centralisé | `lib/route-benchmarks-data.json`, `tests/route-benchmarks.test.ts` | Vert |
+| 4. Runner borné en temps | `scripts/run-route-benchmarks.mjs`, `ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS`, `BENCHMARK_TIMEOUT` | Vert technique |
+| 5. Artifacts exploitables | `.json`, `.geojson`, `.edges.json` sous `artifacts/route-benchmark-results/` + `tests/route-benchmark-artifacts.test.ts` | Vert |
+| 6. Fontainebleau corrigé | ancre `Château de Fontainebleau, Fontainebleau`, `docs/fontainebleau-benchmark-diagnosis.md`, artifact `v25-readiness-20260501T221748Z/fontainebleau-15k.json` PASS | Vert |
+| 7. Clean return / anti-overlap | `lib/engine/orienteering-solver.ts`, `lib/engine/pathfinder.ts`, `tests/pathfinder.test.ts`, `tests/orienteering-solver.test.ts` | Vert unitaire, rouge partiel live |
+| 8. Natural dwell / corridor | `lib/engine/route-quality.ts`, `lib/engine/terrain-audit.ts`, `tests/route-quality.test.ts`, `tests/terrain-audit.test.ts` | Vert technique |
+| 9. Ratios qualité séparés | `naturalWayRatio`, `trailRatio`, `pavedRatio`, route explanations, benchmark summaries | Vert technique |
+| 10. Diagnostics génération/API | `includeGenerationDiagnostics`, `stageTimings`, stripping public par défaut dans `app/api/generate-route/route.ts` et tests API | Vert technique |
+
+Derniers artifacts lus pendant ce rattrapage :
+
+| Artifact | Résultat | Lecture |
+| --- | --- | --- |
+| `v25-readiness-20260501T221748Z/tourville-8k.json` | PASS, 7.62 km, score 0.808, paved 35.0 %, repeat 3.8 %, durée 44.1 s | Bon signal ciblé Tourville 8k. |
+| `v25-readiness-20260501T221748Z/fontainebleau-15k.json` | PASS, 16.01 km, score 0.863, paved 15.3 %, repeat 0 %, durée 80.0 s | Fontainebleau corrigé, mais proche du budget temps. |
+| `v25-readiness-20260501T220810Z/readiness-smoke.json` | FAIL panel smoke | Tourville reste rouge sur self-intersections/intent weak match ; Caen, Meudon et Fontainebleau y timeoutent avec le budget strict. |
+| `p0-foundations-2026-05-01T2200/*` | Mix PASS/FAIL | Tourville 8/10 et Fontainebleau PASS ; Tourville 5/12 FAIL repeat/backtracking ; Meudon FAIL durée ; Caen Colline FAIL paved/durée ; Caen Prairie sans artifact à cause timeout. |
+
+Décision : les tests introduits prouvent bien les comportements isolés attendus, surtout stripping diagnostics, artifacts edge-level, clean-return solver synthétique, ratios et geometry metrics. Ils ne prouvent pas encore que le moteur est prêt produit, car les benchmarks live révèlent encore des échecs terrain réels. La prochaine correction utile n'est pas un nouveau seuil : c'est un ciblage solver/ranking sur self-intersections + budget temps par stratégie, en gardant les artifacts comme juge.
+
 ## Commandes de revue utiles
 
 ```bash
