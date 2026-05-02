@@ -13,15 +13,19 @@ function getArgValue(name) {
 }
 
 if (args.includes("--help") || args.includes("-h")) {
-  console.log(`Usage: npm run benchmark:routes:compare -- --before before.json --after after.json [--output delta.json]
+  console.log(`Usage: npm run benchmark:routes:compare -- --before before.json --after after.json [--output delta.json] [--strict] [--tolerance 0.001]
 
-Compares two TrailForge route benchmark aggregate JSON reports and exits 1 on regression.`);
+Compares two TrailForge route benchmark aggregate JSON reports and exits 1 on pass/failure regressions.
+With --strict, metric-only regressions in tracked numeric metrics also exit 1.`);
   process.exit(0);
 }
 
 const beforePath = getArgValue("--before");
 const afterPath = getArgValue("--after");
 const outputPath = getArgValue("--output");
+const strict = args.includes("--strict");
+const toleranceValue = Number(getArgValue("--tolerance") ?? 0.001);
+const tolerance = Number.isFinite(toleranceValue) && toleranceValue >= 0 ? toleranceValue : 0.001;
 
 if (!beforePath || !afterPath) {
   console.error("Missing --before or --after");
@@ -132,9 +136,13 @@ const results = ids.map((id) => {
   }
 
   const change = statusChange(before, after);
-  const regressionMetrics = Object.values(metricDelta).filter((metric) => metric.regressed && Math.abs(metric.delta) > 0.001).length;
-  const improvementMetrics = Object.values(metricDelta).filter((metric) => metric.improved && Math.abs(metric.delta) > 0.001).length;
-  const verdict = change === "pass_to_fail" || failureDelta.added.length > 0
+  const strictRegressionMetrics = Object.entries(metricDelta)
+    .filter(([, metric]) => metric.regressed && Math.abs(metric.delta) > tolerance)
+    .map(([key]) => key)
+    .sort();
+  const regressionMetrics = Object.values(metricDelta).filter((metric) => metric.regressed && Math.abs(metric.delta) > tolerance).length;
+  const improvementMetrics = Object.values(metricDelta).filter((metric) => metric.improved && Math.abs(metric.delta) > tolerance).length;
+  const verdict = change === "pass_to_fail" || failureDelta.added.length > 0 || (strict && strictRegressionMetrics.length > 0)
     ? "regressed"
     : change === "fail_to_pass" || failureDelta.removed.length > 0 || improvementMetrics > regressionMetrics
       ? "improved"
@@ -147,6 +155,7 @@ const results = ids.map((id) => {
     afterPassed: after?.passed ?? null,
     failureDelta,
     metricDelta,
+    strictRegressionMetrics,
     verdict,
   };
 });
@@ -165,6 +174,8 @@ const report = {
   generatedAt: new Date().toISOString(),
   before: beforePath,
   after: afterPath,
+  strict,
+  tolerance,
   summary,
   results,
 };

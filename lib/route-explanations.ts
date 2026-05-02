@@ -42,7 +42,7 @@ export function buildRouteExplanation(
   );
   const busyRoadRatio = qualityNumber(quality?.busyRoadRatio, 0);
   const trailRatio = qualityNumber(quality?.trailRatio, 0);
-  const naturalWayRatio = qualityNumber(quality?.naturalWayRatio, trailRatio);
+  const naturalWayRatio = qualityNumber(quality?.naturalWayRatio, 0);
   const pavedRatio = qualityNumber(quality?.pavedRatio, 0);
   const scenicPavedRatio = qualityNumber(quality?.scenicPavedRatio, 0);
   const loopGapKm = qualityNumber(quality?.loopGapKm, Math.max(0, 1 - best.loopScore) * 5);

@@ -41,6 +41,21 @@ describe("route production benchmarks", () => {
     }
   });
 
+  it("classifies every benchmark with tags and a product tier", () => {
+    for (const benchmark of BENCHMARK_CASES) {
+      expect(["p0", "p1", "p2", "exploratory"]).toContain(benchmark.tier);
+      expect(benchmark.tags).toEqual(expect.arrayContaining([expect.any(String)]));
+    }
+
+    const tourville = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-10k")!;
+    expect(tourville.tier).toBe("p0");
+    expect(tourville.tags).toEqual(expect.arrayContaining(["tourville", "trail", "field-feedback"]));
+
+    const fontainebleau = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    expect(fontainebleau.tier).toBe("p1");
+    expect(fontainebleau.tags).toEqual(expect.arrayContaining(["fontainebleau", "trail", "forest"]));
+  });
+
   it("keeps every benchmark threshold actionable", () => {
     for (const benchmark of BENCHMARK_CASES) {
       expect(benchmark.thresholds.distanceToleranceRatio).toBeGreaterThan(0);
@@ -140,6 +155,7 @@ describe("route production benchmarks", () => {
         loopGapKm: 0.18,
         busyRoadRatio: 0.04,
         trailRatio: 0.38,
+        naturalWayRatio: 0.38,
         repeatEdgeRatio: 0.01,
         uTurnRatio: 0,
         terrainDataConfidence: "high",
@@ -214,6 +230,34 @@ describe("route production benchmarks", () => {
     expect(summary.metrics.pavedRatio).toBe(0.65);
     expect(summary.failures).toContain("paved_ratio");
     expect(summary.failures).not.toContain("natural_way_ratio");
+  });
+
+  it("does not fall back from naturalWayRatio to trailRatio", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 15,
+      ascendM: 200,
+      quality: {
+        productionScore: 0.9,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.01,
+        trailRatio: 0.8,
+        pavedRatio: 0.1,
+        trailBeautyScore: 0.8,
+        longestTrailSegmentKm: 5,
+        naturalCorridorRatio: 0.7,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+      },
+      durationMs: 1000,
+    });
+
+    expect(summary.metrics.trailRatio).toBe(0.8);
+    expect(summary.metrics.naturalWayRatio).toBe(0);
+    expect(summary.failures).toContain("natural_way_ratio");
   });
 
   it("fails the Tourville trail benchmarks on U-turns and overlapping edges", () => {

@@ -7,6 +7,13 @@
     "targetDistanceKm": 5,
     "targetElevationM": 80,
     "scenicMode": true,
+    "tier": "p0",
+    "tags": [
+      "tourville",
+      "trail",
+      "field-feedback",
+      "short-loop"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.12,
       "elevationToleranceM": 90,
@@ -39,6 +46,13 @@
     "targetDistanceKm": 8,
     "targetElevationM": 120,
     "scenicMode": true,
+    "tier": "p0",
+    "tags": [
+      "tourville",
+      "trail",
+      "field-feedback",
+      "jean-bosco"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 100,
@@ -71,6 +85,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 140,
     "scenicMode": true,
+    "tier": "p0",
+    "tags": [
+      "tourville",
+      "trail",
+      "field-feedback",
+      "baron"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 110,
@@ -103,6 +124,14 @@
     "targetDistanceKm": 12,
     "targetElevationM": 150,
     "scenicMode": true,
+    "tier": "p0",
+    "tags": [
+      "tourville",
+      "trail",
+      "field-feedback",
+      "jean-bosco",
+      "baron"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 120,
@@ -135,6 +164,13 @@
     "targetDistanceKm": 8,
     "targetElevationM": 60,
     "scenicMode": true,
+    "tier": "p1",
+    "tags": [
+      "caen",
+      "urban-nature",
+      "mixed",
+      "orne"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 80,
@@ -164,6 +200,13 @@
     "targetDistanceKm": 6,
     "targetElevationM": 50,
     "scenicMode": true,
+    "tier": "p1",
+    "tags": [
+      "caen",
+      "recovery",
+      "park",
+      "geometry"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.12,
       "elevationToleranceM": 60,
@@ -200,6 +243,13 @@
     "targetDistanceKm": 12,
     "targetElevationM": 350,
     "scenicMode": true,
+    "tier": "p1",
+    "tags": [
+      "clecy",
+      "trail",
+      "hilly",
+      "suisse-normande"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.12,
       "elevationToleranceM": 160,
@@ -232,6 +282,12 @@
     "targetDistanceKm": 15,
     "targetElevationM": 200,
     "scenicMode": true,
+    "tier": "p1",
+    "tags": [
+      "fontainebleau",
+      "trail",
+      "forest"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 120,
@@ -264,6 +320,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 220,
     "scenicMode": true,
+    "tier": "p1",
+    "tags": [
+      "meudon",
+      "trail",
+      "forest",
+      "periurban"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 120,
@@ -296,6 +359,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 80,
     "scenicMode": true,
+    "tier": "p2",
+    "tags": [
+      "lille",
+      "urban-nature",
+      "citadel",
+      "distance-regression"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.08,
       "elevationToleranceM": 90,
@@ -324,6 +394,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 100,
     "scenicMode": true,
+    "tier": "p2",
+    "tags": [
+      "paris",
+      "urban-nature",
+      "canal",
+      "dense"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.08,
       "elevationToleranceM": 100,
@@ -352,6 +429,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 80,
     "scenicMode": true,
+    "tier": "p2",
+    "tags": [
+      "nanterre",
+      "urban",
+      "avoid-highways",
+      "safety"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 100,
@@ -380,6 +464,13 @@
     "targetDistanceKm": 8,
     "targetElevationM": 140,
     "scenicMode": true,
+    "tier": "exploratory",
+    "tags": [
+      "osm-poor-data",
+      "rural",
+      "trail",
+      "honest-warning"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.14,
       "elevationToleranceM": 140,
@@ -416,6 +507,13 @@
     "targetDistanceKm": 5,
     "targetElevationM": 80,
     "scenicMode": true,
+    "tier": "exploratory",
+    "tags": [
+      "paris",
+      "park",
+      "constrained",
+      "geometry"
+    ],
     "thresholds": {
       "distanceToleranceRatio": 0.15,
       "elevationToleranceM": 90,
