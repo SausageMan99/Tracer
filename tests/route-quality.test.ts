@@ -390,4 +390,71 @@ describe("assessRouteQuality", () => {
     expect(quality.productionScore).toBeLessThan(0.6);
     expect(quality.warnings).toContain("TRAIL_TOO_ROAD_HEAVY");
   });
+
+
+  it("reports whether a planned target component was actually visited", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc"] }],
+        ["x", { id: "x", lat: 48.859, lng: 2.355, edges: [] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 0.6, highway: "path", surface: "dirt", osmWayId: 80, score: 0.9 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 0.7, highway: "track", surface: "ground", osmWayId: 81, score: 0.9 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const routeIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 2,
+      targetElevationM: 0,
+      targetComponents: ["tc-woods"],
+      minNaturalZoneDwellKm: 1,
+      minNonPavedTrailStreakKm: 1,
+      maxPavedRatio: 0.45,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 24, maxIterations: 900, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [{
+        id: "tc-woods",
+        kind: "forest",
+        center: { lat: 48.857, lng: 2.353 },
+        totalKm: 1.3,
+        nonPavedKm: 1.3,
+        pavedKm: 0,
+        unknownSurfaceKm: 0,
+        distanceFromStartKm: 0.1,
+        entryNodeIds: ["a"],
+        exitNodeIds: ["c"],
+        nodeIds: ["a", "b", "c"],
+        confidence: "high",
+      }],
+    } as const;
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 1.3, ascendM: 0 }),
+      path: { nodeIds: ["a", "b", "c"], edgeIds: ["ab", "bc"], distanceKm: 1.3, totalScore: 1 },
+      graph,
+      profile,
+      targetDistanceKm: 1.3,
+      targetElevationM: 0,
+      routeIntent,
+    });
+
+    expect(quality.targetComponentDwellKm).toBeCloseTo(1.3);
+    expect(quality.visitedTargetComponents).toContain("tc-woods");
+    expect(quality.missedTargetComponents).toEqual([]);
+    expect(quality.routeIntentFailures).not.toContain("target_component_visit");
+  });
+
 });

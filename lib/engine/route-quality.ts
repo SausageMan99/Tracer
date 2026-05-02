@@ -34,6 +34,9 @@ export interface RouteQualityMetrics {
   scenicPavedRatio?: number;
   routeIntentMatchScore?: number;
   routeIntentFailures?: string[];
+  targetComponentDwellKm?: number;
+  visitedTargetComponents?: string[];
+  missedTargetComponents?: string[];
   relaxationsUsed?: string[];
   trailBeautyScore?: number;
   terrainDataConfidence?: "low" | "medium" | "high";
@@ -253,6 +256,44 @@ function computeTrailBeautyScore(args: {
   );
 }
 
+function computeTargetComponentStats(edges: EnrichedEdge[], routeIntent: RouteIntent | undefined, scenicWayIds: Set<string>, profile: SessionProfile): {
+  targetComponentDwellKm: number;
+  visitedTargetComponents: string[];
+  missedTargetComponents: string[];
+} {
+  if (!routeIntent || routeIntent.targetComponents.length === 0) {
+    return { targetComponentDwellKm: 0, visitedTargetComponents: [], missedTargetComponents: [] };
+  }
+
+  const targets = routeIntent.terrainComponents.filter((component) => routeIntent.targetComponents.includes(component.id));
+  const dwellByComponent = new Map<string, number>();
+  for (const component of targets) dwellByComponent.set(component.id, 0);
+
+  for (const edge of edges) {
+    if (!isTrailLikeEdge(edge, scenicWayIds, profile)) continue;
+    for (const component of targets) {
+      const nodeIds = new Set(component.nodeIds);
+      if (nodeIds.has(edge.from) && nodeIds.has(edge.to)) {
+        dwellByComponent.set(component.id, (dwellByComponent.get(component.id) ?? 0) + edge.lengthKm);
+        break;
+      }
+    }
+  }
+
+  const visitedTargetComponents = Array.from(dwellByComponent.entries())
+    .filter(([, dwellKm]) => dwellKm > 0.05)
+    .map(([componentId]) => componentId);
+  const missedTargetComponents = targets
+    .filter((component) => !visitedTargetComponents.includes(component.id))
+    .map((component) => component.id);
+
+  return {
+    targetComponentDwellKm: Array.from(dwellByComponent.values()).reduce((sum, dwellKm) => sum + dwellKm, 0),
+    visitedTargetComponents,
+    missedTargetComponents,
+  };
+}
+
 function computeRouteIntentMatch(args: {
   intent?: RouteIntent;
   naturalZoneDwellKm: number;
@@ -262,6 +303,7 @@ function computeRouteIntentMatch(args: {
   repeatEdgeRatio: number;
   geometryOverlapRatio: number;
   loopAreaKm2: number;
+  targetComponentDwellKm: number;
 }): { score: number; failures: string[]; relaxationsUsed: string[] } {
   const { intent } = args;
   if (!intent) return { score: 1, failures: [], relaxationsUsed: [] };
@@ -272,6 +314,14 @@ function computeRouteIntentMatch(args: {
       key: "natural_dwell",
       passed: args.naturalZoneDwellKm >= intent.minNaturalZoneDwellKm,
       relaxed: args.naturalZoneDwellKm >= intent.minNaturalZoneDwellKm * 0.75,
+    });
+  }
+  if (intent.targetComponents.length > 0) {
+    const minTargetDwellKm = Math.min(1, Math.max(0.35, (intent.minNaturalZoneDwellKm ?? 1.5) * 0.35));
+    checks.push({
+      key: "target_component_visit",
+      passed: args.targetComponentDwellKm >= minTargetDwellKm,
+      relaxed: args.targetComponentDwellKm >= minTargetDwellKm * 0.5,
     });
   }
   if (intent.minNonPavedTrailStreakKm != null) {
@@ -352,6 +402,7 @@ export function assessRouteQuality(args: {
     totalKm,
     profile
   );
+  const targetComponentStats = computeTargetComponentStats(edges, routeIntent, scenicWayIds, profile);
   const trailBeautyScore = computeTrailBeautyScore({
     trailRatio,
     pavedRatio,
@@ -378,6 +429,7 @@ export function assessRouteQuality(args: {
     repeatEdgeRatio,
     geometryOverlapRatio: geometry.geometryOverlapRatio,
     loopAreaKm2: geometry.loopAreaKm2,
+    targetComponentDwellKm: targetComponentStats.targetComponentDwellKm,
   });
 
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
@@ -502,6 +554,9 @@ if (
     scenicPavedRatio,
     routeIntentMatchScore: routeIntentMatch.score,
     routeIntentFailures: routeIntentMatch.failures,
+    targetComponentDwellKm: targetComponentStats.targetComponentDwellKm,
+    visitedTargetComponents: targetComponentStats.visitedTargetComponents,
+    missedTargetComponents: targetComponentStats.missedTargetComponents,
     relaxationsUsed: Array.from(new Set([...(routeIntentMatch.relaxationsUsed ?? []), ...(path.relaxationsUsed ?? [])])),
     trailBeautyScore,
     terrainDataConfidence: terrainAudit.confidence,

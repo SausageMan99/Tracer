@@ -246,6 +246,25 @@ describe("scoreEdges trail running surface preferences", () => {
     expect(edge.score).toBeLessThan(0.75);
   });
 
+  it("does not score unknown-surface scenic roads as equivalent to non-paved trail corridors", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+    const scenicRoad = makeSingleEdgeGraph({ highway: "residential", scenic: true, osmWayId: 5 });
+    const dirtPath = makeSingleEdgeGraph({ highway: "path", surface: "dirt", scenic: true, osmWayId: 6 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(scenicRoad, weights, trailProfile, new Set());
+    await scoreEdges(dirtPath, weights, trailProfile, new Set());
+
+    const scenicRoadEdge = scenicRoad.edges.get("1-2-10")!;
+    const dirtPathEdge = dirtPath.edges.get("1-2-10")!;
+    expect(dirtPathEdge.score).toBeGreaterThan(scenicRoadEdge.score);
+    expect(scenicRoadEdge.scoreReason).toContain("surface=0.58");
+  });
+
   it("normal running still prefers paved over unpaved (no regression)", async () => {
     const endurance = PROFILES_BY_ID.get("running_endurance")!;
     const weights = deriveWeights(endurance, false);

@@ -3,6 +3,7 @@ import type { EnrichedEdge, EnrichedGraph, GraphNode } from "@/lib/types";
 import { solve } from "@/lib/engine/orienteering-solver";
 import { assessRouteQuality } from "@/lib/engine/route-quality";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
+import type { RouteIntent } from "@/lib/engine/terrain-planner";
 
 function makeNode(id: string, lat: number, lng: number): GraphNode {
   return { id, lat, lng, edges: [] };
@@ -174,6 +175,36 @@ function makeDistantMassifVsLocalFragmentGraph(): EnrichedGraph {
     surface: "asphalt",
     score: 0.35,
   });
+
+  return graph;
+}
+
+function makeCompetingTargetComponentsGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["local-a", makeNode("local-a", 49.141, -0.501)],
+    ["local-b", makeNode("local-b", 49.142, -0.500)],
+    ["local-c", makeNode("local-c", 49.141, -0.499)],
+    ["target-a", makeNode("target-a", 49.145, -0.500)],
+    ["target-b", makeNode("target-b", 49.146, -0.496)],
+    ["target-c", makeNode("target-c", 49.143, -0.494)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 3,
+  };
+
+  addEdge(graph, "start-local-a", "start", "local-a", { highway: "path", surface: "dirt", score: 0.7, lengthKm: 1 });
+  addEdge(graph, "local-a-local-b", "local-a", "local-b", { highway: "path", surface: "dirt", score: 0.7, lengthKm: 1 });
+  addEdge(graph, "local-b-local-c", "local-b", "local-c", { highway: "track", surface: "ground", score: 0.7, lengthKm: 1 });
+  addEdge(graph, "local-c-start", "local-c", "start", { highway: "path", surface: "dirt", score: 0.7, lengthKm: 1 });
+
+  addEdge(graph, "start-target-a", "start", "target-a", { highway: "path", surface: "dirt", score: 0.46, lengthKm: 1 });
+  addEdge(graph, "target-a-target-b", "target-a", "target-b", { highway: "path", surface: "earth", score: 0.46, lengthKm: 1 });
+  addEdge(graph, "target-b-target-c", "target-b", "target-c", { highway: "track", surface: "ground", score: 0.46, lengthKm: 1 });
+  addEdge(graph, "target-c-start", "target-c", "start", { highway: "path", surface: "dirt", score: 0.46, lengthKm: 1 });
 
   return graph;
 }
@@ -654,6 +685,69 @@ describe("solve natural corridor preference", () => {
       "massif-b-massif-c",
       "massif-c-massif-d",
       "massif-d-start",
+    ]);
+  });
+
+
+  it("uses routeIntent.targetComponents to prefer the planned natural component", async () => {
+    const graph = makeCompetingTargetComponentsGraph();
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 4,
+      targetElevationM: 0,
+      targetComponents: ["tc-target"],
+      minNaturalZoneDwellKm: 2,
+      minNonPavedTrailStreakKm: 2,
+      maxPavedRatio: 0.45,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 24, maxIterations: 900, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [
+        {
+          id: "tc-local",
+          kind: "trail_cluster",
+          center: { lat: 49.141, lng: -0.5 },
+          totalKm: 4,
+          nonPavedKm: 4,
+          pavedKm: 0,
+          unknownSurfaceKm: 0,
+          distanceFromStartKm: 0.1,
+          entryNodeIds: ["local-a"],
+          exitNodeIds: ["local-c"],
+          nodeIds: ["local-a", "local-b", "local-c"],
+          confidence: "high",
+        },
+        {
+          id: "tc-target",
+          kind: "forest",
+          center: { lat: 49.145, lng: -0.497 },
+          totalKm: 4,
+          nonPavedKm: 4,
+          pavedKm: 0,
+          unknownSurfaceKm: 0,
+          distanceFromStartKm: 0.5,
+          entryNodeIds: ["target-a"],
+          exitNodeIds: ["target-c"],
+          nodeIds: ["target-a", "target-b", "target-c"],
+          confidence: "high",
+        },
+      ],
+    };
+
+    const paths = await solve(graph, "start", 4, 0, new Map(), routeIntent);
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-target-a",
+      "target-a-target-b",
+      "target-b-target-c",
+      "target-c-start",
     ]);
   });
 

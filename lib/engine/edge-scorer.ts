@@ -149,11 +149,13 @@ function scoreSurface(
 ): number {
   const surface = edge.surface;
   if (!surface) {
-    if (
-      isTrailRunning(profile) &&
-      (edge.scenic === true || edge.highway === "path" || edge.highway === "track")
-    ) {
-      return 1.0;
+    if (isTrailRunning(profile)) {
+      if (TRAIL_HIGHWAY_TYPES.has(edge.highway) || edge.highway === "path" || edge.highway === "track") {
+        return 1.0;
+      }
+      if (edge.scenic === true) {
+        return 0.58;
+      }
     }
 
     return 0.5;
@@ -248,7 +250,9 @@ function scoreNature(
   }
 
   let baseScore = 0.25;
-  if (edge.scenic === true) baseScore = 1.0;
+  if (edge.scenic === true) {
+    baseScore = isTrailRunning(profile) && !TRAIL_HIGHWAY_TYPES.has(edge.highway) && !edge.surface ? 0.62 : 1.0;
+  }
   else if (scenicWayIds.has(String(edge.osmWayId))) baseScore = 1.0;
   else if (TRAIL_HIGHWAY_TYPES.has(edge.highway)) baseScore = 0.85;
   else if (edge.surface && UNPAVED_SURFACES.has(edge.surface)) baseScore = 0.7;
