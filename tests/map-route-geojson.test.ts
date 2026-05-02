@@ -37,6 +37,16 @@ describe("buildSegmentCollection", () => {
     const collection = buildSegmentCollection(candidate);
 
     expect(collection.features).toHaveLength(candidate.geometry.coordinates.length - 1);
+
+    const reconstructedCoordinates = collection.features.reduce<[number, number][]>((coords, feature, index) => {
+      const line = feature.geometry as GeoJSON.LineString;
+      if (index === 0) coords.push(line.coordinates[0] as [number, number]);
+      coords.push(line.coordinates[1] as [number, number]);
+      return coords;
+    }, []);
+
+    expect(reconstructedCoordinates).toEqual(candidate.geometry.coordinates);
+    expect(collection.features).not.toHaveLength(candidate.points.length - 1);
     expect(collection.features[0].geometry).toEqual({
       type: "LineString",
       coordinates: [candidate.geometry.coordinates[0], candidate.geometry.coordinates[1]],

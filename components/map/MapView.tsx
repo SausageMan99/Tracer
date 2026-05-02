@@ -99,7 +99,7 @@ function ensureLayers(map: mapboxgl.Map) {
     type: "line",
     source: "route-full",
     layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-    paint: { "line-color": "#94A3B8", "line-width": 4, "line-opacity": 0.4 },
+    paint: { "line-color": "#94A3B8", "line-width": 4, "line-opacity": 0 },
   });
 
   // ── Slope-coloured route segments ────────────────────────────────────────
@@ -255,13 +255,16 @@ function applyRoute(
     return;
   }
 
-  // ── Route colour: slope gradient always on top, base changes with mode ──
+  // ── Route colour: slope gradient is the only visible route body.
+  // Keep the full-route source for the dark casing/arrows, but do not render a
+  // second semi-transparent body line: it reads as a duplicate route on Mapbox.
   map.setPaintProperty("route-line", "line-color", SLOPE_COLOR_EXPR);
   map.setPaintProperty("route-full-base", "line-color", scenicMode ? "#A8D672" : "#94A3B8");
+  map.setPaintProperty("route-full-base", "line-opacity", 0);
 
   map.setLayoutProperty("route-line", "visibility", "visible");
   map.setLayoutProperty("route-line-casing", "visibility", "visible");
-  map.setLayoutProperty("route-full-base", "visibility", "visible");
+  map.setLayoutProperty("route-full-base", "visibility", "none");
   map.setLayoutProperty("route-arrows", "visibility", "visible");
 
   // ── Set full data immediately (ensures route is visible even if animation fails)

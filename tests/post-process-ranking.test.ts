@@ -41,6 +41,31 @@ function makePath(distanceKm: number, offset: number): SolverPath {
 const profile = PROFILES_BY_ID.get("running_endurance")!;
 
 describe("postProcess candidate ranking", () => {
+  it("builds display geometry from traversed edges instead of a simplified node path", async () => {
+    const graph = makeChainGraph(3);
+    const nodeElevation = new Map(Array.from(graph.nodes.keys()).map((id) => [id, 100]));
+    const path: SolverPath = {
+      nodeIds: ["0", "3"],
+      edgeIds: ["0-1", "1-2", "2-3"],
+      distanceKm: 3,
+      totalScore: 10,
+    };
+
+    const candidates = await postProcess(
+      [path],
+      graph,
+      { lat: 48.8, lng: 2.3 },
+      profile,
+      3,
+      0,
+      nodeElevation
+    );
+
+    expect(candidates[0].geometry.coordinates).toEqual(
+      [0, 1, 2, 3].map((i) => [2.3 + i * 0.001, 48.8])
+    );
+  });
+
   it("does not discard a target-distance path just because six shorter paths have higher raw solver scores", async () => {
     const graph = makeChainGraph(80);
     const nodeElevation = new Map(Array.from(graph.nodes.keys()).map((id) => [id, 100]));

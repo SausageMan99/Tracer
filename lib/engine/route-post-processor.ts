@@ -256,6 +256,40 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+function buildRouteCoordinates(solverPath: SolverPath, graph: EnrichedGraph): Coordinate[] {
+  const coords: Coordinate[] = [];
+
+  for (const edgeId of solverPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+
+    const from = graph.nodes.get(edge.from);
+    const to = graph.nodes.get(edge.to);
+    if (!from || !to) continue;
+
+    const fromCoord = { lat: from.lat, lng: from.lng };
+    const toCoord = { lat: to.lat, lng: to.lng };
+
+    if (coords.length === 0) {
+      coords.push(fromCoord);
+    } else {
+      const last = coords[coords.length - 1];
+      if (last.lat !== fromCoord.lat || last.lng !== fromCoord.lng) {
+        coords.push(fromCoord);
+      }
+    }
+
+    coords.push(toCoord);
+  }
+
+  if (coords.length >= 2) return coords;
+
+  return solverPath.nodeIds
+    .map((nid) => graph.nodes.get(nid))
+    .filter((n): n is NonNullable<typeof n> => n != null)
+    .map((n) => ({ lat: n.lat, lng: n.lng }));
+}
+
 export async function postProcess(
   paths: SolverPath[],
   graph: EnrichedGraph,
@@ -277,11 +311,9 @@ export async function postProcess(
     topPaths,
     6,
     async (solverPath) => {
-      // Reconstruct coordinates from nodeIds
-      const fullCoords: Coordinate[] = solverPath.nodeIds
-        .map((nid) => graph.nodes.get(nid))
-        .filter((n): n is NonNullable<typeof n> => n != null)
-        .map((n) => ({ lat: n.lat, lng: n.lng }));
+      // Reconstruct display coordinates from the actual traversed edges. nodeIds
+      // can be a simplified solver path; the map/GPX need the edge-by-edge line.
+      const fullCoords = buildRouteCoordinates(solverPath, graph);
 
       // Subsample to ≤200 points
       const sampled = subsampleCoords(fullCoords, MAX_ROUTE_POINTS);
