@@ -6,6 +6,20 @@ import {
 } from "@/lib/route-benchmarks";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
+const SPRINT_4_SMOKE_CASE_IDS = [
+  "tourville-pommiers-trail-8k",
+  "tourville-pommiers-trail-12k",
+  "fontainebleau-trail-15k",
+  "caen-colline-aux-oiseaux-6k-soft",
+  "meudon-forest-trail-10k",
+];
+
+const BLOCKING_ROUTE_WARNINGS = [
+  "ONEWAY_VIOLATION",
+  "U_TURN_DETECTED",
+  "TOO_MUCH_BACKTRACKING",
+];
+
 describe("route production benchmarks", () => {
   it("covers the priority running/trail regression cases", () => {
     const ids = BENCHMARK_CASES.map((benchmark) => benchmark.id);
@@ -27,6 +41,19 @@ describe("route production benchmarks", () => {
       "osm-poor-rural-trail-8k",
       "paris-buttes-chaumont-5k-constrained",
     ]));
+  });
+
+  it("defines the mandatory Sprint 4 multi-zone smoke panel", () => {
+    for (const id of SPRINT_4_SMOKE_CASE_IDS) {
+      const benchmark = BENCHMARK_CASES.find((item) => item.id === id);
+      expect(benchmark, `${id} must stay registered in route-benchmarks-data.json`).toBeDefined();
+      expect(benchmark!.scenicMode).toBe(true);
+      expect(benchmark!.profileId.startsWith("cycling_")).toBe(false);
+      expect(benchmark!.thresholds.maxDurationMs).toBeGreaterThan(0);
+      expect(benchmark!.thresholds.maxRepeatEdgeRatio).toBeGreaterThan(0);
+      expect(benchmark!.thresholds.maxUTurnRatio).toBeGreaterThan(0);
+      expect(benchmark!.blockingWarnings).toEqual(expect.arrayContaining(BLOCKING_ROUTE_WARNINGS));
+    }
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {

@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "benchmark:routes": "node scripts/run-route-benchmarks.mjs",
+    "benchmark:routes:sprint4-smoke": "node scripts/run-route-benchmarks.mjs --case tourville-pommiers-trail-8k --case tourville-pommiers-trail-12k --case fontainebleau-trail-15k --case caen-colline-aux-oiseaux-6k-soft --case meudon-forest-trail-10k --save-artifacts --output artifacts/route-benchmark-results/sprint4-smoke-latest.json --artifact-dir artifacts/route-benchmark-results/sprint4-smoke-routes",
     "benchmark:routes:compare": "node scripts/compare-route-benchmarks.mjs",
     "audit:osm": "node scripts/audit-osm-terrain.mjs",
     "test": "vitest",

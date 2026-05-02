@@ -27,6 +27,26 @@ describe("route benchmark scripts", () => {
     expect(stdout).toContain("tourville,trail,field-feedback");
   });
 
+  it("exposes the mandatory Sprint 4 multi-zone smoke command", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+    const command = packageJson.scripts["benchmark:routes:sprint4-smoke"];
+    const requiredIds = [
+      "tourville-pommiers-trail-8k",
+      "tourville-pommiers-trail-12k",
+      "fontainebleau-trail-15k",
+      "caen-colline-aux-oiseaux-6k-soft",
+      "meudon-forest-trail-10k",
+    ];
+
+    expect(command).toContain("node scripts/run-route-benchmarks.mjs");
+    expect(command).toContain("--save-artifacts");
+    expect(command).toContain("artifacts/route-benchmark-results/sprint4-smoke-latest.json");
+    expect(command).toContain("artifacts/route-benchmark-results/sprint4-smoke-routes");
+
+    const cases = [...command.matchAll(/--case\s+([^\s]+)/g)].map((match) => match[1]);
+    expect(cases).toEqual(requiredIds);
+  });
+
   it("keeps metric-only regressions neutral without --strict", () => {
     const dir = mkdtempSync(join(tmpdir(), "route-benchmark-compare-"));
     const before = join(dir, "before.json");

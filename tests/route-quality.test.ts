@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assessRouteQuality } from "@/lib/engine/route-quality";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
+import type { RouteIntent } from "@/lib/engine/terrain-planner";
 import type { EnrichedGraph, RouteCandidate, SolverPath } from "@/lib/types";
 
 function makeGraph(): EnrichedGraph {
@@ -408,7 +409,7 @@ describe("assessRouteQuality", () => {
       ]),
     };
     const profile = PROFILES_BY_ID.get("running_trail")!;
-    const routeIntent = {
+    const routeIntent: RouteIntent = {
       type: "transition_to_woods",
       strategy: "transition_to_woods",
       targetDistanceKm: 2,
@@ -439,7 +440,7 @@ describe("assessRouteQuality", () => {
         nodeIds: ["a", "b", "c"],
         confidence: "high",
       }],
-    } as const;
+    };
 
     const quality = assessRouteQuality({
       candidate: makeCandidate({ distanceKm: 1.3, ascendM: 0 }),
