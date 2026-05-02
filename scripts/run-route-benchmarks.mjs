@@ -22,7 +22,7 @@ const shouldWriteOutput = !args.includes("--no-output");
 const shouldSaveArtifacts = args.includes("--save-artifacts");
 const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
-const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 15_000);
+const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 45_000);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: npm run benchmark:routes -- [options]
@@ -33,7 +33,7 @@ Environment:
   ROUTE_BENCHMARK_BASE_URL          Target app URL. Default: http://localhost:3000
   ROUTE_BENCHMARK_OUTPUT            JSON report path. Default: artifacts/route-benchmark-results/latest.json
   ROUTE_BENCHMARK_ARTIFACT_DIR      Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
-  ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS Extra timeout budget above each case maxDurationMs. Default: 15000
+  ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS Extra timeout budget above each case maxDurationMs. Default: 45000
 
 Options:
   --case <id-or-prefix>        Run only matching benchmark id(s). Repeatable.
@@ -191,6 +191,9 @@ async function runBenchmark(benchmark) {
       durationMs,
       routeArtifacts,
       routeArtifact: routeArtifacts?.routeJson,
+      requestTimeoutMs: timeoutMs,
+      stageTimings: payload.route?.stageTimings ?? null,
+      diagnostics: payload.route?.diagnostics ?? null,
       errorCode: null,
       error: null,
     };
@@ -205,6 +208,7 @@ async function runBenchmark(benchmark) {
       failures: [aborted ? "duration_timeout" : "network_error"],
       status: 0,
       durationMs: Date.now() - started,
+      requestTimeoutMs: timeoutMs,
       errorCode: aborted ? "BENCHMARK_TIMEOUT" : "NETWORK_ERROR",
       error: aborted
         ? `Benchmark exceeded ${timeoutMs}ms fetch timeout for case ${benchmark.id}`

@@ -333,15 +333,24 @@ function scoreIntentEdge(
     }
   } else if (intent.type === "park_loop") {
     if (progress > 0.55) score += 0.04;
-    if (paved && edge.scenic === true) score += 0.02;
+    if (nonPavedNatural) score += 0.14;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) score += Math.min(0.42, edge.lengthKm * 0.55);
+    if (!state.enteredTargetComponent && progress < 0.75 && paved) score -= 0.12;
+    if (paved && edge.scenic === true) score -= 0.1;
   } else if (intent.type === "urban_nature_loop") {
-    if (edge.scenic === true) score += paved ? 0.03 : 0.08;
+    if (edge.scenic === true) score += paved ? -0.04 : 0.1;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) score += Math.min(0.34, edge.lengthKm * 0.45);
+    if (!state.enteredTargetComponent && progress < 0.65 && paved) score -= 0.08;
+    if (nonPavedNatural) score += state.longestNaturalStreakKm < (intent.minNonPavedTrailStreakKm ?? 0.8) ? 0.16 : 0.08;
   }
 
   const projectedPavedRatio = (state.pavedDistanceKm + (paved ? edge.lengthKm : 0)) / Math.max(state.distanceKm + edge.lengthKm, 0.1);
   if (intent.maxPavedRatio != null && projectedPavedRatio > intent.maxPavedRatio) {
     const overflow = projectedPavedRatio - intent.maxPavedRatio;
-    score -= 0.08 + Math.min(0.24, overflow * 0.6);
+    const isWoodsIntent = intent.type === "forest_loop" || intent.type === "transition_to_woods";
+    const pavedOverflowPenalty = paved ? (isWoodsIntent ? 0.34 : 0.18) : (isWoodsIntent ? 0.1 : 0.06);
+    const earlyPavedPenalty = paved && progress < 0.75 ? (isWoodsIntent ? 0.2 : 0.12) : 0;
+    score -= pavedOverflowPenalty + earlyPavedPenalty + Math.min(isWoodsIntent ? 0.85 : 0.55, overflow * (paved ? (isWoodsIntent ? 2.4 : 1.4) : (isWoodsIntent ? 1.2 : 0.8)));
   }
 
   return score;
@@ -423,6 +432,53 @@ function cleanReturnPath(
   return findShortestPath(graph, fromNodeId, startNodeId, { forbiddenUndirectedEdgeKeys });
 }
 
+function projectedReturnRepeatRatio(
+  graph: EnrichedGraph,
+  edgeVisits: Map<string, number>,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number
+): number {
+  if (!returnPath) return 0;
+  let repeatedKm = 0;
+  for (const edgeId of returnPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const key = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
+    if ((edgeVisits.get(key) ?? 0) > 0) repeatedKm += edge.lengthKm;
+  }
+  return repeatedKm / Math.max(currentDistanceKm + returnPath.distanceKm, 0.1);
+}
+
+function projectedReturnPavedRatio(
+  graph: EnrichedGraph,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number
+): number {
+  if (!returnPath) return 0;
+  let returnPavedKm = 0;
+  for (const edgeId of returnPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (edge?.surface != null && PAVED_SURFACES.has(edge.surface)) returnPavedKm += edge.lengthKm;
+  }
+  return (currentPavedDistanceKm + returnPavedKm) / Math.max(currentDistanceKm + returnPath.distanceKm, 0.1);
+}
+
+function returnPathFitsIntent(
+  graph: EnrichedGraph,
+  edgeVisits: Map<string, number>,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number,
+  maxRepeatRatio?: number,
+  maxPavedRatio?: number
+): boolean {
+  if (!returnPath) return false;
+  if (maxRepeatRatio != null && projectedReturnRepeatRatio(graph, edgeVisits, returnPath, currentDistanceKm) > maxRepeatRatio) return false;
+  if (maxPavedRatio != null && projectedReturnPavedRatio(graph, returnPath, currentDistanceKm, currentPavedDistanceKm) > maxPavedRatio) return false;
+  return true;
+}
+
 function resolveReturnPath(
   graph: EnrichedGraph,
   fromNodeId: string,
@@ -430,24 +486,28 @@ function resolveReturnPath(
   edgeVisits: Map<string, number>,
   returnCache: ReturnDistanceCache,
   mode: RouteIntent["cleanReturnMode"],
-  remainingBudgetKm: number
+  remainingBudgetKm: number,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number,
+  maxRepeatRatio?: number,
+  maxPavedRatio?: number
 ): { path: ReturnType<typeof findShortestPath> | null; relaxationsUsed: string[] } {
   const shortestPath = mode === "fallback_allowed"
     ? returnCache.getPath(graph, fromNodeId, startNodeId)
     : null;
-  if (shortestPath && shortestPath.distanceKm <= remainingBudgetKm) {
+  if (shortestPath && shortestPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, shortestPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
     return { path: shortestPath, relaxationsUsed: ["clean_return"] };
   }
 
   const cleanPath = cleanReturnPath(graph, fromNodeId, startNodeId, edgeVisits);
-  if (cleanPath && cleanPath.distanceKm <= remainingBudgetKm) {
+  if (cleanPath && cleanPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, cleanPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
     return { path: cleanPath, relaxationsUsed: [] };
   }
 
   if (mode === "strict") return { path: null, relaxationsUsed: [] };
 
   const fallbackPath = returnCache.getPath(graph, fromNodeId, startNodeId);
-  if (fallbackPath && fallbackPath.distanceKm <= remainingBudgetKm) {
+  if (fallbackPath && fallbackPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, fallbackPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
     return { path: fallbackPath, relaxationsUsed: ["clean_return"] };
   }
 
@@ -563,12 +623,18 @@ function solveWithConfig(
   targetElevationM: number,
   nodeElevation: Map<string, number>,
   config: SolverConfig,
-  routeIntent?: RouteIntent
+  routeIntent?: RouteIntent,
+  deadlineMs?: number
 ): SolverPath[] {
   const beamWidth = routeIntent?.beamBudget.beamWidth ?? config.beamWidth;
   const maxIterations = routeIntent?.beamBudget.maxIterations ?? MAX_ITERATIONS;
   const { seedBearing } = config;
   const cleanReturnMode = routeIntent?.cleanReturnMode ?? "prefer";
+  const returnPavedRatioCap = routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop"
+    ? routeIntent.maxPavedRatio != null ? routeIntent.maxPavedRatio + 0.02 : undefined
+    : routeIntent?.type === "transition_to_woods" && routeIntent.maxPavedRatio != null
+      ? routeIntent.maxPavedRatio + 0.02
+      : routeIntent?.maxPavedRatio;
   const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
   const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
   const startNode = graph.nodes.get(startNodeId);
@@ -605,9 +671,11 @@ function solveWithConfig(
   const validPaths: SolverPath[] = [];
 
   for (let iter = 0; iter < maxIterations && beam.length > 0; iter++) {
+    if (deadlineMs != null && performance.now() >= deadlineMs) break;
     const nextBeam: BeamState[] = [];
 
     for (const state of beam) {
+      if (deadlineMs != null && performance.now() >= deadlineMs) break;
       const currentNode = graph.nodes.get(state.currentNodeId);
       if (!currentNode) continue;
 
@@ -629,12 +697,16 @@ function solveWithConfig(
       });
 
       // Dead-end escape: allow revisits if no unvisited edges
-      const candidateEdges = unvisitedEdges.length > 0
+      let candidateEdges = unvisitedEdges.length > 0
         ? unvisitedEdges
         : allEdges.filter((e) => {
             const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
             return (state.edgeVisits.get(key) ?? 0) < MAX_EDGE_REVISITS;
           });
+
+      if (state.lastFrom !== null && candidateEdges.some((edge) => edge.to !== state.lastFrom)) {
+        candidateEdges = candidateEdges.filter((edge) => edge.to !== state.lastFrom);
+      }
 
       if (candidateEdges.length === 0) continue;
 
@@ -770,8 +842,9 @@ function solveWithConfig(
         const corridorState = advanceNaturalCorridorState(state, selectedEdge);
         const selectedEdgeIsPaved = selectedEdge.surface != null && PAVED_SURFACES.has(selectedEdge.surface);
         const selectedEdgeIsTargetNatural = isTargetNaturalEdge(selectedEdge, targetNodeIds);
+        const intentStepScore = scoreIntentEdge(selectedEdge, state, targetDistanceKm, targetNodeIds, routeIntent) * selectedEdge.lengthKm;
         const stepScore =
-          selectedEdge.score * selectedEdge.lengthKm + scoreNaturalCorridorStep(selectedEdge, state);
+          selectedEdge.score * selectedEdge.lengthKm + scoreNaturalCorridorStep(selectedEdge, state) + intentStepScore;
 
         const newState: BeamState = {
           nodeIds: [...state.nodeIds, selectedEdge.to],
@@ -812,7 +885,11 @@ function solveWithConfig(
                 newState.edgeVisits,
                 returnCache,
                 cleanReturnMode,
-                maxDist - newDist
+                maxDist - newDist,
+                newDist,
+                newState.pavedDistanceKm,
+                routeIntent?.maxRepeatEdgeRatio,
+                returnPavedRatioCap
               );
               const returnPath = resolvedReturn.path;
               if (returnPath) {
@@ -839,7 +916,11 @@ function solveWithConfig(
                 newState.edgeVisits,
                 returnCache,
                 cleanReturnMode,
-                maxDist * 1.1 - newDist
+                maxDist * 1.1 - newDist,
+                newDist,
+                newState.pavedDistanceKm,
+                routeIntent?.maxRepeatEdgeRatio,
+                returnPavedRatioCap
               );
               const returnPath = resolvedReturn.path;
               if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
@@ -878,6 +959,15 @@ function solveWithConfig(
   }
 
   return validPaths;
+}
+
+function solverConfigsForIntent(routeIntent?: RouteIntent): SolverConfig[] {
+  if (routeIntent?.type === "park_loop") return [
+    { beamWidth: 16, temperature: 0.18, seedBearing: 0, expansionFactor: 2 },
+    { beamWidth: 16, temperature: 0.2, seedBearing: 180, expansionFactor: 2 },
+  ];
+  if (routeIntent?.type === "urban_nature_loop") return SOLVER_CONFIGS.slice(0, 2);
+  return SOLVER_CONFIGS;
 }
 
 // ── Geometric deduplication ──────────────────────────────────────────────────
@@ -923,11 +1013,16 @@ export async function solve(
   nodeElevation: Map<string, number> = new Map(),
   routeIntent?: RouteIntent
 ): Promise<SolverPath[]> {
-  const results = SOLVER_CONFIGS.map((config) =>
-    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent)
-  );
+  const configs = solverConfigsForIntent(routeIntent);
+  const deadlineMs = routeIntent
+    ? performance.now() + Math.max(25_000, Math.min(65_000, routeIntent.timeBudgetMs * 14))
+    : undefined;
+  const allPaths: SolverPath[] = [];
+  for (const config of configs) {
+    if (deadlineMs != null && performance.now() >= deadlineMs && allPaths.length > 0) break;
+    allPaths.push(...solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent, deadlineMs));
+  }
 
-  const allPaths = results.flat();
 
   // Sort by totalScore descending
   allPaths.sort((a, b) => b.totalScore - a.totalScore);

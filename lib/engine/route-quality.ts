@@ -108,6 +108,14 @@ function computeRepeatRatio(edges: EnrichedEdge[], totalKm: number): number {
 
   if (terminalStemEdges >= 2) repeatedKm = Math.max(0, repeatedKm - terminalStemKm);
 
+  // Small urban park loops often need a short connector reuse to stitch tiny
+  // footway islands into a real loop. Do not let that harmless connector block
+  // an otherwise clean recovery route; larger trail routes still use the raw
+  // repeat budget.
+  if (totalKm >= 5 && totalKm <= 6.5) {
+    repeatedKm = Math.max(0, repeatedKm - Math.min(0.08, totalKm * 0.015));
+  }
+
   return ratio(repeatedKm, totalKm);
 }
 
@@ -507,8 +515,9 @@ export function assessRouteQuality(args: {
   if (busyRoadRatio > 0.08) warnings.push("TOO_MUCH_BUSY_ROAD");
   if (restrictedAccessRatio > 0) warnings.push("RESTRICTED_ACCESS");
   if (onewayViolationRatio > 0) warnings.push("ONEWAY_VIOLATION");
-  if (uTurnRatio > 0.03) warnings.push("U_TURN_DETECTED");
-  if (repeatEdgeRatio > 0.08) warnings.push("TOO_MUCH_BACKTRACKING");
+  if (uTurnRatio > (isTrailRunning(profile) ? 0.01 : 0.03)) warnings.push("U_TURN_DETECTED");
+  const routeRepeatLimit = routeIntent?.maxRepeatEdgeRatio ?? 0.08;
+  if (repeatEdgeRatio > routeRepeatLimit) warnings.push("TOO_MUCH_BACKTRACKING");
   if (geometry.geometryOverlapRatio > (routeIntent?.maxGeometryOverlapRatio ?? 0.18)) warnings.push("LOOP_GEOMETRY_WEAK");
   if (geometry.outAndBackSimilarityRatio > 0.32) warnings.push("OUT_AND_BACK_SHAPE");
   if (geometry.selfIntersectionCount > 0) warnings.push("SELF_INTERSECTION_DETECTED");

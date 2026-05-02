@@ -47,6 +47,15 @@ describe("route benchmark scripts", () => {
     expect(cases).toEqual(requiredIds);
   });
 
+  it("documents the wider benchmark fetch timeout margin for grouped smoke diagnostics", () => {
+    const stdout = execFileSync(nodeBin, ["scripts/run-route-benchmarks.mjs", "--help"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    expect(stdout).toContain("Default: 45000");
+  });
+
   it("keeps metric-only regressions neutral without --strict", () => {
     const dir = mkdtempSync(join(tmpdir(), "route-benchmark-compare-"));
     const before = join(dir, "before.json");

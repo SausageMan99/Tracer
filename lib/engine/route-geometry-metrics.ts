@@ -67,11 +67,18 @@ function segmentsIntersect(a: ProjectedPoint, b: ProjectedPoint, c: ProjectedPoi
   return o1 * o2 < 0 && o3 * o4 < 0;
 }
 
+function projectedSegmentLengthKm(a: ProjectedPoint, b: ProjectedPoint): number {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
 function computeSelfIntersections(points: ProjectedPoint[]): number {
   let count = 0;
   for (let i = 0; i < points.length - 1; i += 1) {
     for (let j = i + 2; j < points.length - 1; j += 1) {
       if (i === 0 && j === points.length - 2) continue;
+      const firstSegmentKm = projectedSegmentLengthKm(points[i], points[i + 1]);
+      const secondSegmentKm = projectedSegmentLengthKm(points[j], points[j + 1]);
+      if (firstSegmentKm < 0.06 || secondSegmentKm < 0.06) continue;
       if (segmentsIntersect(points[i], points[i + 1], points[j], points[j + 1])) count += 1;
     }
   }
@@ -146,9 +153,14 @@ function computeOutAndBackSimilarity(coords: Coordinate[]): number {
   const samples = Math.min(12, half);
   let close = 0;
   for (let index = 0; index < samples; index += 1) {
-    const left = coords[Math.floor((index / Math.max(samples - 1, 1)) * (half - 1))];
-    const right = coords[coords.length - 1 - Math.floor((index / Math.max(samples - 1, 1)) * (coords.length - half - 1))];
-    if (haversineKm(left, right) < 0.06) close += 1;
+    const leftIndex = Math.floor((index / Math.max(samples - 1, 1)) * (half - 1));
+    const rightIndex = coords.length - 1 - Math.floor((index / Math.max(samples - 1, 1)) * (coords.length - half - 1));
+    const left = coords[leftIndex];
+    const right = coords[rightIndex];
+    const leftNext = coords[Math.min(leftIndex + 1, coords.length - 1)];
+    const rightNext = coords[Math.min(rightIndex + 1, coords.length - 1)];
+    const oppositeHeading = angleDelta(bearing(left, leftNext), bearing(right, rightNext)) > 135;
+    if (haversineKm(left, right) < 0.06 && oppositeHeading) close += 1;
   }
   return close / samples;
 }
@@ -161,6 +173,9 @@ function computeStemKm(coords: Coordinate[], fromStart: boolean): number {
     const a = fromStart ? coords[index] : coords[coords.length - 1 - index];
     const b = fromStart ? coords[coords.length - 1 - index] : coords[index];
     if (haversineKm(a, b) > 0.05) break;
+    const forwardBearing = bearing(coords[index], coords[index + 1]);
+    const returnBearing = bearing(coords[coords.length - 1 - index], coords[coords.length - 2 - index]);
+    if (angleDelta(forwardBearing, returnBearing) < 135) break;
     const nextIndex = fromStart ? index + 1 : coords.length - 2 - index;
     const currentIndex = fromStart ? index : coords.length - 1 - index;
     if (coords[nextIndex]) stemKm += haversineKm(coords[currentIndex], coords[nextIndex]);

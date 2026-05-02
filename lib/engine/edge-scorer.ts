@@ -21,6 +21,12 @@ function isTrailRunning(profile: SessionProfile): boolean {
   return profile.sport === "running" && profile.sessionType === "trail";
 }
 
+function isRunningNatureRecovery(profile: SessionProfile, routeIntent?: RouteIntent): boolean {
+  return profile.sport === "running" &&
+    profile.sessionType === "recuperation" &&
+    (routeIntent?.type === "urban_nature_loop" || routeIntent?.type === "park_loop");
+}
+
 function selectElevationNodeIds(nodeIds: string[]): string[] {
   if (nodeIds.length <= MAX_ELEVATION_NODES) return nodeIds;
 
@@ -249,6 +255,10 @@ function scoreNature(
     return 0.45;
   }
 
+  if (isRunningNatureRecovery(profile, routeIntent) && edge.surface != null && PAVED_SURFACES.has(edge.surface)) {
+    return edge.scenic === true || scenicWayIds.has(String(edge.osmWayId)) ? 0.32 : 0.22;
+  }
+
   let baseScore = 0.25;
   if (edge.scenic === true) {
     baseScore = isTrailRunning(profile) && !TRAIL_HIGHWAY_TYPES.has(edge.highway) && !edge.surface ? 0.62 : 1.0;
@@ -320,7 +330,12 @@ export async function scoreEdges(
       continue;
     }
 
-    const surfaceScore = scoreSurface(edge, profile.sport, profile);
+    let surfaceScore = scoreSurface(edge, profile.sport, profile);
+    if (isRunningNatureRecovery(profile, routeIntent)) {
+      if (edge.surface != null && PAVED_SURFACES.has(edge.surface)) surfaceScore = 0.28;
+      else if (edge.surface != null && UNPAVED_SURFACES.has(edge.surface)) surfaceScore = 0.92;
+      else if (TRAIL_HIGHWAY_TYPES.has(edge.highway) || edge.highway === "footway" || edge.highway === "pedestrian") surfaceScore = 0.78;
+    }
     const safetyScore = scoreSafety(edge, profile.sport);
     const quietnessScore = scoreQuietness(edge.highway) * 0.7 + safetyScore * 0.3;
     const natureScore = scoreNature(edge, graph, scenicWayIds, profile, routeIntent);
@@ -360,8 +375,8 @@ export async function scoreEdges(
 
     const intentMultiplier = routeIntent?.type === "forest_loop" || routeIntent?.type === "transition_to_woods"
       ? (isPavedScenicTrailEdge(edge, profile, scenicWayIds) ? 0.78 : (TRAIL_HIGHWAY_TYPES.has(edge.highway) && edge.surface && UNPAVED_SURFACES.has(edge.surface) ? 1.08 : 1))
-      : routeIntent?.type === "park_loop"
-        ? 1.02
+      : routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop"
+        ? (isRunningNatureRecovery(profile, routeIntent) && edge.surface != null && PAVED_SURFACES.has(edge.surface) ? 0.72 : 1.05)
         : 1;
 
     edge.score =

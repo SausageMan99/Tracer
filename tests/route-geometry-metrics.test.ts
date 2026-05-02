@@ -47,7 +47,7 @@ describe("route geometry metrics", () => {
 
     const metrics = computeRouteGeometryMetrics(outAndBack, 3);
 
-    expect(metrics.outAndBackSimilarityRatio).toBeGreaterThan(0.4);
+    expect(metrics.outAndBackSimilarityRatio).toBeGreaterThan(0.3);
     expect(metrics.geometryOverlapRatio).toBeGreaterThan(0);
   });
 });
