@@ -246,6 +246,42 @@ export interface RouteGenerationDiagnostics {
   };
 }
 
+export interface RouteCandidateGateDelta {
+  key: string;
+  actual: number | string | null;
+  limit: number | string | null;
+  /** Positive means margin still available; negative means amount needed to pass. */
+  deltaToPass: number | null;
+}
+
+export interface RejectedRouteCandidateDebugSummary {
+  candidateIndex: number;
+  distanceKm: number | null;
+  ascendM: number | null;
+  productionScore: number | null;
+  pavedRatio: number | null;
+  trailRatio: number | null;
+  naturalWayRatio: number | null;
+  trailBeautyScore: number | null;
+  longestTrailSegmentKm: number | null;
+  repeatEdgeRatio: number | null;
+  uTurnRatio: number | null;
+  warnings: string[];
+  gate: import("./engine/route-gate-selector").RouteGateReport;
+  criticalStabilityRisk: number;
+  thresholds: Record<string, number | string | null>;
+  deltas: RouteCandidateGateDelta[];
+}
+
+export interface RejectedRouteCandidatesDiagnostics {
+  subCode?: string;
+  candidateCount: number;
+  selectedCandidateIndex: number | null;
+  topCandidateIndex: number | null;
+  rejectionReasonsHistogram: Record<string, number>;
+  topCandidates: RejectedRouteCandidateDebugSummary[];
+}
+
 export interface RouteEdgeDiagnostic {
   /** Position in the candidate path edge list */
   index: number;
@@ -408,6 +444,8 @@ export interface GenerateRouteError {
     | "UNKNOWN";
   /** Optional typed generation sub-code for clean beta refusals. */
   subCode?: string;
+  /** Benchmark/debug-only candidate gate report when ROUTE_CANDIDATES_REJECTED is requested with generation diagnostics. */
+  rejectedCandidatesDiagnostics?: RejectedRouteCandidatesDiagnostics;
   /**
    * Only present when `errorCode === "IMPOSSIBLE_ELEVATION"`.
    * The maximum achievable D+ estimated from candidate routes, in metres.

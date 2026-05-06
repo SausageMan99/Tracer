@@ -11,7 +11,7 @@ import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
-import { isBetaStableCandidate } from "./route-gate-selector";
+import { buildRejectedCandidatesDiagnostics, isBetaStableCandidate } from "./route-gate-selector";
 import { auditTerrainData } from "./terrain-audit";
 import { planRouteIntent } from "./terrain-planner";
 
@@ -153,13 +153,19 @@ export async function generateRouteV2(
   // safety margin. The selector already orders by hard gates + stability risk;
   // if the selected route is still unstable, the set is not beta-stable enough.
   await timed("guards.betaStability", () => {
-    if (!isBetaStableCandidate(best, {
+    const gateContext = {
       targetDistanceKm: request.targetDistanceKm,
       targetElevationM: request.targetElevationM,
       profile,
       routeIntent,
-    })) {
-      throw new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "TRAIL_PROMISE_UNMET" });
+    };
+    if (!isBetaStableCandidate(best, gateContext)) {
+      throw new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", {
+        subCode: "TRAIL_PROMISE_UNMET",
+        rejectedCandidatesDiagnostics: includeGenerationDiagnostics
+          ? buildRejectedCandidatesDiagnostics(candidates, gateContext, "TRAIL_PROMISE_UNMET")
+          : undefined,
+      });
     }
   });
 

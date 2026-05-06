@@ -1,4 +1,10 @@
-import type { RouteCandidate, SessionProfile } from "../types";
+import type {
+  RejectedRouteCandidatesDiagnostics,
+  RejectedRouteCandidateDebugSummary,
+  RouteCandidate,
+  RouteCandidateGateDelta,
+  SessionProfile,
+} from "../types";
 import type { RouteQualityMetrics } from "./route-quality";
 import type { RouteIntent } from "./terrain-planner";
 
@@ -308,6 +314,134 @@ export function isBetaStableCandidate(
 ): boolean {
   const gate = evaluateRouteHardGates(candidate, context);
   return gate.bucket === 0 && gate.criticalStabilityRisk <= STABILITY_RISK_EPSILON;
+}
+
+function roundedDelta(value: number): number {
+  return Number(value.toFixed(6));
+}
+
+function numericDelta(key: string, actual: number | undefined, limit: number | undefined, mode: "max" | "min"): RouteCandidateGateDelta {
+  if (actual == null || limit == null) {
+    return { key, actual: actual ?? null, limit: limit ?? null, deltaToPass: null };
+  }
+  const delta = mode === "max" ? limit - actual : actual - limit;
+  return { key, actual, limit, deltaToPass: roundedDelta(delta) };
+}
+
+function stringDelta(key: string, actual: string | undefined, limit: string | undefined): RouteCandidateGateDelta {
+  return { key, actual: actual ?? null, limit: limit ?? null, deltaToPass: null };
+}
+
+function candidateThresholds(context: RouteGateSelectionContext): Record<string, number | string | null> {
+  const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
+  return {
+    distanceToleranceRatio: distanceTolerance(profile),
+    elevationToleranceM: elevationToleranceM(targetElevationM, profile, targetDistanceKm),
+    minProductionScore: minProductionScore(profile),
+    maxPavedRatio: routeIntent?.maxPavedRatio ?? null,
+    maxBusyRoadRatio: routeIntent?.maxBusyRoadRatio ?? 0.08,
+    maxRepeatEdgeRatio: maxRepeatEdgeRatio(profile, routeIntent),
+    maxUTurnRatio: maxUTurnRatio(profile),
+    maxGeometryOverlapRatio: maxGeometryOverlapRatio(profile, routeIntent),
+    maxGeometryOutAndBackSimilarityRatio: routeIntent?.type === "park_loop" ? 0.22 : 0.32,
+    minGeometryLoopCompactness: minLoopCompactness(routeIntent),
+    minTrailBeautyScore: profile.sessionType === "trail"
+      ? targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55
+      : null,
+    minNaturalCorridorRatio: profile.sessionType === "trail"
+      ? targetDistanceKm >= 14 ? 0.55 : targetDistanceKm >= 10 ? 0.45 : 0.4
+      : null,
+    minLongestTrailSegmentKm: profile.sessionType === "trail"
+      ? targetDistanceKm >= 14 ? 4 : targetDistanceKm >= 10 ? 2.5 : 1.6
+      : null,
+    minTrailPotential: profile.sessionType === "trail"
+      ? targetDistanceKm >= 14 ? "high" : "medium"
+      : null,
+    maxCriticalStabilityRisk: STABILITY_RISK_EPSILON,
+    healthyGateMarginRatio: HEALTHY_GATE_MARGIN_RATIO,
+  };
+}
+
+function candidateDeltas(candidate: RouteCandidate, context: RouteGateSelectionContext): RouteCandidateGateDelta[] {
+  const { targetDistanceKm, targetElevationM } = context;
+  const quality = candidate.quality;
+  const geometry = quality?.geometry;
+  const thresholds = candidateThresholds(context);
+  const distanceErrorRatio = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
+  const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
+
+  return [
+    numericDelta("distance_tolerance", distanceErrorRatio, thresholds.distanceToleranceRatio as number, "max"),
+    numericDelta("elevation_tolerance", elevationErrorM, thresholds.elevationToleranceM as number, "max"),
+    numericDelta("production_score", quality?.productionScore, thresholds.minProductionScore as number, "min"),
+    numericDelta("paved_ratio", quality?.pavedRatio, thresholds.maxPavedRatio as number | undefined, "max"),
+    numericDelta("busy_road_ratio", quality?.busyRoadRatio, thresholds.maxBusyRoadRatio as number, "max"),
+    numericDelta("repeat_edge_ratio", quality?.repeatEdgeRatio, thresholds.maxRepeatEdgeRatio as number, "max"),
+    numericDelta("u_turn_ratio", quality?.uTurnRatio, thresholds.maxUTurnRatio as number, "max"),
+    numericDelta("geometry_overlap", geometry?.geometryOverlapRatio, thresholds.maxGeometryOverlapRatio as number, "max"),
+    numericDelta("geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, thresholds.maxGeometryOutAndBackSimilarityRatio as number, "max"),
+    numericDelta("geometry_loop_compactness", geometry?.loopCompactness, thresholds.minGeometryLoopCompactness as number | undefined, "min"),
+    numericDelta("trail_beauty_score", quality?.trailBeautyScore, thresholds.minTrailBeautyScore as number | undefined, "min"),
+    numericDelta("natural_corridor_ratio", quality?.naturalCorridorRatio, thresholds.minNaturalCorridorRatio as number | undefined, "min"),
+    numericDelta("longest_trail_segment", quality?.longestTrailSegmentKm, thresholds.minLongestTrailSegmentKm as number | undefined, "min"),
+    stringDelta("trail_potential", quality?.trailPotential, thresholds.minTrailPotential as string | undefined),
+    numericDelta("critical_stability_risk", evaluateRouteHardGates(candidate, context).criticalStabilityRisk, STABILITY_RISK_EPSILON, "max"),
+  ];
+}
+
+function summarizeRejectedCandidate(
+  candidate: RouteCandidate,
+  candidateIndex: number,
+  context: RouteGateSelectionContext
+): RejectedRouteCandidateDebugSummary {
+  const gate = evaluateRouteHardGates(candidate, context);
+  const quality = candidate.quality;
+  return {
+    candidateIndex,
+    distanceKm: candidate.distanceKm ?? null,
+    ascendM: candidate.ascendM ?? null,
+    productionScore: quality?.productionScore ?? null,
+    pavedRatio: quality?.pavedRatio ?? null,
+    trailRatio: quality?.trailRatio ?? null,
+    naturalWayRatio: quality?.naturalWayRatio ?? null,
+    trailBeautyScore: quality?.trailBeautyScore ?? null,
+    longestTrailSegmentKm: quality?.longestTrailSegmentKm ?? null,
+    repeatEdgeRatio: quality?.repeatEdgeRatio ?? null,
+    uTurnRatio: quality?.uTurnRatio ?? null,
+    warnings: Array.isArray(quality?.warnings) ? quality.warnings : [],
+    gate,
+    criticalStabilityRisk: gate.criticalStabilityRisk,
+    thresholds: candidateThresholds(context),
+    deltas: candidateDeltas(candidate, context),
+  };
+}
+
+export function buildRejectedCandidatesDiagnostics(
+  candidates: RouteCandidate[],
+  context: RouteGateSelectionContext,
+  subCode?: string,
+  topN = 5
+): RejectedRouteCandidatesDiagnostics {
+  const rejectionReasonsHistogram: Record<string, number> = {};
+  const summaries = candidates.map((candidate, candidateIndex) => summarizeRejectedCandidate(candidate, candidateIndex, context));
+
+  for (const summary of summaries) {
+    for (const violation of summary.gate.violations) {
+      rejectionReasonsHistogram[violation.key] = (rejectionReasonsHistogram[violation.key] ?? 0) + 1;
+    }
+    if (summary.gate.bucket === 0 && summary.criticalStabilityRisk > STABILITY_RISK_EPSILON) {
+      rejectionReasonsHistogram.critical_stability_risk = (rejectionReasonsHistogram.critical_stability_risk ?? 0) + 1;
+    }
+  }
+
+  return {
+    subCode,
+    candidateCount: candidates.length,
+    selectedCandidateIndex: candidates.length > 0 ? 0 : null,
+    topCandidateIndex: candidates.length > 0 ? 0 : null,
+    rejectionReasonsHistogram,
+    topCandidates: summaries.slice(0, topN),
+  };
 }
 
 export function orderCandidatesByHardGates(

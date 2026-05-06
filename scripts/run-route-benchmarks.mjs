@@ -131,6 +131,23 @@ async function saveRouteArtifacts(benchmark, payload) {
   return artifacts;
 }
 
+async function saveRejectedCandidatesArtifacts(benchmark, payload) {
+  if (!shouldSaveArtifacts || payload?.rejectedCandidatesDiagnostics == null) return null;
+  const absoluteArtifactDir = resolve(repoRoot, artifactDir);
+  await mkdir(absoluteArtifactDir, { recursive: true });
+
+  const rejectedCandidatesArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.rejected-candidates.json`);
+  await writeFile(
+    rejectedCandidatesArtifactPath,
+    `${JSON.stringify(payload.rejectedCandidatesDiagnostics, null, 2)}\n`,
+    "utf8"
+  );
+
+  return {
+    rejectedCandidatesJson: rejectedCandidatesArtifactPath.replace(`${repoRoot}/`, ""),
+  };
+}
+
 async function runBenchmark(benchmark) {
   if (requiresExternalRouting(benchmark) && !hasExternalRoutingKey) {
     return {
@@ -167,6 +184,7 @@ async function runBenchmark(benchmark) {
     const durationMs = Date.now() - started;
 
     if (!response.ok || payload.success !== true) {
+      const rejectedCandidateArtifacts = await saveRejectedCandidatesArtifacts(benchmark, payload);
       return {
         id: benchmark.id,
         label: benchmark.label,
@@ -177,7 +195,10 @@ async function runBenchmark(benchmark) {
         status: response.status,
         durationMs,
         errorCode: payload.errorCode ?? "UNKNOWN",
+        subCode: payload.subCode ?? null,
         error: payload.error ?? "No JSON error body",
+        rejectedCandidatesDiagnostics: payload.rejectedCandidatesDiagnostics ?? null,
+        routeArtifacts: rejectedCandidateArtifacts,
       };
     }
 

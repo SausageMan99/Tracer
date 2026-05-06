@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { orderCandidatesByHardGates, isBetaStableCandidate } from "@/lib/engine/route-gate-selector";
+import {
+  buildRejectedCandidatesDiagnostics,
+  orderCandidatesByHardGates,
+  isBetaStableCandidate,
+} from "@/lib/engine/route-gate-selector";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import type { RouteQualityMetrics } from "@/lib/engine/route-quality";
 import type { RouteIntent } from "@/lib/engine/terrain-planner";
@@ -329,5 +333,95 @@ describe("route hard-gate selector", () => {
     );
 
     expect(ordered[0]).toBe(lowerPavedConstrainedLoop);
+  });
+
+  it("summarizes rejected candidates with gate reasons, thresholds, and deltas for benchmark diagnostics", () => {
+    const distanceFailure = candidate(100, {
+      distanceKm: 6.7,
+      ascendM: 90,
+      quality: {
+        productionScore: 0.66,
+        pavedRatio: 0.52,
+        trailRatio: 0.24,
+        naturalWayRatio: 0.51,
+        repeatEdgeRatio: 0.055,
+        uTurnRatio: 0.014,
+        trailBeautyScore: 0.5,
+        longestTrailSegmentKm: 1.2,
+        warnings: ["LOW_TRAIL_SHARE"],
+      },
+    });
+    const pavedFailure = candidate(60, {
+      distanceKm: 7.9,
+      ascendM: 110,
+      quality: {
+        productionScore: 0.73,
+        pavedRatio: 0.54,
+        trailRatio: 0.32,
+        naturalWayRatio: 0.6,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        trailBeautyScore: 0.7,
+        longestTrailSegmentKm: 2.1,
+        warnings: [],
+      },
+    });
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 100,
+      profile: trailProfile,
+      routeIntent: intent({ maxPavedRatio: 0.45 }),
+    };
+
+    const diagnostics = buildRejectedCandidatesDiagnostics(
+      [distanceFailure, pavedFailure],
+      context,
+      "TRAIL_PROMISE_UNMET"
+    );
+
+    expect(diagnostics).toMatchObject({
+      subCode: "TRAIL_PROMISE_UNMET",
+      candidateCount: 2,
+      topCandidateIndex: 0,
+      selectedCandidateIndex: 0,
+      rejectionReasonsHistogram: expect.objectContaining({
+        distance_tolerance: 1,
+        paved_ratio: 2,
+        repeat_edge_ratio: 1,
+        trail_beauty_score: 1,
+        longest_trail_segment: 1,
+      }),
+    });
+    expect(diagnostics.topCandidates).toHaveLength(2);
+    expect(diagnostics.topCandidates[0]).toMatchObject({
+      candidateIndex: 0,
+      distanceKm: 6.7,
+      ascendM: 90,
+      productionScore: 0.66,
+      pavedRatio: 0.52,
+      trailRatio: 0.24,
+      naturalWayRatio: 0.51,
+      longestTrailSegmentKm: 1.2,
+      repeatEdgeRatio: 0.055,
+      uTurnRatio: 0.014,
+      warnings: ["LOW_TRAIL_SHARE"],
+      gate: {
+        bucket: 2,
+        violations: expect.arrayContaining([
+          expect.objectContaining({ key: "distance_tolerance" }),
+          expect.objectContaining({ key: "paved_ratio" }),
+        ]),
+      },
+    });
+    expect(diagnostics.topCandidates[0].thresholds).toMatchObject({
+      maxPavedRatio: 0.45,
+      minProductionScore: 0.7,
+      maxRepeatEdgeRatio: 0.04,
+      maxUTurnRatio: 0.01,
+    });
+    expect(diagnostics.topCandidates[0].deltas).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "paved_ratio", actual: 0.52, limit: 0.45, deltaToPass: -0.07 }),
+      expect.objectContaining({ key: "production_score", actual: 0.66, limit: 0.7, deltaToPass: -0.04 }),
+    ]));
   });
 });

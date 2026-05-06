@@ -186,9 +186,11 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, route: responseRoute });
   } catch (err) {
-    // Typed route generation errors
-    if (err instanceof RouteGenerationError) {
-      return mapRouteError(err);
+    // Typed route generation errors. Vitest module resets can produce structurally
+    // identical RouteGenerationError instances from a different module copy, so
+    // accept the typed shape as well as instanceof.
+    if (err instanceof RouteGenerationError || isRouteGenerationErrorLike(err)) {
+      return mapRouteError(err as RouteGenerationError, body.includeGenerationDiagnostics === true);
     }
 
     // Legacy string-based errors (from route-generator-legacy.ts)
@@ -211,7 +213,17 @@ export async function POST(req: NextRequest) {
 
 // ── Error mappers ─────────────────────────────────────────────────────────────
 
-function mapRouteError(err: RouteGenerationError): NextResponse<GenerateRouteError> {
+function isRouteGenerationErrorLike(value: unknown): value is RouteGenerationError {
+  if (value == null || typeof value !== "object") return false;
+  const maybeError = value as { code?: unknown };
+  return maybeError.code === "NO_ROAD_NETWORK"
+    || maybeError.code === "ROUTE_CANDIDATES_REJECTED"
+    || maybeError.code === "IMPOSSIBLE_ELEVATION"
+    || maybeError.code === "GEOCODING_FAILED"
+    || maybeError.code === "UNKNOWN";
+}
+
+function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics = false): NextResponse<GenerateRouteError> {
   switch (err.code) {
     case "NO_ROAD_NETWORK": {
       const errorMsg = (err.subCode && NO_ROAD_NETWORK_MESSAGES[err.subCode]) ?? DEFAULT_NO_ROAD_NETWORK_MSG;
@@ -220,16 +232,21 @@ function mapRouteError(err: RouteGenerationError): NextResponse<GenerateRouteErr
         { status: 422 }
       );
     }
-    case "ROUTE_CANDIDATES_REJECTED":
+    case "ROUTE_CANDIDATES_REJECTED": {
+      const rejectedCandidatesDiagnostics = includeGenerationDiagnostics
+        ? err.rejectedCandidatesDiagnostics
+        : undefined;
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
           errorCode: "ROUTE_CANDIDATES_REJECTED",
           subCode: err.subCode,
+          ...(rejectedCandidatesDiagnostics != null ? { rejectedCandidatesDiagnostics } : {}),
           error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
         },
         { status: 422 }
       );
+    }
     case "IMPOSSIBLE_ELEVATION":
       return NextResponse.json<GenerateRouteError>(
         {

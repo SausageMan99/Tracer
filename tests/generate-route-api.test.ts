@@ -78,7 +78,62 @@ describe("POST /api/generate-route", () => {
       errorCode: "ROUTE_CANDIDATES_REJECTED",
       subCode: "TRAIL_PROMISE_UNMET",
     });
+    expect(payload.rejectedCandidatesDiagnostics).toBeUndefined();
     expect(generateRouteLegacyMock).not.toHaveBeenCalled();
+  });
+
+  it("exposes rejected candidate diagnostics only when benchmark generation diagnostics are requested", async () => {
+    const rejectedCandidatesDiagnostics = {
+      subCode: "TRAIL_PROMISE_UNMET",
+      candidateCount: 422,
+      topCandidateIndex: 0,
+      selectedCandidateIndex: 0,
+      rejectionReasonsHistogram: { paved_ratio: 17 },
+      topCandidates: [{
+        candidateIndex: 0,
+        distanceKm: 7.9,
+        ascendM: 110,
+        productionScore: 0.72,
+        pavedRatio: 0.51,
+        trailRatio: 0.3,
+        naturalWayRatio: 0.6,
+        trailBeautyScore: 0.7,
+        longestTrailSegmentKm: 2.1,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        warnings: [],
+        gate: {
+          strictViable: false,
+          relaxedViable: true,
+          bucket: 1 as const,
+          violations: [],
+          blockingViolationCount: 0,
+          totalSeverity: 0,
+          criticalStabilityRisk: 0.08,
+        },
+        criticalStabilityRisk: 0.08,
+        thresholds: { maxPavedRatio: 0.45 },
+        deltas: [{ key: "paved_ratio", actual: 0.51, limit: 0.45, deltaToPass: -0.06 }],
+      }],
+    };
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", {
+        subCode: "TRAIL_PROMISE_UNMET",
+        rejectedCandidatesDiagnostics,
+      })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({ ...baseBody, includeGenerationDiagnostics: true }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      rejectedCandidatesDiagnostics,
+    });
   });
 
   it("keeps legacy generation for waypoint or end-address routes", async () => {

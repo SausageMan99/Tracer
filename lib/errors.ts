@@ -24,12 +24,15 @@ export class RouteGenerationError extends Error {
   readonly subCode?: RouteErrorSubCode;
   /** Present only for IMPOSSIBLE_ELEVATION — max achievable D+ */
   readonly maxElevationEstimate?: number;
+  /** Benchmark/debug-only payload for ROUTE_CANDIDATES_REJECTED. */
+  readonly rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
 
   constructor(
     code: RouteErrorCode,
     opts?: {
       subCode?: RouteErrorSubCode;
       maxElevationEstimate?: number;
+      rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
       message?: string;
     }
   ) {
@@ -39,5 +42,6 @@ export class RouteGenerationError extends Error {
     this.code = code;
     this.subCode = opts?.subCode;
     this.maxElevationEstimate = opts?.maxElevationEstimate;
+    this.rejectedCandidatesDiagnostics = opts?.rejectedCandidatesDiagnostics;
   }
 }
