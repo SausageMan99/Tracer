@@ -63,6 +63,24 @@ describe("POST /api/generate-route", () => {
     expect(generateRouteLegacyMock).not.toHaveBeenCalled();
   });
 
+  it("maps beta clean-refusal candidate rejection to a typed 422 instead of success or 500", async () => {
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "TRAIL_PROMISE_UNMET" })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest(baseBody) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+    });
+    expect(generateRouteLegacyMock).not.toHaveBeenCalled();
+  });
+
   it("keeps legacy generation for waypoint or end-address routes", async () => {
     generateRouteLegacyMock.mockResolvedValue({ id: "point-to-point-route" });
 

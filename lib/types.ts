@@ -392,6 +392,7 @@ export interface GenerateRouteResponse {
  * - `NO_ROAD_NETWORK` → GraphHopper/ORS found no routable path
  * - `IMPOSSIBLE_ELEVATION` → requested D+ exceeds terrain maximum
  * - `GEOCODING_FAILED` → Mapbox could not resolve the address
+ * - `ROUTE_CANDIDATES_REJECTED` → V2 found candidates but all violate beta safety gates
  * - `UNKNOWN` → unexpected server error
  */
 export interface GenerateRouteError {
@@ -403,7 +404,10 @@ export interface GenerateRouteError {
     | "NO_ROAD_NETWORK"
     | "IMPOSSIBLE_ELEVATION"
     | "GEOCODING_FAILED"
+    | "ROUTE_CANDIDATES_REJECTED"
     | "UNKNOWN";
+  /** Optional typed generation sub-code for clean beta refusals. */
+  subCode?: string;
   /**
    * Only present when `errorCode === "IMPOSSIBLE_ELEVATION"`.
    * The maximum achievable D+ estimated from candidate routes, in metres.

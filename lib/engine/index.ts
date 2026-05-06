@@ -11,6 +11,7 @@ import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
+import { isBetaStableCandidate } from "./route-gate-selector";
 import { auditTerrainData } from "./terrain-audit";
 import { planRouteIntent } from "./terrain-planner";
 
@@ -147,7 +148,22 @@ export async function generateRouteV2(
 
   const best = candidates[0];
 
-  // 9. Impossible D+ detection
+  // 9. Beta fail-clean: do not return a fragile success when the selected
+  // candidate violates a product promise or sits inside the anti-oscillation
+  // safety margin. The selector already orders by hard gates + stability risk;
+  // if the selected route is still unstable, the set is not beta-stable enough.
+  await timed("guards.betaStability", () => {
+    if (!isBetaStableCandidate(best, {
+      targetDistanceKm: request.targetDistanceKm,
+      targetElevationM: request.targetElevationM,
+      profile,
+      routeIntent,
+    })) {
+      throw new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "TRAIL_PROMISE_UNMET" });
+    }
+  });
+
+  // 10. Impossible D+ detection
   await timed("guards.elevation", () => {
     if (
       request.targetElevationM > 200 &&

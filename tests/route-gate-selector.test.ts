@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderCandidatesByHardGates } from "@/lib/engine/route-gate-selector";
+import { orderCandidatesByHardGates, isBetaStableCandidate } from "@/lib/engine/route-gate-selector";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import type { RouteQualityMetrics } from "@/lib/engine/route-quality";
 import type { RouteIntent } from "@/lib/engine/terrain-planner";
@@ -180,5 +180,104 @@ describe("route hard-gate selector", () => {
     );
 
     expect(ordered[0]).toBe(nearCap);
+  });
+
+  it("marks relaxed or borderline candidates as not beta-stable", () => {
+    const overPaved = candidate(80, {
+      distanceKm: 6,
+      ascendM: 50,
+      quality: { pavedRatio: 0.655, repeatEdgeRatio: 0.005, uTurnRatio: 0.001, productionScore: 0.82 },
+    });
+    const insideButBorderline = candidate(80, {
+      distanceKm: 6,
+      ascendM: 50,
+      quality: { pavedRatio: 0.646, repeatEdgeRatio: 0.005, uTurnRatio: 0.001, productionScore: 0.82 },
+    });
+    const healthy = candidate(80, {
+      distanceKm: 6,
+      ascendM: 50,
+      quality: { pavedRatio: 0.54, repeatEdgeRatio: 0.005, uTurnRatio: 0.001, productionScore: 0.82 },
+    });
+    const context = {
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      profile: recoveryProfile,
+      routeIntent: intent({ type: "park_loop", strategy: "park_loop", targetDistanceKm: 6, targetElevationM: 50, maxPavedRatio: 0.65, maxRepeatEdgeRatio: 0.12, maxGeometryOverlapRatio: 0.18 }),
+    };
+
+    expect(isBetaStableCandidate(overPaved, context)).toBe(false);
+    expect(isBetaStableCandidate(insideButBorderline, context)).toBe(false);
+    expect(isBetaStableCandidate(healthy, context)).toBe(true);
+  });
+
+  it("prefers a stable hard-gate margin over a prettier borderline trail candidate", () => {
+    const prettierBorderline = candidate(100, {
+      quality: {
+        pavedRatio: 0.449,
+        repeatEdgeRatio: 0.039,
+        uTurnRatio: 0.0095,
+        naturalCorridorRatio: 0.405,
+        longestTrailSegmentKm: 1.61,
+        trailBeautyScore: 0.72,
+        productionScore: 0.9,
+      },
+    });
+    const saferMargin = candidate(60, {
+      quality: {
+        pavedRatio: 0.32,
+        repeatEdgeRatio: 0.005,
+        uTurnRatio: 0.001,
+        naturalCorridorRatio: 0.6,
+        longestTrailSegmentKm: 2.4,
+        trailBeautyScore: 0.68,
+        productionScore: 0.82,
+      },
+    });
+
+    const ordered = orderCandidatesByHardGates(
+      [prettierBorderline, saferMargin],
+      { targetDistanceKm: 8, targetElevationM: 100, profile: trailProfile, routeIntent: intent() },
+      (route) => route.totalScore
+    );
+
+    expect(ordered[0]).toBe(saferMargin);
+  });
+
+  it("does not let compactness heuristics outrank a safer paved-margin park loop", () => {
+    const compactButOverPaved = candidate(100, {
+      distanceKm: 5.96,
+      ascendM: 50,
+      quality: {
+        pavedRatio: 0.658,
+        repeatEdgeRatio: 0.008,
+        uTurnRatio: 0.009,
+        productionScore: 0.8,
+        geometry: { ...quality().geometry!, loopCompactness: 0.12, geometryOverlapRatio: 0.08 },
+      },
+    });
+    const lowerPavedConstrainedLoop = candidate(60, {
+      distanceKm: 5.64,
+      ascendM: 100,
+      quality: {
+        pavedRatio: 0.58,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        productionScore: 0.74,
+        geometry: { ...quality().geometry!, loopCompactness: 0.04, geometryOverlapRatio: 0.15 },
+      },
+    });
+
+    const ordered = orderCandidatesByHardGates(
+      [compactButOverPaved, lowerPavedConstrainedLoop],
+      {
+        targetDistanceKm: 6,
+        targetElevationM: 50,
+        profile: recoveryProfile,
+        routeIntent: intent({ type: "park_loop", strategy: "park_loop", targetDistanceKm: 6, targetElevationM: 50, maxPavedRatio: 0.65, maxRepeatEdgeRatio: 0.12, maxGeometryOverlapRatio: 0.18 }),
+      },
+      (route) => route.totalScore
+    );
+
+    expect(ordered[0]).toBe(lowerPavedConstrainedLoop);
   });
 });

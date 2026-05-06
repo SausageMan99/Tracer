@@ -42,6 +42,7 @@ export interface RouteGateReport {
   violations: RouteHardGateViolation[];
   blockingViolationCount: number;
   totalSeverity: number;
+  criticalStabilityRisk: number;
 }
 
 export interface RankedRouteCandidate {
@@ -83,6 +84,60 @@ function maxGeometryOverlapRatio(profile: SessionProfile, routeIntent?: RouteInt
 
 function minLoopCompactness(routeIntent?: RouteIntent): number | null {
   return routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop" ? 0.06 : null;
+}
+
+const HEALTHY_GATE_MARGIN_RATIO = 0.12;
+const STABILITY_RISK_EPSILON = 0.05;
+
+function maxGateStabilityRisk(
+  actual: number | undefined,
+  limit: number | undefined,
+  weight: number
+): number {
+  if (actual == null || limit == null || limit <= 0) return 0;
+  const normalizedMargin = (limit - actual) / limit;
+  return Math.max(0, HEALTHY_GATE_MARGIN_RATIO - normalizedMargin) * weight;
+}
+
+function minGateStabilityRisk(
+  actual: number | undefined,
+  limit: number | undefined,
+  weight: number
+): number {
+  if (actual == null || limit == null || limit <= 0) return 0;
+  const normalizedMargin = (actual - limit) / limit;
+  return Math.max(0, HEALTHY_GATE_MARGIN_RATIO - normalizedMargin) * weight;
+}
+
+function computeCriticalStabilityRisk(
+  candidate: RouteCandidate,
+  context: RouteGateSelectionContext
+): number {
+  const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
+  const quality = candidate.quality;
+  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
+  const minTrailBeautyScore = profile.sessionType === "trail"
+    ? targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55
+    : undefined;
+  const minNaturalCorridorRatio = profile.sessionType === "trail"
+    ? targetDistanceKm >= 14 ? 0.55 : targetDistanceKm >= 10 ? 0.45 : 0.4
+    : undefined;
+  const minLongestTrailSegmentKm = profile.sessionType === "trail"
+    ? targetDistanceKm >= 14 ? 4 : targetDistanceKm >= 10 ? 2.5 : 1.6
+    : undefined;
+
+  return (
+    maxGateStabilityRisk(Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1), distanceTolerance(profile), 8) +
+    maxGateStabilityRisk(elevationErrorM, elevationToleranceM, profile.sessionType === "recuperation" ? 2.4 : 1.2) +
+    minGateStabilityRisk(quality?.productionScore, minProductionScore(profile), 1.2) +
+    maxGateStabilityRisk(quality?.pavedRatio, routeIntent?.maxPavedRatio, profile.sessionType === "trail" ? 6 : 3) +
+    maxGateStabilityRisk(quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), 5) +
+    maxGateStabilityRisk(quality?.uTurnRatio, maxUTurnRatio(profile), 7) +
+    minGateStabilityRisk(quality?.trailBeautyScore, minTrailBeautyScore, 1.5) +
+    minGateStabilityRisk(quality?.naturalCorridorRatio, minNaturalCorridorRatio, 2) +
+    minGateStabilityRisk(quality?.longestTrailSegmentKm, minLongestTrailSegmentKm, 2)
+  );
 }
 
 function trailPotentialRank(value: RouteQualityMetrics["trailPotential"]): number {
@@ -169,7 +224,12 @@ export function evaluateRouteHardGates(
       });
     }
   }
-  addMinViolation(violations, "geometry_loop_compactness", geometry?.loopCompactness, minLoopCompactness(routeIntent) ?? undefined, false, 0, 2);
+  const loopCompactnessLimit = minLoopCompactness(routeIntent);
+  if (routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop") {
+    addMinViolation(violations, "geometry_loop_compactness", geometry?.loopCompactness, loopCompactnessLimit ?? undefined, true, 0.03, 0.05);
+  } else {
+    addMinViolation(violations, "geometry_loop_compactness", geometry?.loopCompactness, loopCompactnessLimit ?? undefined, false, 0, 2);
+  }
 
   for (const warning of quality?.warnings ?? []) {
     if (!BLOCKING_WARNINGS.has(warning)) continue;
@@ -184,6 +244,7 @@ export function evaluateRouteHardGates(
 
   const blockingViolationCount = violations.filter((violation) => !violation.relaxable).length;
   const totalSeverity = violations.reduce((sum, violation) => sum + violation.severity, 0);
+  const criticalStabilityRisk = computeCriticalStabilityRisk(candidate, context);
   const strictViable = violations.length === 0;
   const relaxedViable = blockingViolationCount === 0;
   const bucket: 0 | 1 | 2 = strictViable ? 0 : relaxedViable ? 1 : 2;
@@ -195,6 +256,7 @@ export function evaluateRouteHardGates(
     violations,
     blockingViolationCount,
     totalSeverity,
+    criticalStabilityRisk,
   };
 }
 
@@ -206,18 +268,35 @@ export function compareRankedRouteCandidates(a: RankedRouteCandidate, b: RankedR
       return a.gate.blockingViolationCount - b.gate.blockingViolationCount;
     }
     if (a.gate.totalSeverity !== b.gate.totalSeverity) return a.gate.totalSeverity - b.gate.totalSeverity;
+    if (Math.abs(a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk) > STABILITY_RISK_EPSILON) {
+      return a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk;
+    }
     if (a.softScore !== b.softScore) return b.softScore - a.softScore;
     return a.originalIndex - b.originalIndex;
   }
 
   if (a.gate.bucket === 1) {
     if (a.gate.totalSeverity !== b.gate.totalSeverity) return a.gate.totalSeverity - b.gate.totalSeverity;
+    if (Math.abs(a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk) > STABILITY_RISK_EPSILON) {
+      return a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk;
+    }
     if (a.softScore !== b.softScore) return b.softScore - a.softScore;
     return a.originalIndex - b.originalIndex;
   }
 
+  if (Math.abs(a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk) > STABILITY_RISK_EPSILON) {
+    return a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk;
+  }
   if (a.softScore !== b.softScore) return b.softScore - a.softScore;
   return a.originalIndex - b.originalIndex;
+}
+
+export function isBetaStableCandidate(
+  candidate: RouteCandidate,
+  context: RouteGateSelectionContext
+): boolean {
+  const gate = evaluateRouteHardGates(candidate, context);
+  return gate.bucket === 0 && gate.criticalStabilityRisk <= STABILITY_RISK_EPSILON;
 }
 
 export function orderCandidatesByHardGates(

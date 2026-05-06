@@ -95,6 +95,7 @@ describe("route production benchmarks", () => {
       expect(benchmark.thresholds.maxBusyRoadRatio).toBeLessThanOrEqual(0.15);
       expect(benchmark.thresholds.maxRepeatEdgeRatio).toBeGreaterThan(0);
       expect(benchmark.thresholds.maxRepeatEdgeRatio).toBeLessThanOrEqual(0.06);
+      expect(benchmark.thresholds.maxSelfIntersectionCount ?? 0).toBeLessThanOrEqual(0);
       expect(benchmark.thresholds.maxUTurnRatio).toBeGreaterThan(0);
       expect(benchmark.thresholds.maxUTurnRatio).toBeLessThanOrEqual(0.015);
       expect(benchmark.thresholds.maxDurationMs).toBeGreaterThan(0);

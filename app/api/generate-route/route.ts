@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
 
     // Legacy string-based errors (from route-generator-legacy.ts)
     const message = err instanceof Error ? err.message : "";
-    if (message.startsWith("NO_ROAD_NETWORK") || message.startsWith("IMPOSSIBLE_ELEVATION") || message === "GEOCODING_FAILED") {
+    if (message.startsWith("NO_ROAD_NETWORK") || message.startsWith("ROUTE_CANDIDATES_REJECTED") || message.startsWith("IMPOSSIBLE_ELEVATION") || message === "GEOCODING_FAILED") {
       return mapLegacyError(message);
     }
 
@@ -220,6 +220,16 @@ function mapRouteError(err: RouteGenerationError): NextResponse<GenerateRouteErr
         { status: 422 }
       );
     }
+    case "ROUTE_CANDIDATES_REJECTED":
+      return NextResponse.json<GenerateRouteError>(
+        {
+          success: false,
+          errorCode: "ROUTE_CANDIDATES_REJECTED",
+          subCode: err.subCode,
+          error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
+        },
+        { status: 422 }
+      );
     case "IMPOSSIBLE_ELEVATION":
       return NextResponse.json<GenerateRouteError>(
         {
@@ -250,6 +260,19 @@ function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
     const errorMsg = NO_ROAD_NETWORK_MESSAGES[subCode] ?? DEFAULT_NO_ROAD_NETWORK_MSG;
     return NextResponse.json<GenerateRouteError>(
       { success: false, errorCode: "NO_ROAD_NETWORK", error: errorMsg },
+      { status: 422 }
+    );
+  }
+
+  if (message.startsWith("ROUTE_CANDIDATES_REJECTED")) {
+    const subCode = message.split(":")[1] ?? undefined;
+    return NextResponse.json<GenerateRouteError>(
+      {
+        success: false,
+        errorCode: "ROUTE_CANDIDATES_REJECTED",
+        subCode,
+        error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
+      },
       { status: 422 }
     );
   }

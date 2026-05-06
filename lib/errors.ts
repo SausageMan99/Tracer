@@ -8,6 +8,7 @@
 
 export type RouteErrorCode =
   | "NO_ROAD_NETWORK"
+  | "ROUTE_CANDIDATES_REJECTED"
   | "IMPOSSIBLE_ELEVATION"
   | "GEOCODING_FAILED"
   | "UNKNOWN";
@@ -15,7 +16,8 @@ export type RouteErrorCode =
 export type RouteErrorSubCode =
   | "OVERPASS_TIMEOUT"
   | "EMPTY_GRAPH"
-  | "SOLVER_EMPTY";
+  | "SOLVER_EMPTY"
+  | "TRAIL_PROMISE_UNMET";
 
 export class RouteGenerationError extends Error {
   readonly code: RouteErrorCode;
