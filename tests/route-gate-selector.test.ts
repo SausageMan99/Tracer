@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRejectedCandidatesDiagnostics,
+  evaluateRouteHardGates,
   orderCandidatesByHardGates,
   isBetaStableCandidate,
 } from "@/lib/engine/route-gate-selector";
@@ -186,7 +187,7 @@ describe("route hard-gate selector", () => {
     expect(ordered[0]).toBe(nearCap);
   });
 
-  it("marks relaxed or borderline candidates as not beta-stable", () => {
+  it("accepts strict candidates close to a beta margin while keeping low-margin diagnostics", () => {
     const overPaved = candidate(80, {
       distanceKm: 6,
       ascendM: 50,
@@ -209,9 +210,34 @@ describe("route hard-gate selector", () => {
       routeIntent: intent({ type: "park_loop", strategy: "park_loop", targetDistanceKm: 6, targetElevationM: 50, maxPavedRatio: 0.65, maxRepeatEdgeRatio: 0.12, maxGeometryOverlapRatio: 0.18 }),
     };
 
+    const borderlineGate = evaluateRouteHardGates(insideButBorderline, context);
+    const diagnostics = buildRejectedCandidatesDiagnostics([insideButBorderline], context, "TRAIL_PROMISE_UNMET");
+
     expect(isBetaStableCandidate(overPaved, context)).toBe(false);
-    expect(isBetaStableCandidate(insideButBorderline, context)).toBe(false);
+    expect(isBetaStableCandidate(insideButBorderline, context)).toBe(true);
     expect(isBetaStableCandidate(healthy, context)).toBe(true);
+    expect(borderlineGate).toMatchObject({ bucket: 0, violations: [] });
+    expect(borderlineGate.criticalStabilityRisk).toBeGreaterThan(0.05);
+    expect(diagnostics.rejectionReasonsHistogram).toMatchObject({ critical_stability_risk: 1 });
+  });
+
+  it("still rejects candidates above product caps or with non-relaxable safety violations", () => {
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 100,
+      profile: trailProfile,
+      routeIntent: intent({ maxPavedRatio: 0.45, maxRepeatEdgeRatio: 0.04 }),
+    };
+
+    const overPaved = candidate(80, { quality: { pavedRatio: 0.451 } });
+    const repeatOverflow = candidate(80, { quality: { repeatEdgeRatio: 0.041 } });
+    const uTurnOverflow = candidate(80, { quality: { uTurnRatio: 0.011 } });
+    const restrictedWarning = candidate(80, { quality: { warnings: ["RESTRICTED_ACCESS"] } });
+
+    expect(isBetaStableCandidate(overPaved, context)).toBe(false);
+    expect(isBetaStableCandidate(repeatOverflow, context)).toBe(false);
+    expect(isBetaStableCandidate(uTurnOverflow, context)).toBe(false);
+    expect(isBetaStableCandidate(restrictedWarning, context)).toBe(false);
   });
 
   it("accepts a short transition-to-woods candidate inside the 8k paved beta gate", () => {

@@ -313,7 +313,7 @@ export function isBetaStableCandidate(
   context: RouteGateSelectionContext
 ): boolean {
   const gate = evaluateRouteHardGates(candidate, context);
-  return gate.bucket === 0 && gate.criticalStabilityRisk <= STABILITY_RISK_EPSILON;
+  return gate.bucket === 0;
 }
 
 function roundedDelta(value: number): number {

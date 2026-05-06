@@ -148,10 +148,10 @@ export async function generateRouteV2(
 
   const best = candidates[0];
 
-  // 9. Beta fail-clean: do not return a fragile success when the selected
-  // candidate violates a product promise or sits inside the anti-oscillation
-  // safety margin. The selector already orders by hard gates + stability risk;
-  // if the selected route is still unstable, the set is not beta-stable enough.
+  // 9. Beta fail-clean: do not return a success when the selected candidate
+  // violates a product promise or blocking safety gate. Critical stability risk
+  // remains a ranking/warning/diagnostic signal, not a hidden hard threshold
+  // when the selected route is inside every product gate.
   await timed("guards.betaStability", () => {
     const gateContext = {
       targetDistanceKm: request.targetDistanceKm,
