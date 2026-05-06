@@ -80,7 +80,7 @@ export default function AppNav() {
               {title}
             </span>
             <span className="hidden md:block" style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", fontWeight: 700, letterSpacing: "0.24em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-              Trail-only · GPX montre · prototype terrain
+              Boucles 5–15 km · GPX montre
             </span>
           </span>
         </Link>
@@ -89,7 +89,7 @@ export default function AppNav() {
       <div className="hidden md:flex" style={{ alignItems: "center", gap: "8px" }}>
         <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: status === "loading" ? "var(--accent-amber)" : "var(--accent-lime)" }} />
         <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.18em", color: "var(--text-muted)", textTransform: "uppercase" }}>
-          Phase 1 · 5–15 km
+          Boucle trail courte · 5–15 km
         </span>
       </div>
     </nav>

@@ -103,7 +103,7 @@ export default function FeedbackButtons({
             color: "var(--text-muted)",
           }}
         >
-          Ce parcours te plaît ?
+          Tu partirais courir cette trace ?
         </span>
         <button
           onClick={() => handleFeedback("positive")}

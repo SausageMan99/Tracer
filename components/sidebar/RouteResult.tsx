@@ -19,9 +19,9 @@ function formatDuration(seconds: number): string {
 }
 
 function labelForScore(score: number) {
-  if (score >= 82) return { label: "Solide", color: "var(--accent-lime)" };
-  if (score >= 65) return { label: "À vérifier", color: "var(--accent-amber)" };
-  return { label: "Fragile", color: "var(--accent-danger)" };
+  if (score >= 82) return { label: "Boucle exploitable", color: "var(--accent-lime)" };
+  if (score >= 65) return { label: "Boucle à vérifier", color: "var(--accent-amber)" };
+  return { label: "Boucle fragile", color: "var(--accent-danger)" };
 }
 
 function terrainConfidenceCopy(confidence?: "low" | "medium" | "high") {
@@ -145,13 +145,13 @@ export default function RouteResult() {
       <div className="px-4 md:px-6 py-6">
         <MiniPanel>
           <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.16em", color: "var(--accent-danger)", textTransform: "uppercase", marginBottom: "8px" }}>
-            Le terrain n&apos;a pas coopéré
+            Pas de boucle fiable trouvée
           </p>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>
             {errorMessage}
           </p>
           <button onClick={clearRoute} style={{ marginTop: "14px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", cursor: "pointer" }}>
-            Modifier le brief
+            Paramètres
           </button>
         </MiniPanel>
       </div>
@@ -189,31 +189,39 @@ export default function RouteResult() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6"/>
           </svg>
-          Modifier le brief
+          Paramètres
         </button>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px" }}>
-          <div>
-            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.22em", color: "var(--accent-sage)", textTransform: "uppercase", marginBottom: "8px" }}>
-              Boucle générée
-            </p>
-            <h2 style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "29px", color: "var(--text-primary)", letterSpacing: "-0.06em", lineHeight: 1 }}>
-              {best.distanceKm.toFixed(1)} km
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: scoreLabel.color }} />
+            <h2 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "22px", color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: 1.05 }}>
+              {scoreLabel.label}
             </h2>
-            <p style={{ marginTop: "6px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-dim)" }}>
-              demandé {targetDistanceKm}km · {targetElevationM}m D+
-            </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "999px", background: "rgba(10,15,12,0.56)" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: scoreLabel.color }} />
-            <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-primary)" }}>
-              {scoreLabel.label} · {matchPercent}%
-            </span>
-          </div>
+          <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.6 }}>
+            {best.distanceKm.toFixed(1)} km · {best.ascendM.toFixed(0)} m D+ · {formatDuration(best.durationSeconds)} estimée
+          </p>
+          <p style={{ marginTop: "4px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.6 }}>
+            Écart: {distanceErrorPct}% distance · {elevationErrorPct}% D+ · {Math.round(trailRatio * 100)}% sentiers · GPX prêt
+          </p>
         </div>
       </div>
 
       <div className="px-4 md:px-6" style={{ paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            onClick={handleDownloadGPX}
+            style={{ width: "100%", height: "48px", background: "var(--accent-lime)", color: "var(--bg-deep)", border: "1px solid rgba(232,230,223,0.08)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}
+            aria-label="Télécharger le parcours au format GPX"
+          >
+            Télécharger GPX
+          </button>
+          <button onClick={clearRoute} style={{ width: "100%", height: "40px", background: "rgba(17,26,21,0.58)", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer" }}>
+            Générer une autre boucle
+          </button>
+        </div>
+
         <MiniPanel label="Pourquoi ce tracé">
           <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.04em", marginBottom: "6px" }}>
             {routeExplanation.headline}
@@ -234,10 +242,10 @@ export default function RouteResult() {
           <StatBlock label="Distance" value={`${best.distanceKm.toFixed(1)} km`} sub={`écart ${distanceErrorPct}%`} />
           <StatBlock label="Dénivelé" value={`${best.ascendM.toFixed(0)} m`} sub={`D− ${best.descendM.toFixed(0)} m`} />
           <StatBlock label="Temps" value={formatDuration(best.durationSeconds)} sub="estimation" />
-          <StatBlock label="Sentiers" value={`${Math.round(trailRatio * 100)}%`} sub="signal terrain" />
+          <StatBlock label="Sentiers" value={`${Math.round(trailRatio * 100)}%`} sub="Part de sentiers" />
         </div>
 
-        <MiniPanel label="Santé de la boucle">
+        <MiniPanel label="Fiabilité">
           <HealthRow label="Boucle fermée" value={loopGapKm != null ? `${loopGapKm.toFixed(2)}km` : `${Math.round(best.loopScore * 100)}%`} ok={loopGapKm != null ? loopGapKm <= 0.5 : best.loopScore >= 0.72} />
           <HealthRow label="Distance visée" value={`±${distanceErrorPct}%`} ok={distanceErrorPct <= 15} />
           <HealthRow label="D+ visé" value={`±${elevationErrorPct}%`} ok={elevationErrorPct <= 35} />
@@ -249,7 +257,7 @@ export default function RouteResult() {
         </MiniPanel>
 
         {qualityWarnings.length > 0 && (
-          <MiniPanel label="Compromis détectés">
+          <MiniPanel label="À vérifier avant de partir">
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {qualityWarnings.map((warning) => (
                 <div key={warning.label} style={{ paddingLeft: "10px", borderLeft: "2px solid var(--accent-amber)" }}>
@@ -292,35 +300,23 @@ export default function RouteResult() {
           </MiniPanel>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button
-            onClick={handleDownloadGPX}
-            style={{ width: "100%", height: "48px", background: "var(--accent-lime)", color: "var(--bg-deep)", border: "1px solid rgba(232,230,223,0.08)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}
-            aria-label="Télécharger le parcours au format GPX"
-          >
-            Télécharger le GPX
-          </button>
-          <MiniPanel label={watchExportGuide.title}>
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "8px" }}>
-              {watchExportGuide.description}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {watchExportGuide.targets.map((target) => (
-                <details key={target.id} style={{ borderTop: "1px solid rgba(125,143,130,0.1)", paddingTop: "7px" }}>
-                  <summary style={{ cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
-                    {target.label}
-                  </summary>
-                  <p style={{ marginTop: "5px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.45 }}>
-                    {target.primaryAction}
-                  </p>
-                </details>
-              ))}
-            </div>
-          </MiniPanel>
-          <button onClick={clearRoute} style={{ width: "100%", height: "40px", background: "rgba(17,26,21,0.58)", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer" }}>
-            Générer une autre boucle
-          </button>
-        </div>
+        <MiniPanel label={watchExportGuide.title}>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "8px" }}>
+            {watchExportGuide.description}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {watchExportGuide.targets.map((target) => (
+              <details key={target.id} style={{ borderTop: "1px solid rgba(125,143,130,0.1)", paddingTop: "7px" }}>
+                <summary style={{ cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
+                  {target.label}
+                </summary>
+                <p style={{ marginTop: "5px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                  {target.primaryAction}
+                </p>
+              </details>
+            ))}
+          </div>
+        </MiniPanel>
 
         <MiniPanel label="Retour terrain">
           <FeedbackButtons route={currentRoute} sessionConfig={{ targetDistanceKm, targetElevationM }} />
@@ -342,7 +338,7 @@ export default function RouteResult() {
         {showWaitlistWidget && !waitlistDismissed && (
           <MiniPanel>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", color: "var(--text-muted)" }}>Suivre les prochaines boucles ?</span>
+              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", color: "var(--text-muted)" }}>Tu veux être prévenu quand la génération s’améliore dans ta zone ?</span>
               <button onClick={handleDismissWaitlist} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "14px", padding: "2px 6px", opacity: 0.6 }} aria-label="Fermer">✕</button>
             </div>
             <WaitlistForm source="post-generation" compact />

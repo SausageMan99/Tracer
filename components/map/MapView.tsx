@@ -593,6 +593,35 @@ export default function MapView() {
         </div>
       )}
 
+      {/* ── Slope legend (route line colours only, no surface claim) ───────── */}
+      {best && (
+        <div
+          className="absolute left-4 top-20 md:left-auto md:right-4 z-10 pointer-events-none"
+          aria-label="Légende des couleurs de pente"
+        >
+          <div
+            style={{
+              backdropFilter: "blur(16px)",
+              background: "rgba(5,8,6,0.82)",
+              border: "1px solid rgba(30,46,37,0.9)",
+              borderRadius: "var(--radius-card)",
+              padding: "10px 12px",
+              boxShadow: "0 18px 56px rgba(0,0,0,0.28)",
+              minWidth: "150px",
+            }}
+          >
+            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700, marginBottom: "8px" }}>
+              Couleurs de pente
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#86efac" }} />plat / roulant</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#fde047" }} />montée modérée</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#ef4444" }} />montée raide</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Stats overlay (bottom-left, shown when route exists) ─────────── */}
       {best && (
         <div
