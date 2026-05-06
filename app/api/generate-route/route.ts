@@ -228,7 +228,12 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
     case "NO_ROAD_NETWORK": {
       const errorMsg = (err.subCode && NO_ROAD_NETWORK_MESSAGES[err.subCode]) ?? DEFAULT_NO_ROAD_NETWORK_MSG;
       return NextResponse.json<GenerateRouteError>(
-        { success: false, errorCode: "NO_ROAD_NETWORK", error: errorMsg },
+        {
+          success: false,
+          errorCode: "NO_ROAD_NETWORK",
+          subCode: err.subCode,
+          error: errorMsg,
+        },
         { status: 422 }
       );
     }
@@ -273,10 +278,10 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
 /** Handle legacy string-encoded errors from route-generator-legacy.ts */
 function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
   if (message.startsWith("NO_ROAD_NETWORK")) {
-    const subCode = message.split(":")[1] ?? "";
-    const errorMsg = NO_ROAD_NETWORK_MESSAGES[subCode] ?? DEFAULT_NO_ROAD_NETWORK_MSG;
+    const subCode = message.split(":")[1] ?? undefined;
+    const errorMsg = subCode != null ? NO_ROAD_NETWORK_MESSAGES[subCode] ?? DEFAULT_NO_ROAD_NETWORK_MSG : DEFAULT_NO_ROAD_NETWORK_MSG;
     return NextResponse.json<GenerateRouteError>(
-      { success: false, errorCode: "NO_ROAD_NETWORK", error: errorMsg },
+      { success: false, errorCode: "NO_ROAD_NETWORK", subCode, error: errorMsg },
       { status: 422 }
     );
   }

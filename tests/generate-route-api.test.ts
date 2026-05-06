@@ -55,6 +55,7 @@ describe("POST /api/generate-route", () => {
     expect(payload).toMatchObject({
       success: false,
       errorCode: "NO_ROAD_NETWORK",
+      subCode: "SOLVER_EMPTY",
     });
     expect(generateRouteV2Mock).toHaveBeenCalledTimes(1);
     expect(generateRouteV2Mock).toHaveBeenCalledWith(expect.objectContaining(baseBody), {
