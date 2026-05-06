@@ -109,13 +109,19 @@ function minGateStabilityRisk(
   return Math.max(0, HEALTHY_GATE_MARGIN_RATIO - normalizedMargin) * weight;
 }
 
+function elevationToleranceM(targetElevationM: number, profile: SessionProfile, targetDistanceKm: number): number {
+  if (targetElevationM <= 50) return 60;
+  if (profile.sessionType === "trail" && targetDistanceKm <= 8) return Math.max(100, targetElevationM * 0.45);
+  return Math.max(90, targetElevationM * 0.45);
+}
+
 function computeCriticalStabilityRisk(
   candidate: RouteCandidate,
   context: RouteGateSelectionContext
 ): number {
   const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
   const quality = candidate.quality;
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationTolerance = elevationToleranceM(targetElevationM, profile, targetDistanceKm);
   const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
   const minTrailBeautyScore = profile.sessionType === "trail"
     ? targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55
@@ -127,11 +133,19 @@ function computeCriticalStabilityRisk(
     ? targetDistanceKm >= 14 ? 4 : targetDistanceKm >= 10 ? 2.5 : 1.6
     : undefined;
 
+  const shortTrailIntent = profile.sessionType === "trail" && targetDistanceKm <= 8;
+  const productionStabilityWeight = shortTrailIntent ? 0.6 : 1.2;
+  const pavedStabilityWeight = shortTrailIntent
+    ? 1
+    : profile.sessionType === "trail"
+      ? 6
+      : 3;
+
   return (
     maxGateStabilityRisk(Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1), distanceTolerance(profile), 8) +
-    maxGateStabilityRisk(elevationErrorM, elevationToleranceM, profile.sessionType === "recuperation" ? 2.4 : 1.2) +
-    minGateStabilityRisk(quality?.productionScore, minProductionScore(profile), 1.2) +
-    maxGateStabilityRisk(quality?.pavedRatio, routeIntent?.maxPavedRatio, profile.sessionType === "trail" ? 6 : 3) +
+    maxGateStabilityRisk(elevationErrorM, elevationTolerance, profile.sessionType === "recuperation" ? 2.4 : 1.2) +
+    minGateStabilityRisk(quality?.productionScore, minProductionScore(profile), productionStabilityWeight) +
+    maxGateStabilityRisk(quality?.pavedRatio, routeIntent?.maxPavedRatio, pavedStabilityWeight) +
     maxGateStabilityRisk(quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), 5) +
     maxGateStabilityRisk(quality?.uTurnRatio, maxUTurnRatio(profile), 7) +
     minGateStabilityRisk(quality?.trailBeautyScore, minTrailBeautyScore, 1.5) +
@@ -198,9 +212,9 @@ export function evaluateRouteHardGates(
   const distanceErrorRatio = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
   addMaxViolation(violations, "distance_tolerance", distanceErrorRatio, distanceTolerance(profile), false, 0, 8);
 
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationTolerance = elevationToleranceM(targetElevationM, profile, targetDistanceKm);
   const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
-  addMaxViolation(violations, "elevation_tolerance", elevationErrorM, elevationToleranceM, true, 20, 0.5);
+  addMaxViolation(violations, "elevation_tolerance", elevationErrorM, elevationTolerance, true, 20, 0.5);
 
   addMinViolation(violations, "production_score", quality?.productionScore, minProductionScore(profile), true, 0.04, 1.4);
   addMaxViolation(violations, "paved_ratio", quality?.pavedRatio, routeIntent?.maxPavedRatio, true, 0.08, 3);

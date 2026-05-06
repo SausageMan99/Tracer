@@ -161,6 +161,39 @@ describe("postProcess candidate ranking", () => {
     expect(candidates[0].quality?.repeatEdgeRatio).toBeLessThan(0.08);
   });
 
+  it("prefers an elevation-compliant trail candidate over a flat raw-score winner when benchmark D+ would fail", async () => {
+    const graph = makeChainGraph(80);
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const nodeElevation = new Map<string, number>();
+
+    for (const id of graph.nodes.keys()) {
+      const numericId = Number(id);
+      nodeElevation.set(id, numericId >= 20 && numericId <= 28 ? 100 + (numericId - 20) * 15 : 100);
+    }
+
+    const flatHighScorePath: SolverPath = {
+      ...makePath(8, 0),
+      totalScore: 100,
+    };
+    const elevationCompliantPath: SolverPath = {
+      ...makePath(8, 20),
+      totalScore: 85,
+    };
+
+    const candidates = await postProcess(
+      [flatHighScorePath, elevationCompliantPath],
+      graph,
+      { lat: 48.8, lng: 2.3 },
+      trailProfile,
+      8,
+      120,
+      nodeElevation
+    );
+
+    expect(candidates[0].ascendM).toBeGreaterThanOrEqual(80);
+    expect(candidates[0].quality?.elevationDiagnostics?.withinAbsoluteTolerance).toBe(true);
+  });
+
   it("prefers a continuous non-paved trail over a higher raw-score scenic paved corridor for trail runs", async () => {
     const nodes = new Map<string, GraphNode>();
     const edges = new Map<string, EnrichedEdge>();

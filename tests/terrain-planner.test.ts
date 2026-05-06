@@ -380,4 +380,79 @@ describe('terrain planner', () => {
     expect(target?.kind).not.toBe('scenic_paved');
   });
 
+  it('targets extracted soft trail subcomponent instead of the paved-heavy forest parent for trail intent', () => {
+    const edges = [
+      edge({ id: 'road-ab', from: 'a', to: 'b', highway: 'footway', surface: 'asphalt', scenic: true, lengthKm: 1.2 }),
+      edge({ id: 'road-bc', from: 'b', to: 'c', highway: 'footway', surface: 'asphalt', scenic: true, lengthKm: 1.0 }),
+      edge({ id: 'road-cd', from: 'c', to: 'd', highway: 'residential', surface: 'asphalt', scenic: true, lengthKm: 0.8 }),
+      edge({ id: 'b-wood-a', from: 'b', to: 'wood-a', highway: 'path', surface: 'ground', scenic: true, lengthKm: 0.7 }),
+      edge({ id: 'wood-a-wood-b', from: 'wood-a', to: 'wood-b', highway: 'track', surface: 'earth', scenic: true, lengthKm: 0.7 }),
+      edge({ id: 'wood-b-wood-c', from: 'wood-b', to: 'wood-c', highway: 'footway', surface: 'gravel', scenic: true, lengthKm: 0.7 }),
+      edge({ id: 'wood-c-b', from: 'wood-c', to: 'b', highway: 'path', surface: 'ground', scenic: true, lengthKm: 0.3 }),
+    ];
+    const localGraph = graph(edges, {
+      a: { lat: 49, lng: -0.5 },
+      b: { lat: 49.001, lng: -0.5 },
+      c: { lat: 49.002, lng: -0.5 },
+      d: { lat: 49.003, lng: -0.5 },
+      'wood-a': { lat: 49.010, lng: -0.5 },
+      'wood-b': { lat: 49.011, lng: -0.501 },
+      'wood-c': { lat: 49.012, lng: -0.502 },
+    });
+
+    const intent = planRouteIntent({
+      graph: localGraph,
+      terrainAudit: auditTerrainData(edges),
+      profile: trailProfile,
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      scenicMode: true,
+    });
+    const target = intent.terrainComponents.find((component) => component.id === intent.targetComponents[0]);
+
+    expect(intent.type).toBe('transition_to_woods');
+    expect(intent.targetComponents).toEqual([expect.stringContaining('-soft-')]);
+    expect(target?.pavedKm).toBe(0);
+    expect(target?.nonPavedKm).toBeGreaterThanOrEqual(1.2);
+  });
+
+  it('keeps short transition-to-woods trail intent honest but not stricter than the 8k beta gate', () => {
+    const edges = [
+      edge({ id: 'home-road', from: 'home', to: 'gate', highway: 'residential', surface: 'asphalt', lengthKm: 0.8 }),
+      edge({ id: 'gate-a', from: 'gate', to: 'a', highway: 'path', surface: 'ground', scenic: true, lengthKm: 0.8 }),
+      edge({ id: 'ab', from: 'a', to: 'b', highway: 'path', surface: 'earth', scenic: true, lengthKm: 1.2 }),
+      edge({ id: 'bc', from: 'b', to: 'c', highway: 'track', surface: 'unpaved', scenic: true, lengthKm: 1.1 }),
+      edge({ id: 'cd', from: 'c', to: 'd', highway: 'footway', surface: 'gravel', scenic: true, lengthKm: 0.9 }),
+    ];
+    const localGraph = graph(edges, {
+      home: { lat: 49, lng: -0.5 },
+      gate: { lat: 49.006, lng: -0.5 },
+      a: { lat: 49.010, lng: -0.5 },
+      b: { lat: 49.011, lng: -0.501 },
+      c: { lat: 49.012, lng: -0.502 },
+      d: { lat: 49.013, lng: -0.503 },
+    });
+
+    const shortIntent = planRouteIntent({
+      graph: localGraph,
+      terrainAudit: auditTerrainData(edges),
+      profile: trailProfile,
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      scenicMode: true,
+    });
+    const longIntent = planRouteIntent({
+      graph: localGraph,
+      terrainAudit: auditTerrainData(edges),
+      profile: trailProfile,
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      scenicMode: true,
+    });
+
+    expect(shortIntent.type).toBe('transition_to_woods');
+    expect(shortIntent.maxPavedRatio).toBe(0.48);
+    expect(longIntent.maxPavedRatio).toBe(0.42);
+  });
+
 });

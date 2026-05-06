@@ -272,11 +272,20 @@ function pavedRatio(component: TerrainComponent): number {
 
 function selectForestCandidate(components: TerrainComponent[], targetDistanceKm: number): TerrainComponent | undefined {
   const forestEligibleKinds = new Set<TerrainComponent['kind']>(['forest', 'trail_cluster', 'unknown_natural']);
-  return components.find((component) =>
-    forestEligibleKinds.has(component.kind) &&
-    component.totalKm >= Math.max(1.8, targetDistanceKm * 0.18) &&
-    component.nonPavedKm >= Math.max(1.2, targetDistanceKm * 0.12)
-  );
+  const minTotalKm = Math.max(1.8, targetDistanceKm * 0.18);
+  const minNonPavedKm = Math.max(1.2, targetDistanceKm * 0.12);
+  const score = (component: TerrainComponent): number => {
+    const pavedPenalty = component.pavedKm * 3 + pavedRatio(component) * component.totalKm * 2;
+    return component.nonPavedKm * 4 + component.unknownSurfaceKm * 1.2 + component.totalKm * 0.5 - pavedPenalty - component.distanceFromStartKm * 0.5;
+  };
+
+  return components
+    .filter((component) =>
+      forestEligibleKinds.has(component.kind) &&
+      component.totalKm >= minTotalKm &&
+      component.nonPavedKm >= minNonPavedKm
+    )
+    .sort((a, b) => score(b) - score(a))[0];
 }
 
 function selectUrbanNatureTargetComponent(components: TerrainComponent[], profile: SessionProfile): TerrainComponent | undefined {
@@ -390,7 +399,9 @@ export function planRouteIntent(input: PlanRouteIntentInput): RouteIntent {
         : 0.05;
   const forestLikeIntent = type === 'forest_loop' || type === 'transition_to_woods';
   const pavedCap = forestLikeIntent
-    ? 0.42
+    ? input.targetDistanceKm <= 8
+      ? 0.48
+      : 0.42
     : type === 'park_loop' || type === 'urban_nature_loop'
       ? 0.65
       : 0.85;

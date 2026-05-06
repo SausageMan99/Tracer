@@ -210,6 +210,31 @@ describe("route hard-gate selector", () => {
     expect(isBetaStableCandidate(healthy, context)).toBe(true);
   });
 
+  it("accepts a short transition-to-woods candidate inside the 8k paved beta gate", () => {
+    const tourvilleLike = candidate(80, {
+      distanceKm: 7.52,
+      ascendM: 176,
+      quality: {
+        pavedRatio: 0.431,
+        repeatEdgeRatio: 0.027,
+        uTurnRatio: 0.002,
+        productionScore: 0.753,
+        trailBeautyScore: 0.686,
+        naturalCorridorRatio: 0.487,
+        longestTrailSegmentKm: 3.66,
+        trailPotential: "medium",
+      },
+    });
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 8, targetElevationM: 120, maxPavedRatio: 0.48 }),
+    };
+
+    expect(isBetaStableCandidate(tourvilleLike, context)).toBe(true);
+  });
+
   it("prefers a stable hard-gate margin over a prettier borderline trail candidate", () => {
     const prettierBorderline = candidate(100, {
       quality: {
