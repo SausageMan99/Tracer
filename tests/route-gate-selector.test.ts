@@ -212,17 +212,17 @@ describe("route hard-gate selector", () => {
 
   it("accepts a short transition-to-woods candidate inside the 8k paved beta gate", () => {
     const tourvilleLike = candidate(80, {
-      distanceKm: 7.52,
-      ascendM: 176,
+      distanceKm: 7.294177041648547,
+      ascendM: 72,
       quality: {
-        pavedRatio: 0.431,
-        repeatEdgeRatio: 0.027,
-        uTurnRatio: 0.002,
-        productionScore: 0.753,
-        trailBeautyScore: 0.686,
-        naturalCorridorRatio: 0.487,
-        longestTrailSegmentKm: 3.66,
-        trailPotential: "medium",
+        pavedRatio: 0.42824393594260796,
+        repeatEdgeRatio: 0.013967040052076147,
+        uTurnRatio: 0.0019290270456284453,
+        productionScore: 0.7176609186535239,
+        trailBeautyScore: 0.6804550489620724,
+        naturalCorridorRatio: 0.45261023008939233,
+        longestTrailSegmentKm: 3.3014191491333116,
+        trailPotential: "high",
       },
     });
     const context = {
@@ -233,6 +233,31 @@ describe("route hard-gate selector", () => {
     };
 
     expect(isBetaStableCandidate(tourvilleLike, context)).toBe(true);
+  });
+
+  it("does not reject a compliant long trail route solely by summing independent beta margins", () => {
+    const tourville12kLike = candidate(80, {
+      distanceKm: 11.271095464114607,
+      ascendM: 234,
+      quality: {
+        productionScore: 0.7568082964182472,
+        pavedRatio: 0.38534428416576333,
+        repeatEdgeRatio: 0.031597163741458795,
+        uTurnRatio: 0.0011220580910018827,
+        trailBeautyScore: 0.6581733784491937,
+        naturalCorridorRatio: 0.5247745834686102,
+        longestTrailSegmentKm: 4.169383126331206,
+        trailPotential: "medium",
+      },
+    });
+    const context = {
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42 }),
+    };
+
+    expect(isBetaStableCandidate(tourville12kLike, context)).toBe(true);
   });
 
   it("prefers a stable hard-gate margin over a prettier borderline trail candidate", () => {

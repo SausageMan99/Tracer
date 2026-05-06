@@ -119,10 +119,8 @@ function computeCriticalStabilityRisk(
   candidate: RouteCandidate,
   context: RouteGateSelectionContext
 ): number {
-  const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
+  const { targetDistanceKm, profile, routeIntent } = context;
   const quality = candidate.quality;
-  const elevationTolerance = elevationToleranceM(targetElevationM, profile, targetDistanceKm);
-  const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
   const minTrailBeautyScore = profile.sessionType === "trail"
     ? targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55
     : undefined;
@@ -134,22 +132,21 @@ function computeCriticalStabilityRisk(
     : undefined;
 
   const shortTrailIntent = profile.sessionType === "trail" && targetDistanceKm <= 8;
-  const productionStabilityWeight = shortTrailIntent ? 0.6 : 1.2;
+  const productionStabilityWeight = shortTrailIntent ? 0.5 : 1.2;
   const pavedStabilityWeight = shortTrailIntent
     ? 1
     : profile.sessionType === "trail"
-      ? 6
+      ? 1.2
       : 3;
 
-  return (
-    maxGateStabilityRisk(Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1), distanceTolerance(profile), 8) +
-    maxGateStabilityRisk(elevationErrorM, elevationTolerance, profile.sessionType === "recuperation" ? 2.4 : 1.2) +
-    minGateStabilityRisk(quality?.productionScore, minProductionScore(profile), productionStabilityWeight) +
-    maxGateStabilityRisk(quality?.pavedRatio, routeIntent?.maxPavedRatio, pavedStabilityWeight) +
-    maxGateStabilityRisk(quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), 5) +
-    maxGateStabilityRisk(quality?.uTurnRatio, maxUTurnRatio(profile), 7) +
-    minGateStabilityRisk(quality?.trailBeautyScore, minTrailBeautyScore, 1.5) +
-    minGateStabilityRisk(quality?.naturalCorridorRatio, minNaturalCorridorRatio, 2) +
+  return Math.max(
+    maxGateStabilityRisk(Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1), distanceTolerance(profile), 8),
+    minGateStabilityRisk(quality?.productionScore, minProductionScore(profile), productionStabilityWeight),
+    maxGateStabilityRisk(quality?.pavedRatio, routeIntent?.maxPavedRatio, pavedStabilityWeight),
+    maxGateStabilityRisk(quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), 5),
+    maxGateStabilityRisk(quality?.uTurnRatio, maxUTurnRatio(profile), 7),
+    minGateStabilityRisk(quality?.trailBeautyScore, minTrailBeautyScore, 1.5),
+    minGateStabilityRisk(quality?.naturalCorridorRatio, minNaturalCorridorRatio, 2),
     minGateStabilityRisk(quality?.longestTrailSegmentKm, minLongestTrailSegmentKm, 2)
   );
 }
