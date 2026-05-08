@@ -18,6 +18,7 @@ export type RouteHardGateKey =
   | "repeat_edge_ratio"
   | "u_turn_ratio"
   | "geometry_overlap"
+  | "geometry_self_intersection"
   | "geometry_loop_compactness"
   | "geometry_out_and_back_similarity"
   | "trail_beauty_score"
@@ -225,6 +226,7 @@ export function evaluateRouteHardGates(
   addMaxViolation(violations, "repeat_edge_ratio", quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), false, 0, 5);
   addMaxViolation(violations, "u_turn_ratio", quality?.uTurnRatio, maxUTurnRatio(profile), false, 0, 8);
   addMaxViolation(violations, "geometry_overlap", geometry?.geometryOverlapRatio, maxGeometryOverlapRatio(profile, routeIntent), false, 0, 3);
+  addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
   addMaxViolation(violations, "geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, routeIntent?.type === "park_loop" ? 0.22 : 0.32, true, 0.06, 1.2);
   if (profile.sessionType === "trail") {
     addMinViolation(violations, "trail_beauty_score", quality?.trailBeautyScore, targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55, false, 0, 2);
@@ -343,6 +345,7 @@ function candidateThresholds(context: RouteGateSelectionContext): Record<string,
     maxRepeatEdgeRatio: maxRepeatEdgeRatio(profile, routeIntent),
     maxUTurnRatio: maxUTurnRatio(profile),
     maxGeometryOverlapRatio: maxGeometryOverlapRatio(profile, routeIntent),
+    maxSelfIntersectionCount: 0,
     maxGeometryOutAndBackSimilarityRatio: routeIntent?.type === "park_loop" ? 0.22 : 0.32,
     minGeometryLoopCompactness: minLoopCompactness(routeIntent),
     minTrailBeautyScore: profile.sessionType === "trail"
@@ -379,6 +382,7 @@ function candidateDeltas(candidate: RouteCandidate, context: RouteGateSelectionC
     numericDelta("repeat_edge_ratio", quality?.repeatEdgeRatio, thresholds.maxRepeatEdgeRatio as number, "max"),
     numericDelta("u_turn_ratio", quality?.uTurnRatio, thresholds.maxUTurnRatio as number, "max"),
     numericDelta("geometry_overlap", geometry?.geometryOverlapRatio, thresholds.maxGeometryOverlapRatio as number, "max"),
+    numericDelta("geometry_self_intersection", geometry?.selfIntersectionCount, thresholds.maxSelfIntersectionCount as number, "max"),
     numericDelta("geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, thresholds.maxGeometryOutAndBackSimilarityRatio as number, "max"),
     numericDelta("geometry_loop_compactness", geometry?.loopCompactness, thresholds.minGeometryLoopCompactness as number | undefined, "min"),
     numericDelta("trail_beauty_score", quality?.trailBeautyScore, thresholds.minTrailBeautyScore as number | undefined, "min"),

@@ -171,7 +171,11 @@ describe('terrain planner', () => {
 
     expect(intent.type).toBe('park_loop');
     expect(intent.targetComponents).toEqual([expect.stringContaining('-soft-')]);
+    expect(intent.maxPavedRatio).toBe(0.68);
+    expect(intent.maxRepeatEdgeRatio).toBe(0.06);
     expect(intent.cleanReturnMode).toBe('fallback_allowed');
+    expect(intent.beamBudget.beamWidth).toBeGreaterThanOrEqual(24);
+    expect(intent.beamBudget.shortlistSize).toBeGreaterThanOrEqual(24);
     expect(intent.beamBudget.maxIterations).toBeLessThanOrEqual(720);
   });
 

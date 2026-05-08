@@ -361,6 +361,51 @@ describe("route hard-gate selector", () => {
     expect(ordered[0]).toBe(lowerPavedConstrainedLoop);
   });
 
+  it("blocks self-intersecting and over-repeat park recovery routes before soft score", () => {
+    const caenBadButPretty = candidate(100, {
+      distanceKm: 5.92,
+      ascendM: 46,
+      quality: {
+        productionScore: 0.92,
+        pavedRatio: 0.674,
+        repeatEdgeRatio: 0.085,
+        uTurnRatio: 0.004,
+        naturalWayRatio: 0.77,
+        trailRatio: 0.77,
+        geometry: { ...quality().geometry!, selfIntersectionCount: 6, geometryOverlapRatio: 0.098, loopCompactness: 0.25 },
+      },
+    });
+    const caenCleaner = candidate(40, {
+      distanceKm: 5.85,
+      ascendM: 50,
+      quality: {
+        productionScore: 0.79,
+        pavedRatio: 0.636,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        naturalWayRatio: 0.83,
+        trailRatio: 0.83,
+        geometry: { ...quality().geometry!, selfIntersectionCount: 0, geometryOverlapRatio: 0.11, loopCompactness: 0.08 },
+      },
+    });
+    const context = {
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      profile: recoveryProfile,
+      routeIntent: intent({ type: "park_loop", strategy: "park_loop", targetDistanceKm: 6, targetElevationM: 50, maxPavedRatio: 0.68, maxRepeatEdgeRatio: 0.06, maxGeometryOverlapRatio: 0.18 }),
+    };
+
+    const badGate = evaluateRouteHardGates(caenBadButPretty, context);
+    const ordered = orderCandidatesByHardGates([caenBadButPretty, caenCleaner], context, (route) => route.totalScore);
+
+    expect(isBetaStableCandidate(caenBadButPretty, context)).toBe(false);
+    expect(badGate.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "repeat_edge_ratio", relaxable: false }),
+      expect.objectContaining({ key: "geometry_self_intersection", relaxable: false }),
+    ]));
+    expect(ordered[0]).toBe(caenCleaner);
+  });
+
   it("summarizes rejected candidates with gate reasons, thresholds, and deltas for benchmark diagnostics", () => {
     const distanceFailure = candidate(100, {
       distanceKm: 6.7,

@@ -440,8 +440,12 @@ export function assessRouteQuality(args: {
     targetComponentDwellKm: targetComponentStats.targetComponentDwellKm,
   });
 
+  const absoluteElevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
+  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationScore = targetElevationM > 0 && absoluteElevationErrorM <= elevationToleranceM
+    ? 1
+    : clamp01(1 - elevationErrorPct / 0.45);
   const distanceScore = clamp01(1 - distanceErrorPct / 0.2);
-  const elevationScore = clamp01(1 - elevationErrorPct / 0.45);
   const loopScore = clamp01(candidate.loopScore);
   const calmScore = clamp01(1 - busyRoadRatio * 4);
   const safetyScore = clamp01(1 - restrictedAccessRatio * 10 - onewayViolationRatio * 10);
@@ -492,8 +496,6 @@ export function assessRouteQuality(args: {
     routeEnvironmentScore * 0.04;
   const productionScore = clamp01(baseProductionScore - roadHeavyTrailPenalty - trailPavementPenalty);
 
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
-  const absoluteElevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
   const elevationDiagnostics = targetElevationM > 0 ? {
     targetElevationM,
     actualAscendM: candidate.ascendM,
@@ -510,7 +512,7 @@ export function assessRouteQuality(args: {
 
   const warnings: string[] = [];
   if (distanceErrorPct > 0.2) warnings.push("DISTANCE_OFF_TARGET");
-  if (targetElevationM > 0 && elevationErrorPct > 0.5) warnings.push("ELEVATION_OFF_TARGET");
+  if (targetElevationM > 0 && absoluteElevationErrorM > elevationToleranceM) warnings.push("ELEVATION_OFF_TARGET");
   if (loopGapKm > 0.5) warnings.push("LOOP_NOT_CLOSED");
   if (busyRoadRatio > 0.08) warnings.push("TOO_MUCH_BUSY_ROAD");
   if (restrictedAccessRatio > 0) warnings.push("RESTRICTED_ACCESS");

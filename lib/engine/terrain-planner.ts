@@ -362,8 +362,8 @@ function cleanReturnMode(type: RouteIntentType): RouteIntent['cleanReturnMode'] 
 function beamBudget(type: RouteIntentType, graph: EnrichedGraph): RouteIntent['beamBudget'] {
   const denseGraph = graph.edges.size > 1800;
   if (type === 'park_loop') return denseGraph
-    ? { beamWidth: 18, maxIterations: 360, shortlistSize: 12 }
-    : { beamWidth: 22, maxIterations: 420, shortlistSize: 12 };
+    ? { beamWidth: 24, maxIterations: 460, shortlistSize: 24 }
+    : { beamWidth: 26, maxIterations: 480, shortlistSize: 24 };
   if (type === 'urban_nature_loop') return denseGraph
     ? { beamWidth: 18, maxIterations: 340, shortlistSize: 12 }
     : { beamWidth: 34, maxIterations: 720, shortlistSize: 18 };
@@ -402,9 +402,11 @@ export function planRouteIntent(input: PlanRouteIntentInput): RouteIntent {
     ? input.targetDistanceKm <= 8
       ? 0.48
       : 0.42
-    : type === 'park_loop' || type === 'urban_nature_loop'
-      ? 0.65
-      : 0.85;
+    : type === 'park_loop' && input.profile.sessionType === 'recuperation'
+      ? 0.68
+      : type === 'park_loop' || type === 'urban_nature_loop'
+        ? 0.65
+        : 0.85;
   const minNonPavedTrailStreakKm = trailLikeRequest
     ? Number(Math.min(
         forestLikeIntent && input.targetDistanceKm >= 14 ? 4 : 3,
@@ -422,7 +424,11 @@ export function planRouteIntent(input: PlanRouteIntentInput): RouteIntent {
     minNonPavedTrailStreakKm,
     maxPavedRatio: pavedCap,
     maxBusyRoadRatio: 0.08,
-    maxRepeatEdgeRatio: type === 'forest_loop' || type === 'transition_to_woods' ? 0.04 : 0.12,
+    maxRepeatEdgeRatio: type === 'forest_loop' || type === 'transition_to_woods'
+      ? 0.04
+      : type === 'park_loop' && input.profile.sessionType === 'recuperation'
+        ? 0.06
+        : 0.12,
     maxGeometryOverlapRatio: type === 'forest_loop' || type === 'transition_to_woods' ? 0.12 : 0.18,
     minLoopAreaKm2: Number(Math.max(0.05, input.targetDistanceKm * 0.015).toFixed(3)),
     cleanReturnMode: cleanReturnMode(type),

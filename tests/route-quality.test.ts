@@ -90,6 +90,41 @@ describe("assessRouteQuality", () => {
     expect(quality.productionScore).toBeGreaterThan(0.8);
   });
 
+  it("scores low-D+ recovery routes with absolute elevation tolerance instead of relative percent", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 49.1979, lng: -0.3886 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 49.1979, lng: -0.3886, edges: ["ab"] }],
+        ["b", { id: "b", lat: 49.203, lng: -0.384, edges: ["ab"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 5.32, highway: "path", surface: "sand", scenic: true, osmWayId: 44, score: 0.9 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_recuperation")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b"],
+      edgeIds: ["ab"],
+      distanceKm: 5.32,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 5.32, ascendM: 93, loopScore: 0.95 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      scenicWayIds: new Set(["44"]),
+    });
+
+    expect(quality.elevationDiagnostics?.withinAbsoluteTolerance).toBe(true);
+    expect(quality.warnings).not.toContain("ELEVATION_OFF_TARGET");
+    expect(quality.productionScore).toBeGreaterThanOrEqual(0.68);
+  });
+
   it("flags immediate U-turns and overlapping backtracking", () => {
     const graph = makeGraph();
     const profile = PROFILES_BY_ID.get("running_trail")!;

@@ -350,6 +350,41 @@ describe("route production benchmarks", () => {
     ]));
   });
 
+  it("accepts an honest paved-running cap for the Caen recovery park contract", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 5.49,
+      ascendM: 95,
+      quality: {
+        productionScore: 0.705,
+        loopGapKm: 0.02,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.74,
+        pavedRatio: 0.666,
+        repeatEdgeRatio: 0.026,
+        uTurnRatio: 0.001,
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        warnings: ["TOO_MANY_INTERSECTIONS"],
+        geometry: {
+          loopCompactness: 0.22,
+          geometryOverlapRatio: 0.16,
+          selfIntersectionCount: 0,
+          sharpTurnDensityPerKm: 1,
+          headingReversalRatio: 0.02,
+          outAndBackSimilarityRatio: 0,
+          startStemKm: 0,
+          endStemKm: 0,
+          maxDistanceFromStartKm: 1.2,
+        },
+      },
+      durationMs: 17000,
+    });
+
+    expect(benchmark.thresholds.maxPavedRatio).toBe(0.68);
+    expect(summary.passed).toBe(true);
+  });
+
   it("fails geometry thresholds when a constrained park route becomes a fake loop", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
     const summary = summarizeBenchmarkResult(benchmark, {
