@@ -83,6 +83,31 @@ describe("POST /api/generate-route", () => {
     expect(generateRouteLegacyMock).not.toHaveBeenCalled();
   });
 
+  it("maps constrained recovery park refusals to user-facing shorter-distance copy", async () => {
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "PARK_TOO_SMALL_FOR_DISTANCE" })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({
+      ...baseBody,
+      profileId: "running_recuperation",
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+    }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+    });
+    expect(payload.error).toMatch(/distance plus courte/i);
+    expect(payload.rejectedCandidatesDiagnostics).toBeUndefined();
+    expect(generateRouteLegacyMock).not.toHaveBeenCalled();
+  });
+
   it("exposes rejected candidate diagnostics only when benchmark generation diagnostics are requested", async () => {
     const rejectedCandidatesDiagnostics = {
       subCode: "TRAIL_PROMISE_UNMET",
@@ -135,6 +160,34 @@ describe("POST /api/generate-route", () => {
       subCode: "TRAIL_PROMISE_UNMET",
       rejectedCandidatesDiagnostics,
     });
+  });
+
+
+  it("exposes recovery park adjusted distance instead of a silent short 200", async () => {
+    const distanceAdjustment = {
+      requestedDistanceKm: 6,
+      adjustedDistanceKm: 5.35,
+      reason: "PARK_RECOVERY_SIZE_LIMIT",
+      policy: "adjusted_distance",
+      messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+    };
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", distanceKm: 5.35 },
+      candidates: [{ id: "best", distanceKm: 5.35 }],
+      distanceAdjustment,
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({
+      ...baseBody,
+      profileId: "running_recuperation",
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+    }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route.distanceAdjustment).toEqual(distanceAdjustment);
   });
 
   it("keeps legacy generation for waypoint or end-address routes", async () => {

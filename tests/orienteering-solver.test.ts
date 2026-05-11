@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from "@/lib/types";
-import { solve } from "@/lib/engine/orienteering-solver";
+import { resolveSolverDeadline, solve } from "@/lib/engine/orienteering-solver";
 import { assessRouteQuality } from "@/lib/engine/route-quality";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import type { RouteIntent } from "@/lib/engine/terrain-planner";
@@ -576,10 +576,54 @@ function makeCleanReturnClosureGraph(): EnrichedGraph {
 }
 
 describe("solve natural corridor preference", () => {
-  it("closes with a clean alternative instead of reusing the outbound edge when both are routable", async () => {
-    const graph = makeCleanReturnClosureGraph();
+  it("honors an explicit runtime deadline instead of inflating routeIntent timeBudgetMs", () => {
+    const nowMs = 1_000;
+    const explicitDeadlineMs = 11_000;
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 15,
+      targetElevationM: 220,
+      targetComponents: [],
+      distancePolicy: { mode: "strict" },
+      maxPavedRatio: 0.42,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.12,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 4_500,
+      beamBudget: { beamWidth: 28, maxIterations: 650, shortlistSize: 16 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [],
+    };
 
-    const paths = await solve(graph, "start", 3.2, 0, new Map());
+    expect(resolveSolverDeadline(routeIntent, { deadlineMs: explicitDeadlineMs }, nowMs)).toBe(explicitDeadlineMs);
+    expect(resolveSolverDeadline(routeIntent, {}, nowMs)).toBeLessThanOrEqual(nowMs + 60_000);
+  });
+
+  it("prefers a clean return over fallback overlap in fallback_allowed park loops when both fit", async () => {
+    const graph = makeCleanReturnClosureGraph();
+    const routeIntent: RouteIntent = {
+      type: "park_loop",
+      strategy: "park_loop",
+      targetDistanceKm: 3.2,
+      targetElevationM: 0,
+      targetComponents: [],
+      distancePolicy: { mode: "strict" },
+      maxPavedRatio: 0.9,
+      maxBusyRoadRatio: 0.2,
+      maxRepeatEdgeRatio: 0.2,
+      maxGeometryOverlapRatio: 0.2,
+      cleanReturnMode: "fallback_allowed",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 24, maxIterations: 900, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [],
+    };
+
+    const paths = await solve(graph, "start", 3.2, 0, new Map(), routeIntent);
 
     expect(paths.length).toBeGreaterThan(0);
     expect(paths[0].edgeIds).toEqual([
@@ -613,6 +657,7 @@ describe("solve natural corridor preference", () => {
     });
 
     expect(quality.repeatEdgeRatio).toBeLessThan(0.08);
+    expect(quality.uTurnRatio).toBeLessThanOrEqual(0.015);
     expect(quality.warnings).not.toContain("TOO_MUCH_BACKTRACKING");
   });
 
@@ -697,6 +742,7 @@ describe("solve natural corridor preference", () => {
       targetDistanceKm: 4,
       targetElevationM: 0,
       targetComponents: ["tc-target"],
+      distancePolicy: { mode: "strict" },
       minNaturalZoneDwellKm: 2,
       minNonPavedTrailStreakKm: 2,
       maxPavedRatio: 0.45,

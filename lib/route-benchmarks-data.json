@@ -68,7 +68,8 @@
       "maxUTurnRatio": 0.01,
       "minTerrainDataConfidence": "medium",
       "minTrailPotential": "medium",
-      "maxDurationMs": 60000
+      "maxDurationMs": 60000,
+      "minRouteTrailQuality": "medium"
     },
     "blockingWarnings": [
       "ONEWAY_VIOLATION",
@@ -147,7 +148,8 @@
       "maxUTurnRatio": 0.01,
       "minTerrainDataConfidence": "medium",
       "minTrailPotential": "medium",
-      "maxDurationMs": 80000
+      "maxDurationMs": 80000,
+      "minRouteTrailQuality": "medium"
     },
     "blockingWarnings": [
       "ONEWAY_VIOLATION",
@@ -233,7 +235,12 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Petit parc/urbain : contrat récupération nature/paved-running assumé, avec pavedRatio honnête (cap 0.68) et géométrie propre; ne pas le vendre comme faux trail non bitumé."
+    "notes": "Petit parc/urbain : contrat récupération nature/paved-running assumé, avec pavedRatio honnête (cap 0.68) et géométrie propre; ne pas le vendre comme faux trail non bitumé. Accepte explicitement une distance ajustée propre si le parc ne permet pas honnêtement 6 km sans dépasser les garde-fous.",
+    "expectedOutcome": "adjusted_distance",
+    "adjustedDistanceKm": {
+      "min": 5.15,
+      "max": 6
+    }
   },
   {
     "id": "clecy-suisse-normande-trail-12k",
@@ -341,7 +348,8 @@
       "maxRepeatEdgeRatio": 0.04,
       "maxUTurnRatio": 0.01,
       "minTerrainDataConfidence": "medium",
-      "minTrailPotential": "high",
+      "minTrailPotential": "medium",
+      "minRouteTrailQuality": "high",
       "maxDurationMs": 80000
     },
     "blockingWarnings": [

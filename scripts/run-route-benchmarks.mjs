@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   benchmarkToRequestCore,
+  summarizeBenchmarkFailure,
   summarizeBenchmarkResult,
 } from "../lib/route-benchmarks-core.mjs";
 import {
@@ -185,13 +186,7 @@ async function runBenchmark(benchmark) {
 
     if (!response.ok || payload.success !== true) {
       const rejectedCandidateArtifacts = await saveRejectedCandidatesArtifacts(benchmark, payload);
-      return {
-        id: benchmark.id,
-        label: benchmark.label,
-        tier: benchmark.tier,
-        tags: benchmark.tags ?? [],
-        passed: false,
-        failures: ["http_error"],
+      return summarizeBenchmarkFailure(benchmark, {
         status: response.status,
         durationMs,
         errorCode: payload.errorCode ?? "UNKNOWN",
@@ -199,11 +194,11 @@ async function runBenchmark(benchmark) {
         error: payload.error ?? "No JSON error body",
         rejectedCandidatesDiagnostics: payload.rejectedCandidatesDiagnostics ?? null,
         routeArtifacts: rejectedCandidateArtifacts,
-      };
+      });
     }
 
     const best = payload.route?.best;
-    const summary = summarizeBenchmarkResult(benchmark, best ?? {}, durationMs);
+    const summary = summarizeBenchmarkResult(benchmark, payload.route ?? best ?? {}, durationMs);
     const routeArtifacts = await saveRouteArtifacts(benchmark, payload);
 
     return {

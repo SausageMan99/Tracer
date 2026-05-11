@@ -27,12 +27,24 @@ export interface TerrainComponent {
   confidence: 'low' | 'medium' | 'high';
 }
 
+export type RouteDistancePolicy =
+  | { mode: 'strict' }
+  | {
+      mode: 'adjustable';
+      reason: 'PARK_RECOVERY_SIZE_LIMIT';
+      requestedDistanceKm: number;
+      minAdjustedDistanceKm: number;
+      maxAdjustedDistanceKm: number;
+      preferCleanAdjustedOverDirtyExact: true;
+    };
+
 export interface RouteIntent {
   type: RouteIntentType;
   strategy: RouteIntentType;
   targetDistanceKm: number;
   targetElevationM: number;
   targetComponents: string[];
+  distancePolicy: RouteDistancePolicy;
   minNaturalZoneDwellKm?: number;
   minNonPavedTrailStreakKm?: number;
   maxPavedRatio?: number;
@@ -352,6 +364,20 @@ function buildWarnings(type: RouteIntentType): string[] {
   return [];
 }
 
+function distancePolicyForIntent(type: RouteIntentType, input: PlanRouteIntentInput): RouteDistancePolicy {
+  if (type === 'park_loop' && input.profile.sport === 'running' && input.profile.sessionType === 'recuperation') {
+    return {
+      mode: 'adjustable',
+      reason: 'PARK_RECOVERY_SIZE_LIMIT',
+      requestedDistanceKm: input.targetDistanceKm,
+      minAdjustedDistanceKm: Number(Math.max(input.profile.distanceRange.min, input.targetDistanceKm * 0.86).toFixed(2)),
+      maxAdjustedDistanceKm: input.targetDistanceKm,
+      preferCleanAdjustedOverDirtyExact: true,
+    };
+  }
+  return { mode: 'strict' };
+}
+
 function cleanReturnMode(type: RouteIntentType): RouteIntent['cleanReturnMode'] {
   if (type === 'forest_loop') return 'prefer';
   if (type === 'transition_to_woods') return 'prefer';
@@ -420,6 +446,7 @@ export function planRouteIntent(input: PlanRouteIntentInput): RouteIntent {
     targetDistanceKm: input.targetDistanceKm,
     targetElevationM: input.targetElevationM,
     targetComponents,
+    distancePolicy: distancePolicyForIntent(type, input),
     minNaturalZoneDwellKm: Number((input.targetDistanceKm * dwellRatio).toFixed(2)),
     minNonPavedTrailStreakKm,
     maxPavedRatio: pavedCap,

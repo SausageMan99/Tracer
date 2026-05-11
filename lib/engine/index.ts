@@ -1,4 +1,6 @@
 import type {
+  Coordinate,
+  EnrichedGraph,
   GeneratedRoute,
   RouteGenerationDiagnostics,
   RouteGenerationStageTiming,
@@ -11,13 +13,53 @@ import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
-import { buildRejectedCandidatesDiagnostics, isBetaStableCandidate } from "./route-gate-selector";
+import { buildRejectedCandidatesDiagnostics, distanceAcceptanceForCandidate, isBetaStableCandidate, rejectionSubCodeForCandidate } from "./route-gate-selector";
 import { auditTerrainData } from "./terrain-audit";
 import { planRouteIntent } from "./terrain-planner";
 
 export interface GenerateRouteV2Options {
   includeGenerationDiagnostics?: boolean;
   now?: () => number;
+}
+
+export interface StartNodeSnapResult {
+  closestNodeId: string;
+  closestDist: number;
+}
+
+export function selectStartNodeTopologyAware(
+  graph: Pick<EnrichedGraph, "nodes">,
+  startCoordinate: Coordinate,
+  preferJunction: boolean = true
+): StartNodeSnapResult {
+  let closestNodeId = "";
+  let closestDist = Infinity;
+  const candidates: Array<{ id: string; dist: number; degree: number }> = [];
+
+  for (const [id, node] of Array.from(graph.nodes.entries())) {
+    const dist = haversineKm(startCoordinate, { lat: node.lat, lng: node.lng });
+    const degree = node.edges.length;
+    candidates.push({ id, dist, degree });
+    if (dist < closestDist) {
+      closestDist = dist;
+      closestNodeId = id;
+    }
+  }
+
+  if (!preferJunction || !closestNodeId || !Number.isFinite(closestDist)) {
+    return { closestNodeId, closestDist };
+  }
+
+  const searchRadiusKm = Math.min(0.05, Math.max(0.03, closestDist + 0.02));
+  const junctionCandidate = candidates
+    .filter((candidate) => candidate.degree >= 3 && candidate.dist <= searchRadiusKm)
+    .sort((a, b) => a.dist - b.dist)[0];
+
+  if (!junctionCandidate) {
+    return { closestNodeId, closestDist };
+  }
+
+  return { closestNodeId: junctionCandidate.id, closestDist: junctionCandidate.dist };
 }
 
 function errorCodeFrom(error: unknown): string | undefined {
@@ -78,18 +120,11 @@ export async function generateRouteV2(
     throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "EMPTY_GRAPH" });
   }
 
-  // 4. Find closest node to start
+  // 4. Find start node. For running/trail loops, avoid snapping to a very close
+  // spur when a real junction is only a few metres farther away.
   const { closestNodeId, closestDist } = await timed("graph.closestNode", () => {
-    let closestNodeId = "";
-    let closestDist = Infinity;
-    for (const [id, node] of graph.nodes) {
-      const dist = haversineKm(startCoordinate, { lat: node.lat, lng: node.lng });
-      if (dist < closestDist) {
-        closestDist = dist;
-        closestNodeId = id;
-      }
-    }
-    return { closestNodeId, closestDist };
+    const preferJunction = profile.sport === "running" || profile.sessionType === "trail";
+    return selectStartNodeTopologyAware(graph, startCoordinate, preferJunction);
   });
 
   if (!closestNodeId) {
@@ -160,10 +195,11 @@ export async function generateRouteV2(
       routeIntent,
     };
     if (!isBetaStableCandidate(best, gateContext)) {
+      const subCode = rejectionSubCodeForCandidate(best, gateContext);
       throw new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", {
-        subCode: "TRAIL_PROMISE_UNMET",
+        subCode,
         rejectedCandidatesDiagnostics: includeGenerationDiagnostics
-          ? buildRejectedCandidatesDiagnostics(candidates, gateContext, "TRAIL_PROMISE_UNMET")
+          ? buildRejectedCandidatesDiagnostics(candidates, gateContext, subCode)
           : undefined,
       });
     }
@@ -183,12 +219,30 @@ export async function generateRouteV2(
     }
   });
 
+  const distanceAcceptance = distanceAcceptanceForCandidate(best, {
+    targetDistanceKm: request.targetDistanceKm,
+    targetElevationM: request.targetElevationM,
+    profile,
+    routeIntent,
+  });
+
+  const distanceAdjustment = routeIntent.distancePolicy.mode === "adjustable" && distanceAcceptance === "adjusted"
+    ? {
+        requestedDistanceKm: request.targetDistanceKm,
+        adjustedDistanceKm: best.distanceKm,
+        reason: routeIntent.distancePolicy.reason,
+        policy: "adjusted_distance" as const,
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED" as const,
+      }
+    : undefined;
+
   const route: GeneratedRoute = {
     best,
     candidates,
     startCoordinate,
     profile,
     routeIntent,
+    ...(distanceAdjustment != null ? { distanceAdjustment } : {}),
   };
 
   if (includeGenerationDiagnostics) {

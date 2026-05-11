@@ -265,6 +265,22 @@ describe("scoreEdges trail running surface preferences", () => {
     expect(scenicRoadEdge.scoreReason).toContain("surface=0.58");
   });
 
+  it("marks access=customers footways as restricted for running before solver selection", async () => {
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const weights = deriveWeights(trailProfile, false);
+    const graph = makeSingleEdgeGraph({ highway: "footway", surface: "dirt", access: "customers", osmWayId: 7 });
+
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ elevation: [35, 36] }), { status: 200 })
+    ));
+
+    await scoreEdges(graph, weights, trailProfile, new Set());
+
+    const edge = graph.edges.get("1-2-10")!;
+    expect(edge.score).toBe(0);
+    expect(edge.scoreReason).toBe("restricted-access");
+  });
+
   it("normal running still prefers paved over unpaved (no regression)", async () => {
     const endurance = PROFILES_BY_ID.get("running_endurance")!;
     const weights = deriveWeights(endurance, false);

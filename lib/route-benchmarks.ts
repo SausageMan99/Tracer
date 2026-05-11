@@ -1,6 +1,7 @@
 import rawBenchmarkCases from "./route-benchmarks-data.json";
 import {
   benchmarkToRequestCore,
+  summarizeBenchmarkFailure as summarizeBenchmarkFailureCore,
   summarizeBenchmarkResult as summarizeBenchmarkResultCore,
 } from "./route-benchmarks-core.mjs";
 import type { GenerateRouteRequest } from "./types";
@@ -15,6 +16,9 @@ export interface RouteBenchmarkCase {
   scenicMode?: boolean;
   tags?: string[];
   tier?: "p0" | "p1" | "p2" | "exploratory";
+  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal";
+  expectedRefusalSubCode?: string;
+  adjustedDistanceKm?: { min: number; max: number };
   thresholds: {
     distanceToleranceRatio: number;
     elevationToleranceM: number;
@@ -30,6 +34,7 @@ export interface RouteBenchmarkCase {
     maxUTurnRatio?: number;
     minTerrainDataConfidence?: "low" | "medium" | "high";
     minTrailPotential?: "low" | "medium" | "high";
+    minRouteTrailQuality?: "low" | "medium" | "high";
     maxDurationMs?: number;
     maxGeometryOverlapRatio?: number;
     maxSelfIntersectionCount?: number;
@@ -66,6 +71,7 @@ export interface BenchmarkRouteSample {
     uTurnRatio?: number;
     terrainDataConfidence?: "low" | "medium" | "high";
     trailPotential?: "low" | "medium" | "high";
+    routeTrailQuality?: "low" | "medium" | "high";
     warnings?: string[];
     elevationDiagnostics?: {
       absoluteErrorM?: number;
@@ -86,6 +92,17 @@ export interface BenchmarkRouteSample {
     };
   };
   durationMs?: number;
+  distanceAdjustment?: import("./types").RouteDistanceAdjustment;
+}
+
+export interface BenchmarkFailureSample {
+  status: number;
+  errorCode?: string;
+  subCode?: string | null;
+  error?: string | null;
+  durationMs?: number;
+  rejectedCandidatesDiagnostics?: unknown;
+  routeArtifacts?: unknown;
 }
 
 export interface BenchmarkSummary {
@@ -99,6 +116,13 @@ export interface BenchmarkSummary {
     distanceKm: number;
     ascendM: number;
     distanceErrorRatio: number;
+    requestedDistanceKm?: number | null;
+    adjustedDistanceKm?: number | null;
+    distanceAdjustmentReason?: string | null;
+    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal";
+    actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error";
+    expectedRefusalSubCode?: string | null;
+    refusalSubCode?: string | null;
     elevationErrorM: number;
     productionScore: number;
     loopClosureKm: number;
@@ -114,6 +138,7 @@ export interface BenchmarkSummary {
     uTurnRatio: number;
     terrainDataConfidence: "unknown" | "low" | "medium" | "high";
     trailPotential: "unknown" | "low" | "medium" | "high";
+    routeTrailQuality: "unknown" | "low" | "medium" | "high";
     durationMs: number | null;
     warnings: string[];
     elevationErrorPct: number;
@@ -137,6 +162,13 @@ export const BENCHMARK_CASES = rawBenchmarkCases as RouteBenchmarkCase[];
 
 export function benchmarkToRequest(benchmark: RouteBenchmarkCase): GenerateRouteRequest {
   return benchmarkToRequestCore(benchmark) as GenerateRouteRequest;
+}
+
+export function summarizeBenchmarkFailure(
+  benchmark: RouteBenchmarkCase,
+  payload: BenchmarkFailureSample
+): BenchmarkSummary {
+  return summarizeBenchmarkFailureCore(benchmark, payload) as unknown as BenchmarkSummary;
 }
 
 export function summarizeBenchmarkResult(

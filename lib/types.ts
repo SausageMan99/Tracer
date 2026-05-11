@@ -163,6 +163,14 @@ export interface RoutePoint extends Coordinate {
   elevation?: number;
 }
 
+export interface RouteDistanceAdjustment {
+  requestedDistanceKm: number;
+  adjustedDistanceKm: number;
+  reason: "PARK_RECOVERY_SIZE_LIMIT";
+  policy: "adjusted_distance";
+  messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED";
+}
+
 /**
  * A fully evaluated route candidate produced by the generation pipeline.
  * Scores range from 0 to 1; `totalScore` is the weighted sum used for ranking.
@@ -371,6 +379,8 @@ export interface GeneratedRoute {
    * P0 keeps this diagnostic-only; later phases may feed it into solver budgets/ranking.
    */
   routeIntent?: import("./engine/terrain-planner").RouteIntent;
+  /** Explicit public contract when a recovery park route returns a clean shorter loop instead of silently pretending the requested distance was met. */
+  distanceAdjustment?: RouteDistanceAdjustment;
   /**
    * SmartRoute post-processing statistics.
    * Present only when SmartRoute was successfully applied server-side.

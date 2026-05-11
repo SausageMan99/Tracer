@@ -14,6 +14,7 @@ import {
 } from "../route-generator-legacy";
 import { getRouteIntention } from "../route-intentions";
 import type { RouteIntent } from "./terrain-planner";
+import { isRestrictedAccessForProfile } from "./access-policy";
 
 const MAX_ELEVATION_NODES = 1_000;
 
@@ -323,8 +324,8 @@ export async function scoreEdges(
 
   // Score each edge
   for (const edge of graph.edges.values()) {
-    // Skip private/restricted access edges entirely
-    if (edge.access === "private" || edge.access === "no") {
+    // Skip private/restricted access edges entirely before they can enter the solver.
+    if (isRestrictedAccessForProfile(edge, profile)) {
       edge.score = 0;
       edge.scoreReason = "restricted-access";
       continue;

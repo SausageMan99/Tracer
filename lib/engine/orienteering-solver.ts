@@ -41,6 +41,10 @@ interface NaturalAnchor {
   isTarget?: boolean;
 }
 
+export interface SolverRuntimeBudget {
+  deadlineMs?: number;
+}
+
 // ── Constants ────────────────────────────────────────────────────────────────
 
 const SOLVER_CONFIGS: SolverConfig[] = [
@@ -330,6 +334,8 @@ function scoreIntentEdge(
       const dwellTargetKm = Math.max(1, intent.minNaturalZoneDwellKm ?? MIN_CORRIDOR_STREAK_KM);
       const dwellProgress = Math.min(1, state.targetComponentNaturalDistanceKm / dwellTargetKm);
       score += Math.min(0.26, edge.lengthKm * 0.2) * (1.2 - dwellProgress * 0.4);
+    } else if (state.enteredTargetComponent && state.targetComponentNaturalDistanceKm < (intent.minNonPavedTrailStreakKm ?? MIN_CORRIDOR_STREAK_KM)) {
+      score -= 0.32;
     }
   } else if (intent.type === "park_loop") {
     if (progress > 0.55) score += 0.04;
@@ -492,13 +498,6 @@ function resolveReturnPath(
   maxRepeatRatio?: number,
   maxPavedRatio?: number
 ): { path: ReturnType<typeof findShortestPath> | null; relaxationsUsed: string[] } {
-  const shortestPath = mode === "fallback_allowed"
-    ? returnCache.getPath(graph, fromNodeId, startNodeId)
-    : null;
-  if (shortestPath && shortestPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, shortestPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
-    return { path: shortestPath, relaxationsUsed: ["clean_return"] };
-  }
-
   const cleanPath = cleanReturnPath(graph, fromNodeId, startNodeId, edgeVisits);
   if (cleanPath && cleanPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, cleanPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
     return { path: cleanPath, relaxationsUsed: [] };
@@ -689,7 +688,7 @@ function solveWithConfig(
       // Find candidate edges (with visited-edge relaxation)
       const allEdges = currentNode.edges
         .map((eid) => graph.edges.get(eid)!)
-        .filter((e) => e != null);
+        .filter((e) => e != null && e.score > 0);
 
       const unvisitedEdges = allEdges.filter((e) => {
         const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
@@ -1011,16 +1010,16 @@ export async function solve(
   targetDistanceKm: number,
   targetElevationM: number = 0,
   nodeElevation: Map<string, number> = new Map(),
-  routeIntent?: RouteIntent
+  routeIntent?: RouteIntent,
+  runtimeBudget: SolverRuntimeBudget = {}
 ): Promise<SolverPath[]> {
   const configs = solverConfigsForIntent(routeIntent);
-  const deadlineMs = routeIntent
-    ? performance.now() + Math.max(25_000, Math.min(65_000, routeIntent.timeBudgetMs * 14))
-    : undefined;
+  const deadlineMs = resolveSolverDeadline(routeIntent, runtimeBudget);
   const allPaths: SolverPath[] = [];
   for (const config of configs) {
     if (deadlineMs != null && performance.now() >= deadlineMs && allPaths.length > 0) break;
     allPaths.push(...solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent, deadlineMs));
+    if (hasEnoughProgressivePaths(allPaths, routeIntent)) break;
   }
 
 
@@ -1029,4 +1028,38 @@ export async function solve(
 
   // 4.2 Geometric deduplication
   return deduplicatePaths(allPaths);
+}
+
+export function resolveSolverDeadline(
+  routeIntent?: RouteIntent,
+  runtimeBudget: SolverRuntimeBudget = {},
+  nowMs: number = performance.now()
+): number | undefined {
+  if (runtimeBudget.deadlineMs != null) return runtimeBudget.deadlineMs;
+  if (!routeIntent) return undefined;
+
+  const targetComponents = routeIntent.terrainComponents.filter((component) => routeIntent.targetComponents.includes(component.id));
+  const targetComponentKm = Math.max(0, ...targetComponents.map((component) => component.totalKm));
+  const hugeTransitionToWoods = routeIntent.type === "transition_to_woods" && (
+    targetComponentKm >= 80 || routeIntent.beamBudget.maxIterations >= 600
+  );
+  const multiplier = hugeTransitionToWoods ? (routeIntent.targetDistanceKm >= 14 ? 14 : 12) : 10;
+  const maxBudgetMs = hugeTransitionToWoods ? (routeIntent.targetDistanceKm >= 14 ? 60_000 : 55_000) : 45_000;
+  const softBudgetMs = Math.max(15_000, Math.min(maxBudgetMs, routeIntent.timeBudgetMs * multiplier));
+  return nowMs + softBudgetMs;
+}
+
+function hasEnoughProgressivePaths(paths: SolverPath[], routeIntent?: RouteIntent): boolean {
+  if (!routeIntent) return false;
+  if (routeIntent.type === "transition_to_woods" || routeIntent.type === "forest_loop") return false;
+  const shortlistSize = routeIntent.beamBudget.shortlistSize;
+  if (paths.length < Math.max(4, Math.min(shortlistSize, 8))) return false;
+  const minDistanceKm = routeIntent.targetDistanceKm * 0.9;
+  const targetNodeIds = buildTargetNodeSet(routeIntent);
+  const viableCount = paths.filter((path) => {
+    if (path.distanceKm < minDistanceKm) return false;
+    if (targetNodeIds.size === 0) return true;
+    return path.nodeIds.some((nodeId) => targetNodeIds.has(nodeId));
+  }).length;
+  return viableCount >= Math.max(4, Math.min(shortlistSize, 8));
 }

@@ -76,6 +76,13 @@ const NO_ROAD_NETWORK_MESSAGES: Record<string, string> = {
 const DEFAULT_NO_ROAD_NETWORK_MSG =
   "Aucun réseau routier détecté à cet endroit. Essayez un autre point de départ.";
 
+const ROUTE_CANDIDATES_REJECTED_MESSAGES: Record<string, string> = {
+  PARK_TOO_SMALL_FOR_DISTANCE: "Le parc est trop contraint pour tenir cette distance sans dépasser la promesse bitume/sécurité. Essayez une distance plus courte.",
+  TRAIL_PROMISE_UNMET: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
+};
+
+const DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG = ROUTE_CANDIDATES_REJECTED_MESSAGES.TRAIL_PROMISE_UNMET;
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -241,13 +248,14 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
       const rejectedCandidatesDiagnostics = includeGenerationDiagnostics
         ? err.rejectedCandidatesDiagnostics
         : undefined;
+      const errorMsg = (err.subCode && ROUTE_CANDIDATES_REJECTED_MESSAGES[err.subCode]) ?? DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG;
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
           errorCode: "ROUTE_CANDIDATES_REJECTED",
           subCode: err.subCode,
           ...(rejectedCandidatesDiagnostics != null ? { rejectedCandidatesDiagnostics } : {}),
-          error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
+          error: errorMsg,
         },
         { status: 422 }
       );
@@ -288,12 +296,13 @@ function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
 
   if (message.startsWith("ROUTE_CANDIDATES_REJECTED")) {
     const subCode = message.split(":")[1] ?? undefined;
+    const errorMsg = subCode != null ? ROUTE_CANDIDATES_REJECTED_MESSAGES[subCode] ?? DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG : DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG;
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
         errorCode: "ROUTE_CANDIDATES_REJECTED",
         subCode,
-        error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
+        error: errorMsg,
       },
       { status: 422 }
     );

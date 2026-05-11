@@ -60,6 +60,62 @@ const trailProfile = {
 } satisfies SessionProfile;
 
 describe('terrain planner', () => {
+  it('sets adjustable distance policy for recovery park loops', () => {
+    const recoveryProfile = {
+      ...trailProfile,
+      id: 'running_recuperation',
+      name: 'Recovery',
+      sessionType: 'recuperation',
+    } satisfies SessionProfile;
+    const edges = [
+      edge({ id: 'ab', from: 'a', to: 'b', highway: 'footway', surface: 'asphalt', scenic: true, lengthKm: 1.2 }),
+      edge({ id: 'bc', from: 'b', to: 'c', highway: 'path', scenic: true, lengthKm: 1.1 }),
+      edge({ id: 'cd', from: 'c', to: 'd', highway: 'footway', surface: 'asphalt', scenic: true, lengthKm: 1.0 }),
+      edge({ id: 'de', from: 'd', to: 'e', highway: 'path', scenic: true, lengthKm: 1.0 }),
+      edge({ id: 'ef', from: 'e', to: 'f', highway: 'residential', surface: 'asphalt', scenic: true, lengthKm: 0.9 }),
+    ];
+
+    const intent = planRouteIntent({
+      graph: graph(edges),
+      terrainAudit: auditTerrainData(edges),
+      profile: recoveryProfile,
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      scenicMode: true,
+    });
+
+    expect(intent.type).toBe('park_loop');
+    expect(intent.distancePolicy).toMatchObject({
+      mode: 'adjustable',
+      reason: 'PARK_RECOVERY_SIZE_LIMIT',
+      requestedDistanceKm: 6,
+      preferCleanAdjustedOverDirtyExact: true,
+    });
+    if (intent.distancePolicy.mode !== 'adjustable') throw new Error('expected adjustable policy');
+    expect(intent.distancePolicy.minAdjustedDistanceKm).toBeGreaterThanOrEqual(5.1);
+    expect(intent.distancePolicy.minAdjustedDistanceKm).toBeLessThanOrEqual(5.2);
+    expect(intent.distancePolicy.maxAdjustedDistanceKm).toBe(6);
+  });
+
+  it('keeps strict distance policy for trail intents', () => {
+    const edges = [
+      edge({ id: 'ab', from: 'a', to: 'b', highway: 'path', surface: 'ground', scenic: true, lengthKm: 1.2 }),
+      edge({ id: 'bc', from: 'b', to: 'c', highway: 'track', surface: 'unpaved', scenic: true, lengthKm: 1.1 }),
+      edge({ id: 'cd', from: 'c', to: 'd', highway: 'path', surface: 'earth', scenic: true, lengthKm: 0.9 }),
+    ];
+
+    const intent = planRouteIntent({
+      graph: graph(edges),
+      terrainAudit: auditTerrainData(edges),
+      profile: trailProfile,
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      scenicMode: true,
+    });
+
+    expect(intent.distancePolicy).toEqual({ mode: 'strict' });
+  });
+
   it('selects forest_loop with explicit target component on rich connected forest terrain', () => {
     const edges = [
       edge({ id: 'ab', from: 'a', to: 'b', highway: 'path', surface: 'ground', scenic: true, lengthKm: 1.2 }),

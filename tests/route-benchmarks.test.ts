@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   BENCHMARK_CASES,
   benchmarkToRequest,
+  summarizeBenchmarkFailure,
   summarizeBenchmarkResult,
 } from "@/lib/route-benchmarks";
+import type { RouteBenchmarkCase } from "@/lib/route-benchmarks";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 const SPRINT_4_SMOKE_CASE_IDS = [
@@ -350,11 +352,79 @@ describe("route production benchmarks", () => {
     ]));
   });
 
+  it("accepts Meudon when route-level trail quality is high while OSM trail potential remains medium", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 10.1,
+      ascendM: 220,
+      quality: {
+        productionScore: 0.98,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.01,
+        trailRatio: 0.753,
+        naturalWayRatio: 0.801,
+        pavedRatio: 0.247,
+        trailBeautyScore: 0.658,
+        longestTrailSegmentKm: 3.823,
+        naturalCorridorRatio: 0.725,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        routeTrailQuality: "high",
+        warnings: [],
+      },
+      durationMs: 36_000,
+    });
+
+    expect(benchmark.thresholds.minTrailPotential).toBe("medium");
+    expect(benchmark.thresholds.minRouteTrailQuality).toBe("high");
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).not.toContain("trail_potential");
+    expect(summary.metrics.routeTrailQuality).toBe("high");
+  });
+
+  it("fails Meudon's explicit route-level trail promise when routeTrailQuality is not high", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 10.1,
+      ascendM: 220,
+      quality: {
+        productionScore: 0.98,
+        loopGapKm: 0.2,
+        busyRoadRatio: 0.01,
+        trailRatio: 0.753,
+        naturalWayRatio: 0.801,
+        pavedRatio: 0.247,
+        trailBeautyScore: 0.658,
+        longestTrailSegmentKm: 3.823,
+        naturalCorridorRatio: 0.725,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        routeTrailQuality: "medium",
+        warnings: [],
+      },
+      durationMs: 36_000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("route_trail_quality");
+  });
+
   it("accepts an honest paved-running cap for the Caen recovery park contract", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 5.49,
       ascendM: 95,
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.49,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
       quality: {
         productionScore: 0.705,
         loopGapKm: 0.02,
@@ -383,6 +453,216 @@ describe("route production benchmarks", () => {
 
     expect(benchmark.thresholds.maxPavedRatio).toBe(0.68);
     expect(summary.passed).toBe(true);
+  });
+
+
+  it("allows Caen benchmark to pass with explicit adjusted_distance outcome", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 5.35,
+      ascendM: 50,
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.35,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
+      quality: {
+        productionScore: 0.82,
+        loopGapKm: 0.02,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.78,
+        pavedRatio: 0.62,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.12,
+          geometryOverlapRatio: 0.08,
+          selfIntersectionCount: 0,
+          sharpTurnDensityPerKm: 1,
+          headingReversalRatio: 0.02,
+          outAndBackSimilarityRatio: 0,
+          startStemKm: 0.02,
+          endStemKm: 0.02,
+          maxDistanceFromStartKm: 0.9,
+        },
+      },
+      durationMs: 17000,
+    });
+
+    expect(benchmark.expectedOutcome).toBe("adjusted_distance");
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).not.toContain("distance_tolerance");
+    expect(summary.metrics.distanceAdjustmentReason).toBe("PARK_RECOVERY_SIZE_LIMIT");
+  });
+
+  it("reads adjusted_distance from the generated route envelope, not only from best candidate", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const generatedRoute = {
+      best: {
+        distanceKm: 5.45,
+        ascendM: 50,
+        quality: {
+          productionScore: 0.86,
+          loopGapKm: 0.02,
+          busyRoadRatio: 0,
+          naturalWayRatio: 0.79,
+          pavedRatio: 0.56,
+          repeatEdgeRatio: 0,
+          uTurnRatio: 0,
+          terrainDataConfidence: "medium",
+          trailPotential: "medium",
+          warnings: [],
+          geometry: { loopCompactness: 0.08, geometryOverlapRatio: 0.08, selfIntersectionCount: 0, sharpTurnDensityPerKm: 1, headingReversalRatio: 0.02, outAndBackSimilarityRatio: 0, startStemKm: 0.02, endStemKm: 0.02, maxDistanceFromStartKm: 0.9 },
+        },
+      },
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.45,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
+      durationMs: 17000,
+    };
+    const summary = summarizeBenchmarkResult(
+      benchmark,
+      generatedRoute as unknown as Parameters<typeof summarizeBenchmarkResult>[1]
+    );
+
+    expect(summary.passed).toBe(true);
+    expect(summary.metrics.adjustedDistanceKm).toBe(5.45);
+  });
+
+  it("fails Caen benchmark on silent short success without distanceAdjustment", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 5.35,
+      ascendM: 50,
+      quality: {
+        productionScore: 0.82,
+        loopGapKm: 0.02,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.78,
+        pavedRatio: 0.62,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: { loopCompactness: 0.12, geometryOverlapRatio: 0.08, selfIntersectionCount: 0, startStemKm: 0.02, endStemKm: 0.02, maxDistanceFromStartKm: 0.9 },
+      },
+      durationMs: 17000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("missing_distance_adjustment");
+  });
+
+  it("passes an expected typed refusal only when the refusal sub-code matches", () => {
+    const benchmark: RouteBenchmarkCase = {
+      id: "micro-park-impossible-10k",
+      label: "Micro park impossible 10k",
+      address: "Micro parc test",
+      profileId: "running-recuperation",
+      targetDistanceKm: 10,
+      targetElevationM: 0,
+      tags: ["typed-refusal"],
+      tier: "p0",
+      expectedOutcome: "typed_refusal",
+      expectedRefusalSubCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+      thresholds: {
+        distanceToleranceRatio: 0.1,
+        elevationToleranceM: 100,
+        minProductionScore: 0,
+        maxLoopClosureKm: 1,
+        maxBusyRoadRatio: 1,
+      },
+      notes: "Synthetic refusal contract fixture.",
+    };
+
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+      error: "Le parc est trop contraint pour tenir cette distance proprement.",
+      durationMs: 1400,
+    });
+
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
+    expect(summary.metrics.expectedRefusalSubCode).toBe("PARK_TOO_SMALL_FOR_DISTANCE");
+  });
+
+  it("fails an expected typed refusal when the API returns a generic refusal", () => {
+    const benchmark: RouteBenchmarkCase = {
+      id: "micro-park-impossible-10k",
+      label: "Micro park impossible 10k",
+      address: "Micro parc test",
+      profileId: "running-recuperation",
+      targetDistanceKm: 10,
+      targetElevationM: 0,
+      tags: ["typed-refusal"],
+      tier: "p0",
+      expectedOutcome: "typed_refusal",
+      expectedRefusalSubCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+      thresholds: {
+        distanceToleranceRatio: 0.1,
+        elevationToleranceM: 100,
+        minProductionScore: 0,
+        maxLoopClosureKm: 1,
+        maxBusyRoadRatio: 1,
+      },
+      notes: "Synthetic refusal contract fixture.",
+    };
+
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      error: "rejected",
+      durationMs: 1400,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("typed_refusal_sub_code_mismatch");
+  });
+
+  it("still fails adjusted Caen benchmark when pavement cap is broken", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 5.35,
+      ascendM: 50,
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.35,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
+      quality: {
+        productionScore: 0.82,
+        loopGapKm: 0.02,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.78,
+        pavedRatio: 0.7,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: { loopCompactness: 0.12, geometryOverlapRatio: 0.08, selfIntersectionCount: 0, startStemKm: 0.02, endStemKm: 0.02, maxDistanceFromStartKm: 0.9 },
+      },
+      durationMs: 17000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("paved_ratio");
   });
 
   it("fails geometry thresholds when a constrained park route becomes a fake loop", () => {

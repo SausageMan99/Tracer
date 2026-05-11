@@ -17,7 +17,8 @@ export type RouteErrorSubCode =
   | "OVERPASS_TIMEOUT"
   | "EMPTY_GRAPH"
   | "SOLVER_EMPTY"
-  | "TRAIL_PROMISE_UNMET";
+  | "TRAIL_PROMISE_UNMET"
+  | "PARK_TOO_SMALL_FOR_DISTANCE";
 
 export class RouteGenerationError extends Error {
   readonly code: RouteErrorCode;

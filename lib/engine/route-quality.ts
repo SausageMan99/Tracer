@@ -15,6 +15,9 @@ import { auditTerrainData } from "./terrain-audit";
 import { computeRouteGeometryMetrics } from "./route-geometry-metrics";
 import type { RouteGeometryMetrics } from "./route-geometry-metrics";
 import type { RouteIntent } from "./terrain-planner";
+import { isRestrictedAccessForProfile } from "./access-policy";
+
+export type RouteTrailQuality = "low" | "medium" | "high";
 
 export interface RouteQualityMetrics {
   distanceErrorPct: number;
@@ -41,6 +44,7 @@ export interface RouteQualityMetrics {
   trailBeautyScore?: number;
   terrainDataConfidence?: "low" | "medium" | "high";
   trailPotential?: "low" | "medium" | "high";
+  routeTrailQuality?: RouteTrailQuality;
   terrainUnknownSurfaceRatio?: number;
   elevationDiagnostics?: {
     targetElevationM: number;
@@ -78,12 +82,6 @@ function edgeLengthSum(edges: EnrichedEdge[]): number {
   return edges.reduce((sum, edge) => sum + edge.lengthKm, 0);
 }
 
-function hasRestrictedAccess(edge: EnrichedEdge, profile: SessionProfile): boolean {
-  if (edge.access === "private" || edge.access === "no") return true;
-  if (profile.sport === "running" && (edge.foot === "no" || edge.access === "customers")) return true;
-  if (profile.sport !== "running" && (edge.bicycle === "no" || edge.access === "customers")) return true;
-  return false;
-}
 
 function computeRepeatRatio(edges: EnrichedEdge[], totalKm: number): number {
   const firstSeen = new Set<string>();
@@ -264,6 +262,59 @@ function computeTrailBeautyScore(args: {
   );
 }
 
+function classifyRouteTrailQuality(args: {
+  profile: SessionProfile;
+  trailRatio: number;
+  naturalWayRatio: number;
+  pavedRatio: number;
+  busyRoadRatio: number;
+  trailBeautyScore: number;
+  longestTrailSegmentKm: number;
+  naturalCorridorRatio: number;
+  naturalZoneDwellKm: number;
+  longestNonPavedTrailStreakKm: number;
+  routeIntentMatchScore: number;
+  routeIntentFailures: string[];
+  repeatEdgeRatio: number;
+  uTurnRatio: number;
+  targetDistanceKm: number;
+}): RouteTrailQuality {
+  if (!isTrailRunning(args.profile)) return "medium";
+
+  const forestPromiseProvenByRoute =
+    args.routeIntentFailures.length === 1 &&
+    args.routeIntentFailures[0] === "target_component_visit" &&
+    args.naturalZoneDwellKm >= Math.max(3.5, args.targetDistanceKm * 0.45) &&
+    args.longestNonPavedTrailStreakKm >= Math.min(2.5, Math.max(1.6, args.targetDistanceKm * 0.2));
+
+  const clean =
+    args.busyRoadRatio <= 0.06 &&
+    args.repeatEdgeRatio <= 0.04 &&
+    args.uTurnRatio <= 0.01 &&
+    (args.routeIntentMatchScore >= 0.9 || forestPromiseProvenByRoute) &&
+    (args.routeIntentFailures.length === 0 || forestPromiseProvenByRoute);
+
+  const strongTrailRoute =
+    args.trailRatio >= 0.68 &&
+    args.naturalWayRatio >= 0.65 &&
+    args.pavedRatio <= 0.35 &&
+    args.trailBeautyScore >= 0.6 &&
+    args.longestTrailSegmentKm >= Math.min(2.5, Math.max(1.6, args.targetDistanceKm * 0.25)) &&
+    args.naturalCorridorRatio >= 0.55;
+
+  if (clean && strongTrailRoute) return "high";
+
+  const acceptableTrailRoute =
+    args.trailRatio >= 0.45 &&
+    args.naturalWayRatio >= 0.45 &&
+    args.pavedRatio <= 0.45 &&
+    args.trailBeautyScore >= 0.5 &&
+    args.naturalCorridorRatio >= 0.4;
+
+  if (clean && acceptableTrailRoute) return "medium";
+  return "low";
+}
+
 function computeTargetComponentStats(edges: EnrichedEdge[], routeIntent: RouteIntent | undefined, scenicWayIds: Set<string>, profile: SessionProfile): {
   targetComponentDwellKm: number;
   visitedTargetComponents: string[];
@@ -382,7 +433,7 @@ export function assessRouteQuality(args: {
   const naturalKm = edgeLengthSum(
     edges.filter((edge) => isTrailLikeEdge(edge, scenicWayIds, profile))
   );
-  const restrictedKm = edgeLengthSum(edges.filter((edge) => hasRestrictedAccess(edge, profile)));
+  const restrictedKm = edgeLengthSum(edges.filter((e) => isRestrictedAccessForProfile(e, profile)));
   const onewayViolationKm = edgeLengthSum(
     edges.filter((edge) => profile.sport !== "running" && edge.onewayViolation === true)
   );
@@ -438,6 +489,23 @@ export function assessRouteQuality(args: {
     geometryOverlapRatio: geometry.geometryOverlapRatio,
     loopAreaKm2: geometry.loopAreaKm2,
     targetComponentDwellKm: targetComponentStats.targetComponentDwellKm,
+  });
+  const routeTrailQuality = classifyRouteTrailQuality({
+    profile,
+    trailRatio,
+    naturalWayRatio,
+    pavedRatio,
+    busyRoadRatio,
+    trailBeautyScore,
+    longestTrailSegmentKm,
+    naturalCorridorRatio,
+    naturalZoneDwellKm,
+    longestNonPavedTrailStreakKm,
+    routeIntentMatchScore: routeIntentMatch.score,
+    routeIntentFailures: routeIntentMatch.failures,
+    repeatEdgeRatio,
+    uTurnRatio,
+    targetDistanceKm,
   });
 
   const absoluteElevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
@@ -572,6 +640,7 @@ if (
     trailBeautyScore,
     terrainDataConfidence: terrainAudit.confidence,
     trailPotential: terrainAudit.trailPotential,
+    routeTrailQuality,
     terrainUnknownSurfaceRatio: terrainAudit.metrics.unknownSurfaceRatio,
     elevationDiagnostics,
     geometry,

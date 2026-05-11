@@ -183,6 +183,7 @@ describe("route benchmark edge artifacts", () => {
         type: "loop",
         strategy: "transition_to_woods",
         targetComponents: ["component-woods"],
+        distancePolicy: { mode: "strict" },
         minNaturalZoneDwellKm: 2.5,
         minNonPavedTrailStreakKm: 1.2,
         maxPavedRatio: 0.58,
@@ -229,6 +230,7 @@ describe("route benchmark edge artifacts", () => {
     expect(artifact?.routeIntent).toMatchObject({
       strategy: "transition_to_woods",
       targetComponents: ["component-woods"],
+      distancePolicy: { mode: "strict" },
       terrainComponents: [{ id: "component-woods", entryNodeCount: 2 }],
     });
     expect(artifact?.stageTimings).toEqual(stageTimings);

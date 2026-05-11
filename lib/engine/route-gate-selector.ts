@@ -1,4 +1,7 @@
 import type {
+  RouteErrorSubCode,
+} from "../errors";
+import type {
   RejectedRouteCandidatesDiagnostics,
   RejectedRouteCandidateDebugSummary,
   RouteCandidate,
@@ -41,6 +44,8 @@ export interface RouteGateSelectionContext {
   profile: SessionProfile;
   routeIntent?: RouteIntent;
 }
+
+export type RouteDistanceAcceptance = "strict" | "adjusted" | "rejected";
 
 export interface RouteGateReport {
   strictViable: boolean;
@@ -95,6 +100,30 @@ function minLoopCompactness(routeIntent?: RouteIntent): number | null {
 
 const HEALTHY_GATE_MARGIN_RATIO = 0.12;
 const STABILITY_RISK_EPSILON = 0.05;
+
+export function distanceAcceptanceForCandidate(
+  candidate: RouteCandidate,
+  context: RouteGateSelectionContext
+): RouteDistanceAcceptance {
+  const { targetDistanceKm, profile, routeIntent } = context;
+  const distanceErrorRatio = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
+  const withinStrictDistance = distanceErrorRatio <= distanceTolerance(profile);
+  const policy = routeIntent?.distancePolicy;
+  if (withinStrictDistance && (policy?.mode !== "adjustable" || candidate.distanceKm >= policy.requestedDistanceKm)) {
+    return "strict";
+  }
+  if (
+    policy?.mode === "adjustable" &&
+    profile.sport === "running" &&
+    profile.sessionType === "recuperation" &&
+    routeIntent?.type === "park_loop" &&
+    candidate.distanceKm >= policy.minAdjustedDistanceKm &&
+    candidate.distanceKm <= policy.maxAdjustedDistanceKm
+  ) {
+    return "adjusted";
+  }
+  return withinStrictDistance ? "strict" : "rejected";
+}
 
 function maxGateStabilityRisk(
   actual: number | undefined,
@@ -214,7 +243,9 @@ export function evaluateRouteHardGates(
   const violations: RouteHardGateViolation[] = [];
 
   const distanceErrorRatio = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
-  addMaxViolation(violations, "distance_tolerance", distanceErrorRatio, distanceTolerance(profile), false, 0, 8);
+  if (distanceAcceptanceForCandidate(candidate, context) === "rejected") {
+    addMaxViolation(violations, "distance_tolerance", distanceErrorRatio, distanceTolerance(profile), false, 0, 8);
+  }
 
   const elevationTolerance = elevationToleranceM(targetElevationM, profile, targetDistanceKm);
   const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
@@ -310,12 +341,42 @@ export function compareRankedRouteCandidates(a: RankedRouteCandidate, b: RankedR
   return a.originalIndex - b.originalIndex;
 }
 
+function isTinyRecoveryParkCompactnessMiss(
+  gate: RouteGateReport,
+  context: RouteGateSelectionContext
+): boolean {
+  if (context.profile.sessionType !== "recuperation") return false;
+  if (context.routeIntent?.type !== "park_loop") return false;
+  if (gate.bucket !== 1 || gate.blockingViolationCount !== 0) return false;
+  if (gate.totalSeverity > 0.003) return false;
+  return gate.violations.length > 0 && gate.violations.every((violation) =>
+    violation.relaxable && violation.key === "geometry_loop_compactness"
+  );
+}
+
 export function isBetaStableCandidate(
   candidate: RouteCandidate,
   context: RouteGateSelectionContext
 ): boolean {
   const gate = evaluateRouteHardGates(candidate, context);
-  return gate.bucket === 0;
+  return gate.bucket === 0 || isTinyRecoveryParkCompactnessMiss(gate, context);
+}
+
+export function rejectionSubCodeForCandidate(
+  candidate: RouteCandidate,
+  context: RouteGateSelectionContext
+): RouteErrorSubCode {
+  const gate = evaluateRouteHardGates(candidate, context);
+  const pavedViolation = gate.violations.find((violation) => violation.key === "paved_ratio");
+  const distanceViolation = gate.violations.find((violation) => violation.key === "distance_tolerance");
+  if (
+    context.profile.sessionType === "recuperation" &&
+    context.routeIntent?.type === "park_loop" &&
+    (pavedViolation != null || distanceViolation != null)
+  ) {
+    return "PARK_TOO_SMALL_FOR_DISTANCE";
+  }
+  return "TRAIL_PROMISE_UNMET";
 }
 
 function roundedDelta(value: number): number {
@@ -338,6 +399,7 @@ function candidateThresholds(context: RouteGateSelectionContext): Record<string,
   const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
   return {
     distanceToleranceRatio: distanceTolerance(profile),
+    distancePolicy: routeIntent?.distancePolicy?.mode ?? null,
     elevationToleranceM: elevationToleranceM(targetElevationM, profile, targetDistanceKm),
     minProductionScore: minProductionScore(profile),
     maxPavedRatio: routeIntent?.maxPavedRatio ?? null,
@@ -375,6 +437,7 @@ function candidateDeltas(candidate: RouteCandidate, context: RouteGateSelectionC
 
   return [
     numericDelta("distance_tolerance", distanceErrorRatio, thresholds.distanceToleranceRatio as number, "max"),
+    stringDelta("distance_policy", distanceAcceptanceForCandidate(candidate, context), context.routeIntent?.distancePolicy?.mode),
     numericDelta("elevation_tolerance", elevationErrorM, thresholds.elevationToleranceM as number, "max"),
     numericDelta("production_score", quality?.productionScore, thresholds.minProductionScore as number, "min"),
     numericDelta("paved_ratio", quality?.pavedRatio, thresholds.maxPavedRatio as number | undefined, "max"),
