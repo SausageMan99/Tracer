@@ -28,6 +28,7 @@ export type RouteHardGateKey =
   | "natural_corridor_ratio"
   | "longest_trail_segment"
   | "trail_potential"
+  | "route_trail_quality"
   | "blocking_warning";
 
 export interface RouteHardGateViolation {
@@ -55,6 +56,7 @@ export interface RouteGateReport {
   blockingViolationCount: number;
   totalSeverity: number;
   criticalStabilityRisk: number;
+  routeTrailQualityRank: number;
 }
 
 export interface RankedRouteCandidate {
@@ -65,6 +67,15 @@ export interface RankedRouteCandidate {
 }
 
 const BLOCKING_WARNINGS = new Set(["ONEWAY_VIOLATION", "RESTRICTED_ACCESS"]);
+const TRACE_RESTRICTED_ACCESS_RATIO = 0.005;
+
+function isBlockingWarning(warning: string, quality: RouteQualityMetrics | undefined): boolean {
+  if (!BLOCKING_WARNINGS.has(warning)) return false;
+  if (warning === "RESTRICTED_ACCESS") {
+    return (quality?.restrictedAccessRatio ?? 1) > TRACE_RESTRICTED_ACCESS_RATIO;
+  }
+  return true;
+}
 
 function overLimitSeverity(actual: number, limit: number): number {
   return Math.max(0, (actual - limit) / Math.max(Math.abs(limit), 0.001));
@@ -96,6 +107,21 @@ function maxGeometryOverlapRatio(profile: SessionProfile, routeIntent?: RouteInt
 
 function minLoopCompactness(routeIntent?: RouteIntent): number | null {
   return routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop" ? 0.06 : null;
+}
+
+function allowsTraceSelfIntersection(
+  geometry: RouteQualityMetrics["geometry"] | undefined,
+  quality: RouteQualityMetrics | undefined,
+  context: RouteGateSelectionContext
+): boolean {
+  if (context.profile.sessionType !== "trail") return false;
+  if (context.routeIntent?.type !== "transition_to_woods" && context.routeIntent?.type !== "forest_loop") return false;
+  if ((geometry?.selfIntersectionCount ?? 0) > 1) return false;
+  if ((geometry?.geometryOverlapRatio ?? 1) > Math.min(0.08, maxGeometryOverlapRatio(context.profile, context.routeIntent) * 0.75)) return false;
+  if ((geometry?.outAndBackSimilarityRatio ?? 1) > 0.12) return false;
+  if ((quality?.repeatEdgeRatio ?? 1) > maxRepeatEdgeRatio(context.profile, context.routeIntent) * 0.8) return false;
+  if ((quality?.uTurnRatio ?? 1) > maxUTurnRatio(context.profile) * 0.8) return false;
+  return routeTrailQualityRankFor(quality?.routeTrailQuality) >= 1;
 }
 
 const HEALTHY_GATE_MARGIN_RATIO = 0.12;
@@ -193,6 +219,28 @@ function trailPotentialRank(value: RouteQualityMetrics["trailPotential"]): numbe
   return 0;
 }
 
+function routeTrailQualityRankFor(value: RouteQualityMetrics["routeTrailQuality"]): number {
+  if (value === "high") return 2;
+  if (value === "medium") return 1;
+  return 0;
+}
+
+function rankedRouteTrailQuality(candidate: RouteCandidate, context: RouteGateSelectionContext): number {
+  if (context.profile.sessionType !== "trail") return 0;
+  return routeTrailQualityRankFor(candidate.quality?.routeTrailQuality);
+}
+
+function minimumRouteTrailQualityRank(context: RouteGateSelectionContext): number | null {
+  if (context.profile.sessionType !== "trail") return null;
+  if (context.targetDistanceKm <= 8) return 2;
+  if (context.targetDistanceKm >= 10) return 1;
+  return null;
+}
+
+function routeTrailQualityLabel(rank: number): "medium" | "high" {
+  return rank >= 2 ? "high" : "medium";
+}
+
 function addMaxViolation(
   violations: RouteHardGateViolation[],
   key: RouteHardGateKey,
@@ -257,7 +305,9 @@ export function evaluateRouteHardGates(
   addMaxViolation(violations, "repeat_edge_ratio", quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), false, 0, 5);
   addMaxViolation(violations, "u_turn_ratio", quality?.uTurnRatio, maxUTurnRatio(profile), false, 0, 8);
   addMaxViolation(violations, "geometry_overlap", geometry?.geometryOverlapRatio, maxGeometryOverlapRatio(profile, routeIntent), false, 0, 3);
-  addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
+  if (!allowsTraceSelfIntersection(geometry, quality, context)) {
+    addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
+  }
   addMaxViolation(violations, "geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, routeIntent?.type === "park_loop" ? 0.22 : 0.32, true, 0.06, 1.2);
   if (profile.sessionType === "trail") {
     addMinViolation(violations, "trail_beauty_score", quality?.trailBeautyScore, targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55, false, 0, 2);
@@ -273,6 +323,16 @@ export function evaluateRouteHardGates(
         relaxable: false,
       });
     }
+    const minimumRouteTrailRank = minimumRouteTrailQualityRank(context);
+    if (minimumRouteTrailRank != null && quality?.routeTrailQuality != null && routeTrailQualityRankFor(quality.routeTrailQuality) < minimumRouteTrailRank) {
+      violations.push({
+        key: "route_trail_quality",
+        actual: quality.routeTrailQuality,
+        limit: routeTrailQualityLabel(minimumRouteTrailRank),
+        severity: 1,
+        relaxable: false,
+      });
+    }
   }
   const loopCompactnessLimit = minLoopCompactness(routeIntent);
   if (routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop") {
@@ -282,7 +342,7 @@ export function evaluateRouteHardGates(
   }
 
   for (const warning of quality?.warnings ?? []) {
-    if (!BLOCKING_WARNINGS.has(warning)) continue;
+    if (!isBlockingWarning(warning, quality)) continue;
     violations.push({
       key: "blocking_warning",
       actual: warning,
@@ -295,6 +355,7 @@ export function evaluateRouteHardGates(
   const blockingViolationCount = violations.filter((violation) => !violation.relaxable).length;
   const totalSeverity = violations.reduce((sum, violation) => sum + violation.severity, 0);
   const criticalStabilityRisk = computeCriticalStabilityRisk(candidate, context);
+  const routeTrailQualityRank = rankedRouteTrailQuality(candidate, context);
   const strictViable = violations.length === 0;
   const relaxedViable = blockingViolationCount === 0;
   const bucket: 0 | 1 | 2 = strictViable ? 0 : relaxedViable ? 1 : 2;
@@ -307,6 +368,7 @@ export function evaluateRouteHardGates(
     blockingViolationCount,
     totalSeverity,
     criticalStabilityRisk,
+    routeTrailQualityRank,
   };
 }
 
@@ -327,6 +389,9 @@ export function compareRankedRouteCandidates(a: RankedRouteCandidate, b: RankedR
 
   if (a.gate.bucket === 1) {
     if (a.gate.totalSeverity !== b.gate.totalSeverity) return a.gate.totalSeverity - b.gate.totalSeverity;
+    if (a.gate.routeTrailQualityRank !== b.gate.routeTrailQualityRank) {
+      return b.gate.routeTrailQualityRank - a.gate.routeTrailQualityRank;
+    }
     if (Math.abs(a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk) > STABILITY_RISK_EPSILON) {
       return a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk;
     }
@@ -334,6 +399,9 @@ export function compareRankedRouteCandidates(a: RankedRouteCandidate, b: RankedR
     return a.originalIndex - b.originalIndex;
   }
 
+  if (a.gate.routeTrailQualityRank !== b.gate.routeTrailQualityRank) {
+    return b.gate.routeTrailQualityRank - a.gate.routeTrailQualityRank;
+  }
   if (Math.abs(a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk) > STABILITY_RISK_EPSILON) {
     return a.gate.criticalStabilityRisk - b.gate.criticalStabilityRisk;
   }
@@ -369,10 +437,21 @@ export function rejectionSubCodeForCandidate(
   const gate = evaluateRouteHardGates(candidate, context);
   const pavedViolation = gate.violations.find((violation) => violation.key === "paved_ratio");
   const distanceViolation = gate.violations.find((violation) => violation.key === "distance_tolerance");
+  const compactnessViolation = gate.violations.find((violation) => violation.key === "geometry_loop_compactness");
+  const nonRelaxableViolations = gate.violations.filter((violation) => !violation.relaxable);
+  const hasRestrictedAccessBlock = nonRelaxableViolations.some(
+    (violation) => violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS"
+  );
+  const otherNonRelaxableSeverity = nonRelaxableViolations
+    .filter((violation) => !(violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS"))
+    .reduce((sum, violation) => sum + violation.severity, 0);
+  if (hasRestrictedAccessBlock && otherNonRelaxableSeverity <= 0.05) {
+    return "RESTRICTED_ACCESS_BLOCKED";
+  }
   if (
     context.profile.sessionType === "recuperation" &&
     context.routeIntent?.type === "park_loop" &&
-    (pavedViolation != null || distanceViolation != null)
+    (pavedViolation != null || distanceViolation != null || compactnessViolation != null)
   ) {
     return "PARK_TOO_SMALL_FOR_DISTANCE";
   }
@@ -422,6 +501,9 @@ function candidateThresholds(context: RouteGateSelectionContext): Record<string,
     minTrailPotential: profile.sessionType === "trail"
       ? targetDistanceKm >= 14 ? "high" : "medium"
       : null,
+    minRouteTrailQuality: minimumRouteTrailQualityRank(context) != null
+      ? routeTrailQualityLabel(minimumRouteTrailQualityRank(context) as number)
+      : null,
     maxCriticalStabilityRisk: STABILITY_RISK_EPSILON,
     healthyGateMarginRatio: HEALTHY_GATE_MARGIN_RATIO,
   };
@@ -452,6 +534,7 @@ function candidateDeltas(candidate: RouteCandidate, context: RouteGateSelectionC
     numericDelta("natural_corridor_ratio", quality?.naturalCorridorRatio, thresholds.minNaturalCorridorRatio as number | undefined, "min"),
     numericDelta("longest_trail_segment", quality?.longestTrailSegmentKm, thresholds.minLongestTrailSegmentKm as number | undefined, "min"),
     stringDelta("trail_potential", quality?.trailPotential, thresholds.minTrailPotential as string | undefined),
+    stringDelta("route_trail_quality", quality?.routeTrailQuality, thresholds.minRouteTrailQuality as string | undefined),
     numericDelta("critical_stability_risk", evaluateRouteHardGates(candidate, context).criticalStabilityRisk, STABILITY_RISK_EPSILON, "max"),
   ];
 }
@@ -490,9 +573,18 @@ export function buildRejectedCandidatesDiagnostics(
   topN = 5
 ): RejectedRouteCandidatesDiagnostics {
   const rejectionReasonsHistogram: Record<string, number> = {};
+  const routeTrailQualityHistogram: Record<"low" | "medium" | "high" | "unknown", number> = {
+    low: 0,
+    medium: 0,
+    high: 0,
+    unknown: 0,
+  };
   const summaries = candidates.map((candidate, candidateIndex) => summarizeRejectedCandidate(candidate, candidateIndex, context));
 
-  for (const summary of summaries) {
+  for (let candidateIndex = 0; candidateIndex < summaries.length; candidateIndex += 1) {
+    const summary = summaries[candidateIndex];
+    const routeTrailQuality = candidates[candidateIndex].quality?.routeTrailQuality;
+    routeTrailQualityHistogram[routeTrailQuality ?? "unknown"] += 1;
     for (const violation of summary.gate.violations) {
       rejectionReasonsHistogram[violation.key] = (rejectionReasonsHistogram[violation.key] ?? 0) + 1;
     }
@@ -507,6 +599,7 @@ export function buildRejectedCandidatesDiagnostics(
     selectedCandidateIndex: candidates.length > 0 ? 0 : null,
     topCandidateIndex: candidates.length > 0 ? 0 : null,
     rejectionReasonsHistogram,
+    routeTrailQualityHistogram,
     topCandidates: summaries.slice(0, topN),
   };
 }

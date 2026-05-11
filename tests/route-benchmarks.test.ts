@@ -494,10 +494,68 @@ describe("route production benchmarks", () => {
       durationMs: 17000,
     });
 
-    expect(benchmark.expectedOutcome).toBe("adjusted_distance");
+    expect(benchmark.expectedOutcome).toBe("park_recovery");
     expect(summary.passed).toBe(true);
     expect(summary.failures).not.toContain("distance_tolerance");
     expect(summary.metrics.distanceAdjustmentReason).toBe("PARK_RECOVERY_SIZE_LIMIT");
+  });
+
+  it("accepts Caen adjusted_distance when only a tiny park compactness miss remains", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 5.9863024225914385,
+      ascendM: 0,
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.9863024225914385,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
+      quality: {
+        productionScore: 0.9669587413477018,
+        loopGapKm: 0.07460043639319847,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.7961899810345329,
+        pavedRatio: 0.6086652040224061,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        warnings: ["LOOP_TOO_CONSTRAINED", "TOO_MANY_INTERSECTIONS"],
+        geometry: {
+          loopCompactness: 0.05923,
+          geometryOverlapRatio: 0.05601,
+          selfIntersectionCount: 0,
+          sharpTurnDensityPerKm: 0.3341,
+          headingReversalRatio: 0.0101,
+          outAndBackSimilarityRatio: 0,
+          startStemKm: 0.05035,
+          endStemKm: 0.02829,
+          maxDistanceFromStartKm: 1.0023,
+        },
+      },
+      durationMs: 21_751,
+    });
+
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).not.toContain("geometry_loop_compactness");
+  });
+
+  it("accepts Caen park_recovery when the API honestly refuses a too-constrained park", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+      error: "Le parc est trop contraint pour tenir cette distance proprement.",
+      durationMs: 20_443,
+    });
+
+    expect(benchmark.expectedOutcome).toBe("park_recovery");
+    expect(benchmark.expectedRefusalSubCode).toBe("PARK_TOO_SMALL_FOR_DISTANCE");
+    expect(summary.passed).toBe(true);
+    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
   });
 
   it("reads adjusted_distance from the generated route envelope, not only from best candidate", () => {
@@ -561,6 +619,124 @@ describe("route production benchmarks", () => {
 
     expect(summary.passed).toBe(false);
     expect(summary.failures).toContain("missing_distance_adjustment");
+  });
+
+  it("treats Tourville 8k as an honest trail-promise typed refusal smoke contract", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
+
+    expect(benchmark.tier).toBe("p0");
+    expect(SPRINT_4_SMOKE_CASE_IDS).toContain("tourville-pommiers-trail-8k");
+    expect(benchmark.expectedOutcome).toBe("typed_refusal");
+    expect(benchmark.expectedRefusalSubCode).toBe("TRAIL_PROMISE_UNMET");
+    expect(benchmark.notes).toContain("refus typé");
+  });
+
+  it("passes Tourville 8k smoke only on ROUTE_CANDIDATES_REJECTED / TRAIL_PROMISE_UNMET", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      error: "Aucune boucle 8 km assez stable ne respecte la promesse trail.",
+      durationMs: 11_750,
+    });
+
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
+    expect(summary.metrics.expectedRefusalSubCode).toBe("TRAIL_PROMISE_UNMET");
+  });
+
+  it("rejects Tourville 8k smoke on generic HTTP errors or mismatched refusal sub-codes", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
+
+    const genericError = summarizeBenchmarkFailure(benchmark, {
+      status: 500,
+      errorCode: "INTERNAL_SERVER_ERROR",
+      error: "boom",
+      durationMs: 1000,
+    });
+    expect(genericError.passed).toBe(false);
+    expect(genericError.failures).toContain("expected_typed_refusal");
+
+    const wrongSubCode = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "PARK_TOO_SMALL_FOR_DISTANCE",
+      error: "wrong refusal",
+      durationMs: 1000,
+    });
+    expect(wrongSubCode.passed).toBe(false);
+    expect(wrongSubCode.failures).toContain("typed_refusal_sub_code_mismatch");
+  });
+
+  it("rejects Tourville 8k smoke on silent route success instead of the typed refusal", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 7.2,
+      ascendM: 120,
+      quality: {
+        productionScore: 0.82,
+        loopClosureKm: 0.12,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.45,
+        pavedRatio: 0.48498181916497407,
+        trailBeautyScore: 0.7,
+        longestTrailSegmentKm: 1.7,
+        naturalCorridorRatio: 0.45,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        routeTrailQuality: "low",
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        warnings: ["TOO_MUCH_PAVEMENT", "TRAIL_TOO_FRAGMENTED"],
+      },
+      durationMs: 11_750,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "paved_ratio",
+      "route_trail_quality",
+    ]));
+  });
+
+  it("treats Meudon as an honest restricted-access typed refusal smoke contract", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+
+    expect(benchmark.expectedOutcome).toBe("typed_refusal");
+    expect(benchmark.expectedRefusalSubCode).toBe("RESTRICTED_ACCESS_BLOCKED");
+    expect(benchmark.notes).toContain("accès restreint");
+  });
+
+  it("passes Meudon smoke on the expected restricted-access refusal, not on silent success", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "RESTRICTED_ACCESS_BLOCKED",
+      error: "Le meilleur accès forêt traverse un secteur marqué à accès restreint dans OSM.",
+      durationMs: 18000,
+    });
+
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
+    expect(summary.metrics.expectedRefusalSubCode).toBe("RESTRICTED_ACCESS_BLOCKED");
+  });
+
+  it("rejects Meudon smoke when the API returns a generic trail refusal", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      error: "rejected",
+      durationMs: 18000,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toContain("typed_refusal_sub_code_mismatch");
   });
 
   it("passes an expected typed refusal only when the refusal sub-code matches", () => {
@@ -670,6 +846,13 @@ describe("route production benchmarks", () => {
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 6,
       ascendM: 80,
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 6,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
       quality: {
         productionScore: 0.82,
         loopGapKm: 0.1,
@@ -701,6 +884,27 @@ describe("route production benchmarks", () => {
       "geometry_start_end_stem",
       "geometry_spatial_spread",
     ]));
+  });
+
+  it("keeps generation diagnostics on benchmark HTTP failures", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const generationDiagnostics = {
+      version: 1,
+      graph: { nodeCount: 240, edgeCount: 580, scenicWayCount: 36 },
+      solver: { pathCount: 0, candidateCount: 0, emptyReason: "UNKNOWN_EMPTY" },
+    };
+
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      durationMs: 1900,
+      errorCode: "NO_ROAD_NETWORK",
+      subCode: "SOLVER_EMPTY",
+      error: "Impossible de construire un parcours en boucle.",
+      generationDiagnostics,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.generationDiagnostics).toEqual(generationDiagnostics);
   });
 
   it("requires an honest OSM warning on the poor-data benchmark", () => {

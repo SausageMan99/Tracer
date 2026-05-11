@@ -78,6 +78,7 @@ const DEFAULT_NO_ROAD_NETWORK_MSG =
 
 const ROUTE_CANDIDATES_REJECTED_MESSAGES: Record<string, string> = {
   PARK_TOO_SMALL_FOR_DISTANCE: "Le parc est trop contraint pour tenir cette distance sans dépasser la promesse bitume/sécurité. Essayez une distance plus courte.",
+  RESTRICTED_ACCESS_BLOCKED: "Le meilleur accès forêt traverse un secteur marqué à accès restreint dans OSM. Départ refusé pour cette beta : choisissez une autre entrée de forêt.",
   TRAIL_PROMISE_UNMET: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
 };
 
@@ -234,11 +235,15 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
   switch (err.code) {
     case "NO_ROAD_NETWORK": {
       const errorMsg = (err.subCode && NO_ROAD_NETWORK_MESSAGES[err.subCode]) ?? DEFAULT_NO_ROAD_NETWORK_MSG;
+      const generationDiagnostics = includeGenerationDiagnostics
+        ? err.generationDiagnostics
+        : undefined;
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
           errorCode: "NO_ROAD_NETWORK",
           subCode: err.subCode,
+          ...(generationDiagnostics != null ? { generationDiagnostics } : {}),
           error: errorMsg,
         },
         { status: 422 }

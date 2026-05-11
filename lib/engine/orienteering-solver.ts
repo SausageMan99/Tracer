@@ -41,8 +41,38 @@ interface NaturalAnchor {
   isTarget?: boolean;
 }
 
+export interface SolverEmptyDiagnostics {
+  configsTried?: number;
+  iterations?: number;
+  statesVisited?: number;
+  edgesConsidered?: number;
+  statesExpanded?: number;
+  noExpandableEdges?: number;
+  prunedDistanceBudget?: number;
+  prunedReturnBudget?: number;
+  returnPathMissing?: number;
+  returnRepeatCap?: number;
+  returnPavedCap?: number;
+  deadlineReached?: boolean;
+  targetEntryNodeCount?: number;
+  targetEntryStatesReached?: number;
+  targetEntryAccessPathsTried?: number;
+  targetEntryAccessSeeds?: number;
+  validPaths?: number;
+}
+
 export interface SolverRuntimeBudget {
   deadlineMs?: number;
+  emptyDiagnostics?: SolverEmptyDiagnostics;
+}
+
+function incrementDiagnostic(
+  diagnostics: SolverEmptyDiagnostics | undefined,
+  key: keyof Omit<SolverEmptyDiagnostics, "deadlineReached">
+): void {
+  if (!diagnostics) return;
+  const current = diagnostics[key];
+  diagnostics[key] = (typeof current === "number" ? current : 0) + 1;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -423,6 +453,147 @@ function buildSolverPath(
   };
 }
 
+function pavedDistanceForEdges(graph: EnrichedGraph, edgeIds: string[]): number {
+  return edgeIds.reduce((sum, edgeId) => {
+    const edge = graph.edges.get(edgeId);
+    return sum + (edge?.surface != null && PAVED_SURFACES.has(edge.surface) ? edge.lengthKm : 0);
+  }, 0);
+}
+
+function edgeVisitsForPath(graph: EnrichedGraph, edgeIds: string[]): Map<string, number> {
+  const visits = new Map<string, number>();
+  for (const edgeId of edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const key = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
+    visits.set(key, (visits.get(key) ?? 0) + 1);
+  }
+  return visits;
+}
+
+function buildAccessSeedState(
+  graph: EnrichedGraph,
+  accessPath: NonNullable<ReturnType<typeof findShortestPath>>,
+  targetNodeIds: Set<string>
+): BeamState | null {
+  const currentNodeId = accessPath.nodeIds.at(-1);
+  if (!currentNodeId) return null;
+
+  let naturalDistanceKm = 0;
+  let naturalStreakKm = 0;
+  let longestNaturalStreakKm = 0;
+  let naturalSegmentCount = 0;
+  let wasOnNaturalCorridor = false;
+  let targetComponentNaturalDistanceKm = 0;
+  const cumulativeAscentM = 0;
+  const cumulativeDescentM = 0;
+
+  for (const edgeId of accessPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const corridorState = advanceNaturalCorridorState({
+      nodeIds: [],
+      edgeIds: [],
+      edgeVisits: new Map(),
+      currentNodeId: edge.from,
+      lastFrom: null,
+      distanceKm: 0,
+      totalScore: 0,
+      cumulativeAscentM,
+      cumulativeDescentM,
+      naturalDistanceKm,
+      naturalStreakKm,
+      longestNaturalStreakKm,
+      naturalSegmentCount,
+      wasOnNaturalCorridor,
+      pavedDistanceKm: 0,
+      targetComponentNaturalDistanceKm,
+      enteredTargetComponent: targetComponentNaturalDistanceKm > 0,
+    }, edge);
+    naturalDistanceKm = corridorState.naturalDistanceKm;
+    naturalStreakKm = corridorState.naturalStreakKm;
+    longestNaturalStreakKm = corridorState.longestNaturalStreakKm;
+    naturalSegmentCount = corridorState.naturalSegmentCount;
+    wasOnNaturalCorridor = corridorState.wasOnNaturalCorridor;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) {
+      targetComponentNaturalDistanceKm += edge.lengthKm;
+    }
+  }
+
+  return {
+    nodeIds: accessPath.nodeIds,
+    edgeIds: accessPath.edgeIds,
+    edgeVisits: edgeVisitsForPath(graph, accessPath.edgeIds),
+    currentNodeId,
+    lastFrom: accessPath.nodeIds.length >= 2 ? accessPath.nodeIds[accessPath.nodeIds.length - 2] : null,
+    distanceKm: accessPath.distanceKm,
+    totalScore: scorePathWithCorridorPreference(graph, accessPath.edgeIds, targetNodeIds),
+    cumulativeAscentM,
+    cumulativeDescentM,
+    naturalDistanceKm,
+    naturalStreakKm,
+    longestNaturalStreakKm,
+    naturalSegmentCount,
+    wasOnNaturalCorridor,
+    pavedDistanceKm: pavedDistanceForEdges(graph, accessPath.edgeIds),
+    targetComponentNaturalDistanceKm,
+    enteredTargetComponent: targetComponentNaturalDistanceKm > 0 || targetNodeIds.has(currentNodeId),
+  };
+}
+
+function buildTargetEntryAccessSeedStates(args: {
+  graph: EnrichedGraph;
+  startNodeId: string;
+  targetAnchors: NaturalAnchor[];
+  targetNodeIds: Set<string>;
+  routeIntent?: RouteIntent;
+  targetDistanceKm: number;
+  maxDist: number;
+  beamWidth: number;
+  diagnostics?: SolverEmptyDiagnostics;
+}): BeamState[] {
+  if (args.routeIntent?.type !== "transition_to_woods" || args.targetAnchors.length === 0) return [];
+
+  const startNode = args.graph.nodes.get(args.startNodeId);
+  const entryNodeIds = Array.from(new Set(args.targetAnchors.flatMap((anchor) => Array.from(anchor.entryNodeIds ?? []))))
+    .filter((nodeId) => nodeId !== args.startNodeId && args.graph.nodes.has(nodeId))
+    .sort((a, b) => {
+      if (!startNode) return 0;
+      const nodeA = args.graph.nodes.get(a)!;
+      const nodeB = args.graph.nodes.get(b)!;
+      return haversineKm(startNode, nodeA) - haversineKm(startNode, nodeB);
+    })
+    .slice(0, Math.max(12, Math.min(args.beamWidth * 2, 48)));
+  const seedCandidates: Array<{ path: NonNullable<ReturnType<typeof findShortestPath>>; state: BeamState }> = [];
+  const maxAccessDistanceKm = Math.min(args.maxDist * 0.55, Math.max(2.2, args.targetDistanceKm * 0.38));
+  const maxAccessPavedRatio = args.routeIntent.maxPavedRatio != null ? args.routeIntent.maxPavedRatio + 0.02 : undefined;
+  const maxSeeds = Math.max(1, Math.min(args.beamWidth, 24));
+
+  for (const entryNodeId of entryNodeIds) {
+    incrementDiagnostic(args.diagnostics, "targetEntryAccessPathsTried");
+    const accessPath = findShortestPath(args.graph, args.startNodeId, entryNodeId);
+    if (!accessPath || accessPath.edgeIds.length === 0) continue;
+    if (accessPath.distanceKm > maxAccessDistanceKm) continue;
+    const accessPavedDistanceKm = pavedDistanceForEdges(args.graph, accessPath.edgeIds);
+    if (maxAccessPavedRatio != null && accessPavedDistanceKm / Math.max(args.maxDist, 0.1) > maxAccessPavedRatio) continue;
+    const state = buildAccessSeedState(args.graph, accessPath, args.targetNodeIds);
+    if (!state) continue;
+    seedCandidates.push({ path: accessPath, state });
+  }
+
+  seedCandidates.sort((a, b) => {
+    const aPaved = pavedDistanceForEdges(args.graph, a.path.edgeIds);
+    const bPaved = pavedDistanceForEdges(args.graph, b.path.edgeIds);
+    return (a.path.distanceKm + aPaved * 0.5) - (b.path.distanceKm + bPaved * 0.5);
+  });
+
+  const seeds = seedCandidates.slice(0, maxSeeds).map((candidate) => candidate.state);
+  if (args.diagnostics && seeds.length > 0) {
+    args.diagnostics.targetEntryAccessSeeds = Math.max(args.diagnostics.targetEntryAccessSeeds ?? 0, seeds.length);
+  }
+  return seeds;
+}
+
 function cleanReturnPath(
   graph: EnrichedGraph,
   fromNodeId: string,
@@ -470,19 +641,32 @@ function projectedReturnPavedRatio(
   return (currentPavedDistanceKm + returnPavedKm) / Math.max(currentDistanceKm + returnPath.distanceKm, 0.1);
 }
 
-function returnPathFitsIntent(
+function diagnoseReturnPathRejection(
   graph: EnrichedGraph,
   edgeVisits: Map<string, number>,
   returnPath: ReturnType<typeof findShortestPath>,
   currentDistanceKm: number,
   currentPavedDistanceKm: number,
+  remainingBudgetKm: number,
   maxRepeatRatio?: number,
   maxPavedRatio?: number
-): boolean {
-  if (!returnPath) return false;
-  if (maxRepeatRatio != null && projectedReturnRepeatRatio(graph, edgeVisits, returnPath, currentDistanceKm) > maxRepeatRatio) return false;
-  if (maxPavedRatio != null && projectedReturnPavedRatio(graph, returnPath, currentDistanceKm, currentPavedDistanceKm) > maxPavedRatio) return false;
-  return true;
+): "missing" | "budget" | "repeat" | "paved" | null {
+  if (!returnPath) return "missing";
+  if (returnPath.distanceKm > remainingBudgetKm) return "budget";
+  if (maxRepeatRatio != null && projectedReturnRepeatRatio(graph, edgeVisits, returnPath, currentDistanceKm) > maxRepeatRatio) return "repeat";
+  if (maxPavedRatio != null && projectedReturnPavedRatio(graph, returnPath, currentDistanceKm, currentPavedDistanceKm) > maxPavedRatio) return "paved";
+  return null;
+}
+
+function recordReturnRejection(
+  diagnostics: SolverEmptyDiagnostics | undefined,
+  reason: "missing" | "budget" | "repeat" | "paved" | null
+): void {
+  if (!diagnostics || reason == null) return;
+  if (reason === "missing") incrementDiagnostic(diagnostics, "returnPathMissing");
+  if (reason === "budget") incrementDiagnostic(diagnostics, "prunedReturnBudget");
+  if (reason === "repeat") incrementDiagnostic(diagnostics, "returnRepeatCap");
+  if (reason === "paved") incrementDiagnostic(diagnostics, "returnPavedCap");
 }
 
 function resolveReturnPath(
@@ -496,20 +680,27 @@ function resolveReturnPath(
   currentDistanceKm: number,
   currentPavedDistanceKm: number,
   maxRepeatRatio?: number,
-  maxPavedRatio?: number
+  maxPavedRatio?: number,
+  diagnostics?: SolverEmptyDiagnostics
 ): { path: ReturnType<typeof findShortestPath> | null; relaxationsUsed: string[] } {
   const cleanPath = cleanReturnPath(graph, fromNodeId, startNodeId, edgeVisits);
-  if (cleanPath && cleanPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, cleanPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
+  const cleanRejection = diagnoseReturnPathRejection(graph, edgeVisits, cleanPath, currentDistanceKm, currentPavedDistanceKm, remainingBudgetKm, maxRepeatRatio, maxPavedRatio);
+  if (cleanRejection == null) {
     return { path: cleanPath, relaxationsUsed: [] };
   }
 
-  if (mode === "strict") return { path: null, relaxationsUsed: [] };
+  if (mode === "strict") {
+    recordReturnRejection(diagnostics, cleanRejection);
+    return { path: null, relaxationsUsed: [] };
+  }
 
   const fallbackPath = returnCache.getPath(graph, fromNodeId, startNodeId);
-  if (fallbackPath && fallbackPath.distanceKm <= remainingBudgetKm && returnPathFitsIntent(graph, edgeVisits, fallbackPath, currentDistanceKm, currentPavedDistanceKm, maxRepeatRatio, maxPavedRatio)) {
+  const fallbackRejection = diagnoseReturnPathRejection(graph, edgeVisits, fallbackPath, currentDistanceKm, currentPavedDistanceKm, remainingBudgetKm, maxRepeatRatio, maxPavedRatio);
+  if (fallbackRejection == null) {
     return { path: fallbackPath, relaxationsUsed: ["clean_return"] };
   }
 
+  recordReturnRejection(diagnostics, fallbackRejection);
   return { path: null, relaxationsUsed: [] };
 }
 
@@ -623,7 +814,8 @@ function solveWithConfig(
   nodeElevation: Map<string, number>,
   config: SolverConfig,
   routeIntent?: RouteIntent,
-  deadlineMs?: number
+  deadlineMs?: number,
+  diagnostics?: SolverEmptyDiagnostics
 ): SolverPath[] {
   const beamWidth = routeIntent?.beamBudget.beamWidth ?? config.beamWidth;
   const maxIterations = routeIntent?.beamBudget.maxIterations ?? MAX_ITERATIONS;
@@ -635,12 +827,21 @@ function solveWithConfig(
       ? routeIntent.maxPavedRatio + 0.02
       : routeIntent?.maxPavedRatio;
   const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
-  const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
+  const strictTrailMinDist = routeIntent?.type === "transition_to_woods" && routeIntent.distancePolicy.mode === "strict"
+    ? targetDistanceKm * 0.9
+    : null;
+  const minDist = strictTrailMinDist ?? targetDistanceKm * (1 - DISTANCE_TOLERANCE);
   const startNode = graph.nodes.get(startNodeId);
   if (!startNode) return [];
 
   const startCoord = { lat: startNode.lat, lng: startNode.lng };
   const targetAnchors = buildTargetComponentAnchors(routeIntent);
+  if (diagnostics) {
+    diagnostics.targetEntryNodeCount = Math.max(
+      diagnostics.targetEntryNodeCount ?? 0,
+      targetAnchors.reduce((sum, anchor) => sum + (anchor.entryNodeIds?.size ?? 0), 0)
+    );
+  }
   const naturalAnchors = mergeTargetAnchorsFirst(targetAnchors, buildNaturalAnchors(graph, targetDistanceKm));
   const targetNodeIds = buildTargetNodeSet(routeIntent);
   const returnCache = new ReturnDistanceCache();
@@ -667,14 +868,40 @@ function solveWithConfig(
     },
   ];
 
+  const accessSeedStates = buildTargetEntryAccessSeedStates({
+    graph,
+    startNodeId,
+    targetAnchors,
+    targetNodeIds,
+    routeIntent,
+    targetDistanceKm,
+    maxDist,
+    beamWidth,
+    diagnostics,
+  });
+  if (accessSeedStates.length > 0) {
+    beam = [...accessSeedStates, ...beam].slice(0, beamWidth);
+  }
+
   const validPaths: SolverPath[] = [];
 
   for (let iter = 0; iter < maxIterations && beam.length > 0; iter++) {
-    if (deadlineMs != null && performance.now() >= deadlineMs) break;
+    incrementDiagnostic(diagnostics, "iterations");
+    if (deadlineMs != null && performance.now() >= deadlineMs) {
+      if (diagnostics) diagnostics.deadlineReached = true;
+      break;
+    }
     const nextBeam: BeamState[] = [];
 
     for (const state of beam) {
-      if (deadlineMs != null && performance.now() >= deadlineMs) break;
+      incrementDiagnostic(diagnostics, "statesVisited");
+      if (diagnostics && targetAnchors.some((anchor) => anchor.entryNodeIds?.has(state.currentNodeId))) {
+        incrementDiagnostic(diagnostics, "targetEntryStatesReached");
+      }
+      if (deadlineMs != null && performance.now() >= deadlineMs) {
+        if (diagnostics) diagnostics.deadlineReached = true;
+        break;
+      }
       const currentNode = graph.nodes.get(state.currentNodeId);
       if (!currentNode) continue;
 
@@ -689,6 +916,9 @@ function solveWithConfig(
       const allEdges = currentNode.edges
         .map((eid) => graph.edges.get(eid)!)
         .filter((e) => e != null && e.score > 0);
+      if (diagnostics) {
+        diagnostics.edgesConsidered = (diagnostics.edgesConsidered ?? 0) + allEdges.length;
+      }
 
       const unvisitedEdges = allEdges.filter((e) => {
         const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
@@ -707,7 +937,10 @@ function solveWithConfig(
         candidateEdges = candidateEdges.filter((edge) => edge.to !== state.lastFrom);
       }
 
-      if (candidateEdges.length === 0) continue;
+      if (candidateEdges.length === 0) {
+        incrementDiagnostic(diagnostics, "noExpandableEdges");
+        continue;
+      }
 
       // Compute adjusted scores
       const currentCoord = { lat: currentNode.lat, lng: currentNode.lng };
@@ -824,6 +1057,7 @@ function solveWithConfig(
 
         // Prune if exceeding max distance
         if (newDist > maxDist) {
+          incrementDiagnostic(diagnostics, "prunedDistanceBudget");
           const distToStart = haversineKm(
             { lat: currentNode.lat, lng: currentNode.lng },
             startCoord
@@ -862,6 +1096,7 @@ function solveWithConfig(
         };
 
         const newProgress = newDist / targetDistanceKm;
+        incrementDiagnostic(diagnostics, "statesExpanded");
 
         // 3.2 Forced loop closure at 65%+
         if (newProgress >= 0.65) {
@@ -871,6 +1106,7 @@ function solveWithConfig(
             // Can we close?
             if (newDist + returnDist > maxDist) {
               // Can't close — prune dead state
+              incrementDiagnostic(diagnostics, "prunedReturnBudget");
               continue;
             }
 
@@ -888,7 +1124,8 @@ function solveWithConfig(
                 newDist,
                 newState.pavedDistanceKm,
                 routeIntent?.maxRepeatEdgeRatio,
-                returnPavedRatioCap
+                returnPavedRatioCap,
+                diagnostics
               );
               const returnPath = resolvedReturn.path;
               if (returnPath) {
@@ -919,22 +1156,28 @@ function solveWithConfig(
                 newDist,
                 newState.pavedDistanceKm,
                 routeIntent?.maxRepeatEdgeRatio,
-                returnPavedRatioCap
+                returnPavedRatioCap,
+                diagnostics
               );
               const returnPath = resolvedReturn.path;
-              if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
+              const forcedClosedDistance = returnPath ? newDist + returnPath.distanceKm : null;
+              if (returnPath && forcedClosedDistance != null && forcedClosedDistance >= minDist && forcedClosedDistance <= maxDist * 1.1) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  newDist + returnPath.distanceKm,
+                  forcedClosedDistance,
                   resolvedReturn.relaxationsUsed,
                   targetNodeIds
                 ));
               }
-              continue;
+              if (forcedClosedDistance != null && forcedClosedDistance >= minDist) {
+                continue;
+              }
             }
           }
+        } else {
+          incrementDiagnostic(diagnostics, "returnPathMissing");
         }
 
         // Check for natural loop closure
@@ -1015,10 +1258,15 @@ export async function solve(
 ): Promise<SolverPath[]> {
   const configs = solverConfigsForIntent(routeIntent);
   const deadlineMs = resolveSolverDeadline(routeIntent, runtimeBudget);
+  const diagnostics = runtimeBudget.emptyDiagnostics;
   const allPaths: SolverPath[] = [];
   for (const config of configs) {
-    if (deadlineMs != null && performance.now() >= deadlineMs && allPaths.length > 0) break;
-    allPaths.push(...solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent, deadlineMs));
+    incrementDiagnostic(diagnostics, "configsTried");
+    if (deadlineMs != null && performance.now() >= deadlineMs && allPaths.length > 0) {
+      if (diagnostics) diagnostics.deadlineReached = true;
+      break;
+    }
+    allPaths.push(...solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent, deadlineMs, diagnostics));
     if (hasEnoughProgressivePaths(allPaths, routeIntent)) break;
   }
 
@@ -1027,7 +1275,9 @@ export async function solve(
   allPaths.sort((a, b) => b.totalScore - a.totalScore);
 
   // 4.2 Geometric deduplication
-  return deduplicatePaths(allPaths);
+  const dedupedPaths = deduplicatePaths(allPaths);
+  if (diagnostics) diagnostics.validPaths = dedupedPaths.length;
+  return dedupedPaths;
 }
 
 export function resolveSolverDeadline(

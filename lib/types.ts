@@ -240,6 +240,8 @@ export interface RouteGenerationDiagnostics {
     nodeCount: number;
     edgeCount: number;
     scenicWayCount: number;
+    selectedStartNodeId?: string | null;
+    selectedStartNodeDegree?: number | null;
   };
   closestNodeDistanceKm: number | null;
   terrain: {
@@ -251,6 +253,8 @@ export interface RouteGenerationDiagnostics {
     bestTotalScore: number | null;
     bestProductionScore: number | null;
     warnings: string[];
+    emptyReason?: string;
+    emptyDiagnostics?: import("./engine/orienteering-solver").SolverEmptyDiagnostics;
   };
 }
 
@@ -287,6 +291,7 @@ export interface RejectedRouteCandidatesDiagnostics {
   selectedCandidateIndex: number | null;
   topCandidateIndex: number | null;
   rejectionReasonsHistogram: Record<string, number>;
+  routeTrailQualityHistogram?: Record<"low" | "medium" | "high" | "unknown", number>;
   topCandidates: RejectedRouteCandidateDebugSummary[];
 }
 
@@ -456,6 +461,8 @@ export interface GenerateRouteError {
   subCode?: string;
   /** Benchmark/debug-only candidate gate report when ROUTE_CANDIDATES_REJECTED is requested with generation diagnostics. */
   rejectedCandidatesDiagnostics?: RejectedRouteCandidatesDiagnostics;
+  /** Benchmark/debug-only generation report when NO_ROAD_NETWORK/SOLVER_EMPTY is requested with generation diagnostics. */
+  generationDiagnostics?: RouteGenerationDiagnostics;
   /**
    * Only present when `errorCode === "IMPOSSIBLE_ELEVATION"`.
    * The maximum achievable D+ estimated from candidate routes, in metres.

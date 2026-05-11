@@ -170,6 +170,44 @@ describe("route hard-gate selector", () => {
     expect(isBetaStableCandidate(nearTargetShortfall, context)).toBe(true);
   });
 
+  it("classifies recovery park compactness-only rejection as park too small", () => {
+    const compactnessBlocked = candidate(80, {
+      distanceKm: 5.836,
+      ascendM: 50,
+      quality: {
+        pavedRatio: 0.61,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        geometry: { ...quality().geometry!, loopCompactness: 0.05178 },
+      },
+    });
+    const context = {
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      profile: recoveryProfile,
+      routeIntent: intent({
+        type: "park_loop",
+        strategy: "park_loop",
+        targetDistanceKm: 6,
+        targetElevationM: 50,
+        maxPavedRatio: 0.68,
+        maxRepeatEdgeRatio: 0.06,
+        maxGeometryOverlapRatio: 0.18,
+        distancePolicy: {
+          mode: "adjustable",
+          reason: "PARK_RECOVERY_SIZE_LIMIT",
+          requestedDistanceKm: 6,
+          minAdjustedDistanceKm: 5.16,
+          maxAdjustedDistanceKm: 6,
+          preferCleanAdjustedOverDirtyExact: true,
+        },
+      }),
+    };
+
+    expect(isBetaStableCandidate(compactnessBlocked, context)).toBe(false);
+    expect(rejectionSubCodeForCandidate(compactnessBlocked, context)).toBe("PARK_TOO_SMALL_FOR_DISTANCE");
+  });
+
   it("does not apply adjusted distance to strict trail candidates", () => {
     const shortTrail = candidate(80, { distanceKm: 6.9, ascendM: 100, quality: { pavedRatio: 0.2 } });
     const context = {
@@ -181,6 +219,138 @@ describe("route hard-gate selector", () => {
 
     expect(distanceAcceptanceForCandidate(shortTrail, context)).toEqual("rejected");
     expect(isBetaStableCandidate(shortTrail, context)).toBe(false);
+  });
+
+  it("rejects strict trail candidates when route-level trail quality is below the beta promise", () => {
+    const lowQualityTrail = candidate(80, {
+      distanceKm: 7.85,
+      ascendM: 120,
+      quality: {
+        productionScore: 0.95,
+        pavedRatio: 0.34,
+        naturalWayRatio: 0.84,
+        trailBeautyScore: 0.66,
+        longestTrailSegmentKm: 2.2,
+        naturalCorridorRatio: 0.53,
+        routeTrailQuality: "low",
+        trailPotential: "medium",
+      },
+    });
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 8, targetElevationM: 120, maxPavedRatio: 0.48 }),
+    };
+    const gate = evaluateRouteHardGates(lowQualityTrail, context);
+
+    expect(gate.violations.map((violation) => violation.key)).toContain("route_trail_quality");
+    expect(isBetaStableCandidate(lowQualityTrail, context)).toBe(false);
+    expect(rejectionSubCodeForCandidate(lowQualityTrail, context)).toBe("TRAIL_PROMISE_UNMET");
+  });
+
+  it("rejects long strict trail candidates when route-level trail quality is below the beta promise", () => {
+    const lowQualityTourville12NearMiss = candidate(95, {
+      distanceKm: 11.22,
+      ascendM: 204,
+      quality: {
+        productionScore: 0.91,
+        pavedRatio: 0.39,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        trailBeautyScore: 0.62,
+        naturalCorridorRatio: 0.48,
+        longestTrailSegmentKm: 2.9,
+        trailPotential: "medium",
+        routeTrailQuality: "low",
+      },
+    });
+    const context = {
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
+    };
+    const gate = evaluateRouteHardGates(lowQualityTourville12NearMiss, context);
+
+    expect(gate.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "route_trail_quality", actual: "low", limit: "medium", relaxable: false }),
+    ]));
+    expect(isBetaStableCandidate(lowQualityTourville12NearMiss, context)).toBe(false);
+    expect(rejectionSubCodeForCandidate(lowQualityTourville12NearMiss, context)).toBe("TRAIL_PROMISE_UNMET");
+  });
+
+  it("selects a medium/high Tourville12 candidate over a higher-scored low-quality near miss", () => {
+    const lowQualityNearMiss = candidate(140, {
+      distanceKm: 11.2,
+      ascendM: 180,
+      quality: {
+        productionScore: 0.94,
+        pavedRatio: 0.39,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        trailBeautyScore: 0.63,
+        naturalCorridorRatio: 0.5,
+        longestTrailSegmentKm: 2.9,
+        trailPotential: "medium",
+        routeTrailQuality: "low",
+      },
+    });
+    const healthyMediumCandidate = candidate(70, {
+      distanceKm: 11.05,
+      ascendM: 176,
+      quality: {
+        productionScore: 0.9,
+        pavedRatio: 0.28,
+        repeatEdgeRatio: 0.026,
+        uTurnRatio: 0.001,
+        trailBeautyScore: 0.76,
+        naturalCorridorRatio: 0.66,
+        longestTrailSegmentKm: 4.7,
+        trailPotential: "medium",
+        routeTrailQuality: "medium",
+      },
+    });
+    const context = {
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
+    };
+
+    const ordered = orderCandidatesByHardGates([lowQualityNearMiss, healthyMediumCandidate], context, (route) => route.totalScore);
+
+    expect(evaluateRouteHardGates(healthyMediumCandidate, context).bucket).toBe(0);
+    expect(evaluateRouteHardGates(lowQualityNearMiss, context).bucket).toBe(2);
+    expect(ordered[0]).toBe(healthyMediumCandidate);
+  });
+
+  it("allows one geometry self-intersection on otherwise clean long transition-to-woods trail routes", () => {
+    const cleanComplexTrail = candidate(80, {
+      distanceKm: 11.1,
+      ascendM: 160,
+      quality: {
+        productionScore: 0.91,
+        pavedRatio: 0.27,
+        repeatEdgeRatio: 0.025,
+        uTurnRatio: 0.001,
+        trailBeautyScore: 0.78,
+        naturalCorridorRatio: 0.65,
+        longestTrailSegmentKm: 5.3,
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        geometry: { ...quality().geometry!, selfIntersectionCount: 1, geometryOverlapRatio: 0.03, outAndBackSimilarityRatio: 0 },
+      },
+    });
+    const context = {
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
+    };
+
+    expect(evaluateRouteHardGates(cleanComplexTrail, context).violations.map((violation) => violation.key)).not.toContain("geometry_self_intersection");
+    expect(isBetaStableCandidate(cleanComplexTrail, context)).toBe(true);
   });
 
   it("rejects adjusted recovery park candidates that break pavement or geometry caps", () => {
@@ -422,12 +592,77 @@ describe("route hard-gate selector", () => {
     const overPaved = candidate(80, { quality: { pavedRatio: 0.451 } });
     const repeatOverflow = candidate(80, { quality: { repeatEdgeRatio: 0.041 } });
     const uTurnOverflow = candidate(80, { quality: { uTurnRatio: 0.011 } });
-    const restrictedWarning = candidate(80, { quality: { warnings: ["RESTRICTED_ACCESS"] } });
+    const restrictedWarning = candidate(80, { quality: { warnings: ["RESTRICTED_ACCESS"], restrictedAccessRatio: 0.02 } });
 
     expect(isBetaStableCandidate(overPaved, context)).toBe(false);
     expect(isBetaStableCandidate(repeatOverflow, context)).toBe(false);
     expect(isBetaStableCandidate(uTurnOverflow, context)).toBe(false);
     expect(isBetaStableCandidate(restrictedWarning, context)).toBe(false);
+  });
+
+  it("classifies dominant restricted access as access blocked instead of generic trail quality", () => {
+    const restrictedOnly = candidate(80, {
+      distanceKm: 9.95,
+      ascendM: 158,
+      quality: {
+        productionScore: 0.977,
+        pavedRatio: 0.227,
+        trailRatio: 0.773,
+        naturalWayRatio: 0.89,
+        trailBeautyScore: 0.5995,
+        naturalCorridorRatio: 0.73,
+        longestTrailSegmentKm: 2.89,
+        trailPotential: "medium",
+        repeatEdgeRatio: 0.0046,
+        uTurnRatio: 0,
+        restrictedAccessRatio: 0.02,
+        warnings: ["RESTRICTED_ACCESS"],
+      },
+    });
+    const context = {
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 10, targetElevationM: 220, maxPavedRatio: 0.42 }),
+    };
+
+    expect(evaluateRouteHardGates(restrictedOnly, context).violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "blocking_warning", actual: "RESTRICTED_ACCESS" }),
+      expect.objectContaining({ key: "trail_beauty_score" }),
+    ]));
+    expect(rejectionSubCodeForCandidate(restrictedOnly, context)).toBe("RESTRICTED_ACCESS_BLOCKED");
+  });
+
+  it("does not hard-reject an otherwise strong forest route for trace restricted-access noise", () => {
+    const meudonLike = candidate(80, {
+      distanceKm: 9.954,
+      ascendM: 158,
+      quality: {
+        productionScore: 0.977,
+        pavedRatio: 0.227,
+        trailRatio: 0.773,
+        naturalWayRatio: 0.89,
+        trailBeautyScore: 0.635,
+        naturalCorridorRatio: 0.89,
+        longestTrailSegmentKm: 2.89,
+        trailPotential: "medium",
+        repeatEdgeRatio: 0.0046,
+        uTurnRatio: 0,
+        restrictedAccessRatio: 0.003,
+        warnings: ["RESTRICTED_ACCESS", "TRAIL_TOO_FRAGMENTED"],
+      },
+    });
+    const context = {
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 10, targetElevationM: 220, maxPavedRatio: 0.42 }),
+    };
+
+    const gate = evaluateRouteHardGates(meudonLike, context);
+
+    expect(gate.violations.some((violation) => violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS")).toBe(false);
+    expect(isBetaStableCandidate(meudonLike, context)).toBe(true);
   });
 
   it("classifies recovery park paved overflow as PARK_TOO_SMALL_FOR_DISTANCE instead of a silent success", () => {
@@ -508,6 +743,72 @@ describe("route hard-gate selector", () => {
     };
 
     expect(isBetaStableCandidate(tourville12kLike, context)).toBe(true);
+  });
+
+  it("prefers high route trail quality and demotes low quality below repeat overflow", () => {
+    const lowQualitySaferRepeat = candidate(100, {
+      distanceKm: 7.39,
+      ascendM: 120,
+      quality: {
+        routeTrailQuality: "low",
+        trailPotential: "medium",
+        pavedRatio: 0.479,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        productionScore: 0.876,
+        trailBeautyScore: 0.68,
+        naturalCorridorRatio: 0.76,
+        longestTrailSegmentKm: 2.71,
+      },
+    });
+    const highQualityNearRepeatLimit = candidate(60, {
+      distanceKm: 7.82,
+      ascendM: 120,
+      quality: {
+        routeTrailQuality: "high",
+        trailPotential: "medium",
+        pavedRatio: 0.349,
+        repeatEdgeRatio: 0.0399,
+        uTurnRatio: 0.0076,
+        productionScore: 0.965,
+        trailBeautyScore: 0.72,
+        naturalCorridorRatio: 0.85,
+        longestTrailSegmentKm: 3.81,
+      },
+    });
+    const highQualityRepeatOverflow = candidate(120, {
+      distanceKm: 7.82,
+      ascendM: 120,
+      quality: {
+        routeTrailQuality: "high",
+        trailPotential: "medium",
+        pavedRatio: 0.349,
+        repeatEdgeRatio: 0.041,
+        uTurnRatio: 0.0076,
+        productionScore: 0.965,
+        trailBeautyScore: 0.72,
+        naturalCorridorRatio: 0.85,
+        longestTrailSegmentKm: 3.81,
+      },
+    });
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 8, targetElevationM: 120, maxPavedRatio: 0.48, maxRepeatEdgeRatio: 0.04 }),
+    };
+
+    expect(evaluateRouteHardGates(highQualityNearRepeatLimit, context).bucket).toBe(0);
+    expect(evaluateRouteHardGates(highQualityRepeatOverflow, context).bucket).toBe(2);
+
+    const ordered = orderCandidatesByHardGates(
+      [lowQualitySaferRepeat, highQualityNearRepeatLimit, highQualityRepeatOverflow],
+      context,
+      (route) => route.totalScore
+    );
+
+    expect(ordered[0]).toBe(highQualityNearRepeatLimit);
+    expect(ordered.indexOf(lowQualitySaferRepeat)).toBeGreaterThan(ordered.indexOf(highQualityRepeatOverflow));
   });
 
   it("prefers a stable hard-gate margin over a prettier borderline trail candidate", () => {
@@ -665,16 +966,27 @@ describe("route hard-gate selector", () => {
     };
 
     const diagnostics = buildRejectedCandidatesDiagnostics(
-      [distanceFailure, pavedFailure],
+      [
+        distanceFailure,
+        candidate(61, { quality: { routeTrailQuality: "medium" } }),
+        candidate(62, { quality: { routeTrailQuality: "high" } }),
+        pavedFailure,
+      ],
       context,
       "TRAIL_PROMISE_UNMET"
     );
 
     expect(diagnostics).toMatchObject({
       subCode: "TRAIL_PROMISE_UNMET",
-      candidateCount: 2,
+      candidateCount: 4,
       topCandidateIndex: 0,
       selectedCandidateIndex: 0,
+      routeTrailQualityHistogram: {
+        low: 0,
+        medium: 1,
+        high: 1,
+        unknown: 2,
+      },
       rejectionReasonsHistogram: expect.objectContaining({
         distance_tolerance: 1,
         paved_ratio: 2,
@@ -683,7 +995,7 @@ describe("route hard-gate selector", () => {
         longest_trail_segment: 1,
       }),
     });
-    expect(diagnostics.topCandidates).toHaveLength(2);
+    expect(diagnostics.topCandidates).toHaveLength(4);
     expect(diagnostics.topCandidates[0]).toMatchObject({
       candidateIndex: 0,
       distanceKm: 6.7,

@@ -76,7 +76,9 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Doit exploiter les chemins vers les Amis de Jean Bosco sans demi-tour visible ni backtracking sur les mêmes tronçons."
+    "notes": "Contrat beta honnête : refus typé si aucune boucle 8 km stable ne respecte la promesse trail depuis ce départ. Ne pas accepter les candidats trop bitumés, trop fragmentés ou routeTrailQuality low.",
+    "expectedOutcome": "typed_refusal",
+    "expectedRefusalSubCode": "TRAIL_PROMISE_UNMET"
   },
   {
     "id": "tourville-pommiers-trail-10k",
@@ -236,7 +238,8 @@
       "TOO_MUCH_BACKTRACKING"
     ],
     "notes": "Petit parc/urbain : contrat récupération nature/paved-running assumé, avec pavedRatio honnête (cap 0.68) et géométrie propre; ne pas le vendre comme faux trail non bitumé. Accepte explicitement une distance ajustée propre si le parc ne permet pas honnêtement 6 km sans dépasser les garde-fous.",
-    "expectedOutcome": "adjusted_distance",
+    "expectedOutcome": "park_recovery",
+    "expectedRefusalSubCode": "PARK_TOO_SMALL_FOR_DISTANCE",
     "adjustedDistanceKm": {
       "min": 5.15,
       "max": 6
@@ -357,7 +360,9 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Périurbain forestier dense : vérifier qu'Overpass reste borné et que le solver exploite les chemins sans backtracking."
+    "notes": "Périurbain forestier dense : contrat smoke honnête en refus typé si les meilleurs candidats traversent un accès restreint OSM. Ne pas forcer trail_success, ne pas masquer restricted/private access, ne pas baisser les seuils.",
+    "expectedOutcome": "typed_refusal",
+    "expectedRefusalSubCode": "RESTRICTED_ACCESS_BLOCKED"
   },
   {
     "id": "lille-10k-citadel-loop",

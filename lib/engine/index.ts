@@ -12,6 +12,7 @@ import { RouteGenerationError } from "../errors";
 import { buildGraph } from "./graph-builder";
 import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
+import type { SolverEmptyDiagnostics } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
 import { buildRejectedCandidatesDiagnostics, distanceAcceptanceForCandidate, isBetaStableCandidate, rejectionSubCodeForCandidate } from "./route-gate-selector";
 import { auditTerrainData } from "./terrain-audit";
@@ -28,17 +29,22 @@ export interface StartNodeSnapResult {
 }
 
 export function selectStartNodeTopologyAware(
-  graph: Pick<EnrichedGraph, "nodes">,
+  graph: Pick<EnrichedGraph, "nodes" | "edges">,
   startCoordinate: Coordinate,
   preferJunction: boolean = true
 ): StartNodeSnapResult {
   let closestNodeId = "";
   let closestDist = Infinity;
+  const scoredGraph = graph.edges.size > 0;
+  const usableDegreeFor = (node: { edges: string[] }): number => {
+    if (!scoredGraph) return node.edges.length;
+    return node.edges.filter((edgeId) => (graph.edges.get(edgeId)?.score ?? 0) > 0).length;
+  };
   const candidates: Array<{ id: string; dist: number; degree: number }> = [];
 
   for (const [id, node] of Array.from(graph.nodes.entries())) {
     const dist = haversineKm(startCoordinate, { lat: node.lat, lng: node.lng });
-    const degree = node.edges.length;
+    const degree = usableDegreeFor(node);
     candidates.push({ id, dist, degree });
     if (dist < closestDist) {
       closestDist = dist;
@@ -65,6 +71,68 @@ export function selectStartNodeTopologyAware(
 function errorCodeFrom(error: unknown): string | undefined {
   if (error instanceof RouteGenerationError) return error.code;
   return error instanceof Error ? "UNKNOWN" : undefined;
+}
+
+function inferSolverEmptyReason(diagnostics?: SolverEmptyDiagnostics): string {
+  if (!diagnostics) return "UNKNOWN_EMPTY";
+  if (diagnostics.deadlineReached) return "DEADLINE_EXCEEDED";
+  if ((diagnostics.targetEntryNodeCount ?? 0) > 0 && (diagnostics.targetEntryStatesReached ?? 0) === 0) return "TARGET_ENTRY_ANCHOR_MISS";
+  if ((diagnostics.noExpandableEdges ?? 0) > 0 && (diagnostics.statesExpanded ?? 0) === 0) return "NO_EXPANDABLE_EDGES";
+  if ((diagnostics.prunedReturnBudget ?? 0) > 0) return "RETURN_BUDGET_EXHAUSTED";
+  if ((diagnostics.returnPavedCap ?? 0) > 0) return "PAVED_CAP_EXHAUSTED";
+  if ((diagnostics.returnRepeatCap ?? 0) > 0) return "REPEAT_CAP_EXHAUSTED";
+  if ((diagnostics.returnPathMissing ?? 0) > 0) return "RETURN_PATH_MISSING";
+  if ((diagnostics.prunedDistanceBudget ?? 0) > 0) return "DISTANCE_BUDGET_EXHAUSTED";
+  if ((diagnostics.noExpandableEdges ?? 0) > 0) return "NO_EXPANDABLE_EDGES";
+  return "UNKNOWN_EMPTY";
+}
+
+function buildGenerationDiagnostics(args: {
+  request: RouteRequest;
+  profile: { id: string; sport: RouteGenerationDiagnostics["sport"] };
+  graph: EnrichedGraph;
+  scenicWayIds: { size: number };
+  closestNodeId: string;
+  closestDist: number;
+  routeIntent: RouteGenerationDiagnostics["terrain"]["routeIntent"];
+  solverPathCount: number;
+  candidateCount: number;
+  bestTotalScore?: number | null;
+  bestProductionScore?: number | null;
+  warnings?: string[];
+  emptyReason?: string;
+  emptyDiagnostics?: SolverEmptyDiagnostics;
+}): RouteGenerationDiagnostics {
+  const selectedStartNode = args.graph.nodes.get(args.closestNodeId);
+  return {
+    version: 1,
+    strategy: "v2-local-graph",
+    profileId: args.profile.id,
+    sport: args.profile.sport,
+    scenicMode: args.request.scenicMode === true,
+    targetDistanceKm: args.request.targetDistanceKm,
+    targetElevationM: args.request.targetElevationM,
+    graph: {
+      nodeCount: args.graph.nodes.size,
+      edgeCount: args.graph.edges.size,
+      scenicWayCount: args.scenicWayIds.size,
+      selectedStartNodeId: args.closestNodeId || null,
+      selectedStartNodeDegree: selectedStartNode?.edges.length ?? null,
+    },
+    closestNodeDistanceKm: Number.isFinite(args.closestDist) ? args.closestDist : null,
+    terrain: {
+      routeIntent: args.routeIntent,
+    },
+    solver: {
+      pathCount: args.solverPathCount,
+      candidateCount: args.candidateCount,
+      bestTotalScore: args.bestTotalScore ?? null,
+      bestProductionScore: args.bestProductionScore ?? null,
+      warnings: args.warnings ?? [],
+      ...(args.emptyReason != null ? { emptyReason: args.emptyReason } : {}),
+      ...(args.emptyDiagnostics != null ? { emptyDiagnostics: args.emptyDiagnostics } : {}),
+    },
+  };
 }
 
 export async function generateRouteV2(
@@ -122,7 +190,7 @@ export async function generateRouteV2(
 
   // 4. Find start node. For running/trail loops, avoid snapping to a very close
   // spur when a real junction is only a few metres farther away.
-  const { closestNodeId, closestDist } = await timed("graph.closestNode", () => {
+  let { closestNodeId, closestDist } = await timed("graph.closestNode", () => {
     const preferJunction = profile.sport === "running" || profile.sessionType === "trail";
     return selectStartNodeTopologyAware(graph, startCoordinate, preferJunction);
   });
@@ -150,18 +218,44 @@ export async function generateRouteV2(
     return scoreEdges(graph, weights, profile, scenicWayIds, routeIntent);
   });
 
+  const scoredStartSnap = await timed("graph.closestScoredNode", () => {
+    const preferJunction = profile.sport === "running" || profile.sessionType === "trail";
+    return selectStartNodeTopologyAware(graph, startCoordinate, preferJunction);
+  });
+  closestNodeId = scoredStartSnap.closestNodeId;
+  closestDist = scoredStartSnap.closestDist;
+
   // 7. Run solver
+  const solverEmptyDiagnostics: SolverEmptyDiagnostics | undefined = includeGenerationDiagnostics ? {} : undefined;
   const solverPaths = await timed("solver.solve", () => solve(
     graph,
     closestNodeId,
     request.targetDistanceKm,
     request.targetElevationM,
     nodeElevation,
-    routeIntent
+    routeIntent,
+    { emptyDiagnostics: solverEmptyDiagnostics }
   ));
 
   if (solverPaths.length === 0) {
-    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "SOLVER_EMPTY" });
+    throw new RouteGenerationError("NO_ROAD_NETWORK", {
+      subCode: "SOLVER_EMPTY",
+      generationDiagnostics: includeGenerationDiagnostics
+        ? buildGenerationDiagnostics({
+            request,
+            profile,
+            graph,
+            scenicWayIds,
+            closestNodeId,
+            closestDist,
+            routeIntent,
+            solverPathCount: 0,
+            candidateCount: 0,
+            emptyReason: inferSolverEmptyReason(solverEmptyDiagnostics),
+            emptyDiagnostics: solverEmptyDiagnostics,
+          })
+        : undefined,
+    });
   }
 
   // 8. Post-process into RouteCandidate[]
@@ -178,7 +272,24 @@ export async function generateRouteV2(
   ));
 
   if (candidates.length === 0) {
-    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "SOLVER_EMPTY" });
+    throw new RouteGenerationError("NO_ROAD_NETWORK", {
+      subCode: "SOLVER_EMPTY",
+      generationDiagnostics: includeGenerationDiagnostics
+        ? buildGenerationDiagnostics({
+            request,
+            profile,
+            graph,
+            scenicWayIds,
+            closestNodeId,
+            closestDist,
+            routeIntent,
+            solverPathCount: solverPaths.length,
+            candidateCount: 0,
+            emptyReason: "POST_PROCESS_EMPTY",
+            emptyDiagnostics: solverEmptyDiagnostics,
+          })
+        : undefined,
+    });
   }
 
   const best = candidates[0];
@@ -253,32 +364,20 @@ export async function generateRouteV2(
       stages,
     };
     const warnings = Array.isArray(best.quality?.warnings) ? best.quality.warnings : [];
-    const diagnostics: RouteGenerationDiagnostics = {
-      version: 1,
-      strategy: "v2-local-graph",
-      profileId: profile.id,
-      sport: profile.sport,
-      scenicMode: request.scenicMode === true,
-      targetDistanceKm: request.targetDistanceKm,
-      targetElevationM: request.targetElevationM,
-      graph: {
-        nodeCount: graph.nodes.size,
-        edgeCount: graph.edges.size,
-        scenicWayCount: scenicWayIds.size,
-      },
-      closestNodeDistanceKm: Number.isFinite(closestDist) ? closestDist : null,
-      terrain: {
-        routeIntent,
-      },
-      solver: {
-        pathCount: solverPaths.length,
-        candidateCount: candidates.length,
-        bestTotalScore: typeof best.totalScore === "number" ? best.totalScore : null,
-        bestProductionScore: typeof best.quality?.productionScore === "number" ? best.quality.productionScore : null,
-        warnings,
-      },
-    };
-    route.diagnostics = diagnostics;
+    route.diagnostics = buildGenerationDiagnostics({
+      request,
+      profile,
+      graph,
+      scenicWayIds,
+      closestNodeId,
+      closestDist,
+      routeIntent,
+      solverPathCount: solverPaths.length,
+      candidateCount: candidates.length,
+      bestTotalScore: typeof best.totalScore === "number" ? best.totalScore : null,
+      bestProductionScore: typeof best.quality?.productionScore === "number" ? best.quality.productionScore : null,
+      warnings,
+    });
   }
 
   return route;

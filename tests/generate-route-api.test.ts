@@ -136,6 +136,7 @@ describe("POST /api/generate-route", () => {
           blockingViolationCount: 0,
           totalSeverity: 0,
           criticalStabilityRisk: 0.08,
+          routeTrailQualityRank: 0,
         },
         criticalStabilityRisk: 0.08,
         thresholds: { maxPavedRatio: 0.45 },
@@ -162,6 +163,74 @@ describe("POST /api/generate-route", () => {
     });
   });
 
+  it("exposes solver-empty generation diagnostics only when benchmark generation diagnostics are requested", async () => {
+    const generationDiagnostics = {
+      version: 1 as const,
+      strategy: "v2-local-graph" as const,
+      profileId: "running_endurance",
+      sport: "running" as const,
+      scenicMode: true,
+      targetDistanceKm: 10,
+      targetElevationM: 100,
+      graph: { nodeCount: 120, edgeCount: 310, scenicWayCount: 14 },
+      closestNodeDistanceKm: 0.03,
+      terrain: { routeIntent: null },
+      solver: {
+        pathCount: 0,
+        candidateCount: 0,
+        bestTotalScore: null,
+        bestProductionScore: null,
+        warnings: [],
+        emptyReason: "UNKNOWN_EMPTY",
+      },
+    };
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("NO_ROAD_NETWORK", {
+        subCode: "SOLVER_EMPTY",
+        generationDiagnostics,
+      })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({ ...baseBody, includeGenerationDiagnostics: true }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      errorCode: "NO_ROAD_NETWORK",
+      subCode: "SOLVER_EMPTY",
+      generationDiagnostics,
+    });
+  });
+
+  it("strips solver-empty generation diagnostics from public error responses by default", async () => {
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("NO_ROAD_NETWORK", {
+        subCode: "SOLVER_EMPTY",
+        generationDiagnostics: {
+          version: 1,
+          strategy: "v2-local-graph",
+          profileId: "running_endurance",
+          sport: "running",
+          scenicMode: false,
+          targetDistanceKm: 10,
+          targetElevationM: 100,
+          graph: { nodeCount: 1, edgeCount: 0, scenicWayCount: 0 },
+          closestNodeDistanceKm: null,
+          terrain: { routeIntent: null },
+          solver: { pathCount: 0, candidateCount: 0, bestTotalScore: null, bestProductionScore: null, warnings: [] },
+        },
+      })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest(baseBody) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload.generationDiagnostics).toBeUndefined();
+  });
 
   it("exposes recovery park adjusted distance instead of a silent short 200", async () => {
     const distanceAdjustment = {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from "@/lib/types";
-import { resolveSolverDeadline, solve } from "@/lib/engine/orienteering-solver";
+import { resolveSolverDeadline, solve, type SolverEmptyDiagnostics } from "@/lib/engine/orienteering-solver";
 import { assessRouteQuality } from "@/lib/engine/route-quality";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import type { RouteIntent } from "@/lib/engine/terrain-planner";
@@ -205,6 +205,70 @@ function makeCompetingTargetComponentsGraph(): EnrichedGraph {
   addEdge(graph, "target-a-target-b", "target-a", "target-b", { highway: "path", surface: "earth", score: 0.46, lengthKm: 1 });
   addEdge(graph, "target-b-target-c", "target-b", "target-c", { highway: "track", surface: "ground", score: 0.46, lengthKm: 1 });
   addEdge(graph, "target-c-start", "target-c", "start", { highway: "path", surface: "dirt", score: 0.46, lengthKm: 1 });
+
+  return graph;
+}
+
+function makeTargetEntryAnchorMissGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["local-a", makeNode("local-a", 49.141, -0.500)],
+    ["local-b", makeNode("local-b", 49.140, -0.499)],
+    ["local-c", makeNode("local-c", 49.139, -0.500)],
+    ["local-d", makeNode("local-d", 49.140, -0.501)],
+    ["access-a", makeNode("access-a", 49.145, -0.506)],
+    ["target-entry", makeNode("target-entry", 49.150, -0.512)],
+    ["target-a", makeNode("target-a", 49.151, -0.506)],
+    ["target-b", makeNode("target-b", 49.148, -0.502)],
+    ["target-exit", makeNode("target-exit", 49.144, -0.504)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 4,
+  };
+
+  addEdge(graph, "start-local-a", "start", "local-a", { highway: "path", surface: "dirt", score: 0.95, lengthKm: 0.7 });
+  addEdge(graph, "start-local-b", "start", "local-b", { highway: "path", surface: "dirt", score: 0.94, lengthKm: 0.7 });
+  addEdge(graph, "start-local-c", "start", "local-c", { highway: "path", surface: "dirt", score: 0.93, lengthKm: 0.7 });
+  addEdge(graph, "start-local-d", "start", "local-d", { highway: "path", surface: "dirt", score: 0.92, lengthKm: 0.7 });
+
+  addEdge(graph, "start-access-a", "start", "access-a", { highway: "residential", surface: "asphalt", score: 0.05, lengthKm: 0.8 });
+  addEdge(graph, "access-a-target-entry", "access-a", "target-entry", { highway: "track", surface: "ground", score: 0.18, lengthKm: 0.8 });
+  addEdge(graph, "target-entry-target-a", "target-entry", "target-a", { highway: "path", surface: "dirt", score: 0.62, lengthKm: 1.1 });
+  addEdge(graph, "target-a-target-b", "target-a", "target-b", { highway: "path", surface: "earth", score: 0.62, lengthKm: 1.1 });
+  addEdge(graph, "target-b-target-exit", "target-b", "target-exit", { highway: "track", surface: "ground", score: 0.62, lengthKm: 1.1 });
+  addEdge(graph, "target-exit-start", "target-exit", "start", { highway: "residential", surface: "asphalt", score: 0.28, lengthKm: 1.0 });
+
+  return graph;
+}
+
+function makeTransitionWoodsEarlyClosureGraph(): EnrichedGraph {
+  const nodes = new Map<string, GraphNode>([
+    ["start", makeNode("start", 49.14, -0.50)],
+    ["access", makeNode("access", 49.141, -0.500)],
+    ["target-entry", makeNode("target-entry", 49.142, -0.500)],
+    ["target-a", makeNode("target-a", 49.143, -0.500)],
+    ["target-b", makeNode("target-b", 49.144, -0.500)],
+    ["near-exit", makeNode("near-exit", 49.1405, -0.500)],
+    ["extension", makeNode("extension", 49.1403, -0.500)],
+  ]);
+  const graph: EnrichedGraph = {
+    nodes,
+    edges: new Map<string, EnrichedEdge>(),
+    center: { lat: 49.14, lng: -0.50 },
+    radiusKm: 3,
+  };
+
+  addEdge(graph, "start-access", "start", "access", { highway: "residential", surface: "asphalt", score: 0.35, lengthKm: 1.4 });
+  addEdge(graph, "access-target-entry", "access", "target-entry", { highway: "track", surface: "ground", score: 0.6, lengthKm: 0.7 });
+  addEdge(graph, "target-entry-target-a", "target-entry", "target-a", { highway: "path", surface: "dirt", score: 0.7, lengthKm: 1.4 });
+  addEdge(graph, "target-a-target-b", "target-a", "target-b", { highway: "path", surface: "earth", score: 0.7, lengthKm: 1.4 });
+  addEdge(graph, "target-b-near-exit", "target-b", "near-exit", { highway: "track", surface: "ground", score: 0.7, lengthKm: 2.0 });
+  addEdge(graph, "near-exit-start", "near-exit", "start", { highway: "residential", surface: "asphalt", score: 0.3, lengthKm: 0.05 });
+  addEdge(graph, "near-exit-extension", "near-exit", "extension", { highway: "path", surface: "dirt", score: 0.7, lengthKm: 0.6 });
+  addEdge(graph, "extension-start", "extension", "start", { highway: "residential", surface: "asphalt", score: 0.3, lengthKm: 0.3 });
 
   return graph;
 }
@@ -602,6 +666,34 @@ describe("solve natural corridor preference", () => {
     expect(resolveSolverDeadline(routeIntent, {}, nowMs)).toBeLessThanOrEqual(nowMs + 60_000);
   });
 
+  it("records why the solver returns no paths instead of leaving solver-empty opaque", async () => {
+    const nodes = new Map<string, GraphNode>([
+      ["start", makeNode("start", 49.14, -0.50)],
+      ["dead-end", makeNode("dead-end", 49.141, -0.50)],
+    ]);
+    const graph: EnrichedGraph = {
+      nodes,
+      edges: new Map<string, EnrichedEdge>(),
+      center: { lat: 49.14, lng: -0.50 },
+      radiusKm: 1,
+    };
+    addEdge(graph, "start-dead-end", "start", "dead-end", {
+      highway: "path",
+      surface: "dirt",
+      score: 0.8,
+      lengthKm: 0.5,
+    });
+    const emptyDiagnostics: SolverEmptyDiagnostics = {};
+
+    const paths = await solve(graph, "start", 3, 0, new Map(), undefined, { emptyDiagnostics });
+
+    expect(paths).toHaveLength(0);
+    expect(emptyDiagnostics.configsTried).toBeGreaterThan(0);
+    expect(emptyDiagnostics.statesVisited).toBeGreaterThan(0);
+    expect(emptyDiagnostics.noExpandableEdges).toBeGreaterThan(0);
+    expect(emptyDiagnostics.validPaths).toBe(0);
+  });
+
   it("prefers a clean return over fallback overlap in fallback_allowed park loops when both fit", async () => {
     const graph = makeCleanReturnClosureGraph();
     const routeIntent: RouteIntent = {
@@ -733,6 +825,112 @@ describe("solve natural corridor preference", () => {
     ]);
   });
 
+
+  it("keeps a target-component natural branch alive instead of force-closing below strict distance", async () => {
+    const graph = makeTransitionWoodsEarlyClosureGraph();
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 8,
+      targetElevationM: 0,
+      targetComponents: ["tc-target"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 3,
+      minNonPavedTrailStreakKm: 2,
+      maxPavedRatio: 0.48,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.08,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 4, maxIterations: 80, shortlistSize: 4 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [
+        {
+          id: "tc-target",
+          kind: "forest",
+          center: { lat: 49.143, lng: -0.5 },
+          totalKm: 6,
+          nonPavedKm: 5.2,
+          pavedKm: 0,
+          unknownSurfaceKm: 0,
+          distanceFromStartKm: 1.8,
+          entryNodeIds: ["target-entry"],
+          exitNodeIds: ["near-exit", "extension"],
+          nodeIds: ["target-entry", "target-a", "target-b", "near-exit", "extension"],
+          confidence: "high",
+        },
+      ],
+    };
+
+    const paths = await solve(graph, "start", 8, 0, new Map(), routeIntent);
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].distanceKm).toBeGreaterThanOrEqual(7.2);
+    expect(paths[0].edgeIds).toEqual([
+      "start-access",
+      "access-target-entry",
+      "target-entry-target-a",
+      "target-a-target-b",
+      "target-b-near-exit",
+      "near-exit-extension",
+      "extension-start",
+    ]);
+  });
+
+  it("seeds a transition-to-woods route from a reachable target entry when normal beam misses the anchor", async () => {
+    const graph = makeTargetEntryAnchorMissGraph();
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 5.2,
+      targetElevationM: 0,
+      targetComponents: ["tc-target"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 2,
+      minNonPavedTrailStreakKm: 2,
+      maxPavedRatio: 0.45,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.08,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 2, maxIterations: 80, shortlistSize: 4 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [
+        {
+          id: "tc-target",
+          kind: "forest",
+          center: { lat: 49.150, lng: -0.506 },
+          totalKm: 5,
+          nonPavedKm: 4,
+          pavedKm: 0,
+          unknownSurfaceKm: 0,
+          distanceFromStartKm: 1.6,
+          entryNodeIds: ["target-entry"],
+          exitNodeIds: ["target-exit"],
+          nodeIds: ["target-entry", "target-a", "target-b", "target-exit"],
+          confidence: "high",
+        },
+      ],
+    };
+    const emptyDiagnostics: SolverEmptyDiagnostics = {};
+
+    const paths = await solve(graph, "start", 5.2, 0, new Map(), routeIntent, { emptyDiagnostics });
+
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths[0].edgeIds).toEqual([
+      "start-access-a",
+      "access-a-target-entry",
+      "target-entry-target-a",
+      "target-a-target-b",
+      "target-b-target-exit",
+      "target-exit-start",
+    ]);
+    expect(emptyDiagnostics.targetEntryStatesReached).toBeGreaterThan(0);
+  });
 
   it("uses routeIntent.targetComponents to prefer the planned natural component", async () => {
     const graph = makeCompetingTargetComponentsGraph();

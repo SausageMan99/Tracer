@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { selectStartNodeTopologyAware } from "@/lib/engine";
-import type { EnrichedGraph, GraphNode } from "@/lib/types";
+import type { EnrichedEdge, EnrichedGraph, GraphNode } from "@/lib/types";
 
 function node(id: string, lat: number, lng: number, degree: number): GraphNode {
   return {
@@ -11,10 +11,22 @@ function node(id: string, lat: number, lng: number, degree: number): GraphNode {
   };
 }
 
-function graph(nodes: GraphNode[]): EnrichedGraph {
+function edge(id: string, from: string, to: string, score: number): EnrichedEdge {
+  return {
+    id,
+    from,
+    to,
+    lengthKm: 0.01,
+    highway: "path",
+    osmWayId: Number(id.replace(/\D/g, "")) || 1,
+    score,
+  };
+}
+
+function graph(nodes: GraphNode[], edges: EnrichedEdge[] = []): EnrichedGraph {
   return {
     nodes: new Map(nodes.map((entry) => [entry.id, entry])),
-    edges: new Map(),
+    edges: new Map(edges.map((entry) => [entry.id, entry])),
     center: { lat: 48.812, lng: 2.239 },
     radiusKm: 1.2,
   };
@@ -46,5 +58,24 @@ describe("topology-aware start snap", () => {
     );
 
     expect(result.closestNodeId).toBe("closest-spur");
+  });
+
+  it("prefers a nearby junction with scored outgoing edges over a closer dead scored node", () => {
+    const result = selectStartNodeTopologyAware(
+      graph([
+        { ...node("closest-dead-junction", 48.81203, 2.239, 3), edges: ["dead-1", "dead-2", "dead-3"] },
+        { ...node("nearby-usable-junction", 48.81213, 2.239, 3), edges: ["usable-1", "usable-2", "usable-3"] },
+      ], [
+        edge("dead-1", "closest-dead-junction", "x", 0),
+        edge("dead-2", "closest-dead-junction", "x", 0),
+        edge("dead-3", "closest-dead-junction", "x", 0),
+        edge("usable-1", "nearby-usable-junction", "y", 0.4),
+        edge("usable-2", "nearby-usable-junction", "y", 0.5),
+        edge("usable-3", "nearby-usable-junction", "y", 0.6),
+      ]),
+      { lat: 48.812, lng: 2.239 }
+    );
+
+    expect(result.closestNodeId).toBe("nearby-usable-junction");
   });
 });

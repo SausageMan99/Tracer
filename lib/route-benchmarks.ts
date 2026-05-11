@@ -4,7 +4,7 @@ import {
   summarizeBenchmarkFailure as summarizeBenchmarkFailureCore,
   summarizeBenchmarkResult as summarizeBenchmarkResultCore,
 } from "./route-benchmarks-core.mjs";
-import type { GenerateRouteRequest } from "./types";
+import type { GenerateRouteRequest, RouteGenerationDiagnostics } from "./types";
 
 export interface RouteBenchmarkCase {
   id: string;
@@ -16,7 +16,7 @@ export interface RouteBenchmarkCase {
   scenicMode?: boolean;
   tags?: string[];
   tier?: "p0" | "p1" | "p2" | "exploratory";
-  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal";
+  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
   expectedRefusalSubCode?: string;
   adjustedDistanceKm?: { min: number; max: number };
   thresholds: {
@@ -102,6 +102,7 @@ export interface BenchmarkFailureSample {
   error?: string | null;
   durationMs?: number;
   rejectedCandidatesDiagnostics?: unknown;
+  generationDiagnostics?: RouteGenerationDiagnostics | unknown;
   routeArtifacts?: unknown;
 }
 
@@ -119,7 +120,7 @@ export interface BenchmarkSummary {
     requestedDistanceKm?: number | null;
     adjustedDistanceKm?: number | null;
     distanceAdjustmentReason?: string | null;
-    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal";
+    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
     actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error";
     expectedRefusalSubCode?: string | null;
     refusalSubCode?: string | null;
@@ -156,6 +157,7 @@ export interface BenchmarkSummary {
       maxDistanceFromStartKm: number;
     };
   };
+  generationDiagnostics?: RouteGenerationDiagnostics | unknown;
 }
 
 export const BENCHMARK_CASES = rawBenchmarkCases as RouteBenchmarkCase[];

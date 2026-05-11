@@ -149,6 +149,23 @@ async function saveRejectedCandidatesArtifacts(benchmark, payload) {
   };
 }
 
+async function saveGenerationDiagnosticsArtifacts(benchmark, payload) {
+  if (!shouldSaveArtifacts || payload?.generationDiagnostics == null) return null;
+  const absoluteArtifactDir = resolve(repoRoot, artifactDir);
+  await mkdir(absoluteArtifactDir, { recursive: true });
+
+  const generationDiagnosticsArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.generation-diagnostics.json`);
+  await writeFile(
+    generationDiagnosticsArtifactPath,
+    `${JSON.stringify(payload.generationDiagnostics, null, 2)}\n`,
+    "utf8"
+  );
+
+  return {
+    generationDiagnosticsJson: generationDiagnosticsArtifactPath.replace(`${repoRoot}/`, ""),
+  };
+}
+
 async function runBenchmark(benchmark) {
   if (requiresExternalRouting(benchmark) && !hasExternalRoutingKey) {
     return {
@@ -186,6 +203,7 @@ async function runBenchmark(benchmark) {
 
     if (!response.ok || payload.success !== true) {
       const rejectedCandidateArtifacts = await saveRejectedCandidatesArtifacts(benchmark, payload);
+      const generationDiagnosticsArtifacts = await saveGenerationDiagnosticsArtifacts(benchmark, payload);
       return summarizeBenchmarkFailure(benchmark, {
         status: response.status,
         durationMs,
@@ -193,7 +211,11 @@ async function runBenchmark(benchmark) {
         subCode: payload.subCode ?? null,
         error: payload.error ?? "No JSON error body",
         rejectedCandidatesDiagnostics: payload.rejectedCandidatesDiagnostics ?? null,
-        routeArtifacts: rejectedCandidateArtifacts,
+        generationDiagnostics: payload.generationDiagnostics ?? null,
+        routeArtifacts: {
+          ...(rejectedCandidateArtifacts ?? {}),
+          ...(generationDiagnosticsArtifacts ?? {}),
+        },
       });
     }
 

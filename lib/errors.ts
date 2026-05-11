@@ -18,6 +18,7 @@ export type RouteErrorSubCode =
   | "EMPTY_GRAPH"
   | "SOLVER_EMPTY"
   | "TRAIL_PROMISE_UNMET"
+  | "RESTRICTED_ACCESS_BLOCKED"
   | "PARK_TOO_SMALL_FOR_DISTANCE";
 
 export class RouteGenerationError extends Error {
@@ -27,6 +28,8 @@ export class RouteGenerationError extends Error {
   readonly maxElevationEstimate?: number;
   /** Benchmark/debug-only payload for ROUTE_CANDIDATES_REJECTED. */
   readonly rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
+  /** Benchmark/debug-only payload for failed generation stages such as SOLVER_EMPTY. */
+  readonly generationDiagnostics?: import("./types").RouteGenerationDiagnostics;
 
   constructor(
     code: RouteErrorCode,
@@ -34,6 +37,7 @@ export class RouteGenerationError extends Error {
       subCode?: RouteErrorSubCode;
       maxElevationEstimate?: number;
       rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
+      generationDiagnostics?: import("./types").RouteGenerationDiagnostics;
       message?: string;
     }
   ) {
@@ -44,5 +48,6 @@ export class RouteGenerationError extends Error {
     this.subCode = opts?.subCode;
     this.maxElevationEstimate = opts?.maxElevationEstimate;
     this.rejectedCandidatesDiagnostics = opts?.rejectedCandidatesDiagnostics;
+    this.generationDiagnostics = opts?.generationDiagnostics;
   }
 }
