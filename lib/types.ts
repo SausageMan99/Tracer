@@ -138,6 +138,8 @@ export interface RouteRequest {
   endAddress?: string;
   /** When true, boost nature/quietness weights for scenic routing */
   scenicMode?: boolean;
+  /** Internal benchmark/debug contract: max absolute D+ error accepted by this route request. */
+  routeGateElevationToleranceM?: number;
 }
 
 /**
@@ -419,6 +421,8 @@ export interface GenerateRouteRequest {
   endAddress?: string;
   /** When true, boost nature/quietness weights for scenic routing */
   scenicMode?: boolean;
+  /** Internal benchmark/debug contract: max absolute D+ error accepted by this route request. */
+  routeGateElevationToleranceM?: number;
   /** Internal benchmark/debug flag: include heavy edge-level diagnostics in API response */
   includeEdgeDiagnostics?: boolean;
   /** Internal benchmark/debug flag: include lightweight generation timings and diagnostics */

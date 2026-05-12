@@ -135,6 +135,8 @@
       "jean-bosco",
       "baron"
     ],
+    "readinessStatus": "unstable",
+    "betaSmokeExcludedReason": "tourville12_quality_pavement_unstable",
     "thresholds": {
       "distanceToleranceRatio": 0.1,
       "elevationToleranceM": 120,

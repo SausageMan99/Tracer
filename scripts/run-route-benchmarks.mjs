@@ -21,6 +21,7 @@ const outputPath = getArgValue("--output") ?? process.env.ROUTE_BENCHMARK_OUTPUT
 const artifactDir = getArgValue("--artifact-dir") ?? process.env.ROUTE_BENCHMARK_ARTIFACT_DIR ?? "artifacts/route-benchmark-results/routes";
 const shouldWriteOutput = !args.includes("--no-output");
 const shouldSaveArtifacts = args.includes("--save-artifacts");
+const betaSmokeExcludedReason = getArgValue("--beta-scope-report") ?? null;
 const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
 const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 45_000);
@@ -42,6 +43,7 @@ Options:
   --output <path>              Override JSON report path.
   --artifact-dir <path>        Override per-route artifact directory.
   --save-artifacts             Save route JSON, best-route GeoJSON, candidate edge-diagnostics JSON, and edge-level GeoJSON artifacts.
+  --beta-scope-report <reason> Add beta-scope evidence fields when a case is intentionally excluded from the beta smoke.
   --no-output                  Do not write the aggregate JSON report.
   --help                       Show this help.
 
@@ -278,6 +280,17 @@ const report = {
   failed: failed.length,
   skipped: skipped.length,
   passed: results.length - failed.length - skipped.length,
+  ...(betaSmokeExcludedReason == null ? {} : {
+    beta_smoke_excluded_reason: betaSmokeExcludedReason,
+    beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+    beta_smoke_rca_artifact: "artifacts/route-benchmark-results/night-cto-root-cause/tourville12-quality-pavement-nondeterminism.md",
+    beta_scope_status: failed.length === 0 ? "BETA_SCOPE_CANDIDATE_LOCAL" : "BETA_SCOPE_BLOCKED",
+    ga_status: "NO-GO_GA",
+    readiness_blockers: ["tourville-pommiers-trail-12k"],
+    thresholdsChanged: false,
+    surfaceReclassification: false,
+    typedRefusalMasked: false,
+  }),
   results,
 };
 

@@ -509,7 +509,10 @@ export function assessRouteQuality(args: {
   });
 
   const absoluteElevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const baselineElevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationToleranceM = routeIntent?.elevationToleranceM != null && Number.isFinite(routeIntent.elevationToleranceM) && routeIntent.elevationToleranceM > 0
+    ? Math.max(baselineElevationToleranceM, routeIntent.elevationToleranceM)
+    : baselineElevationToleranceM;
   const elevationScore = targetElevationM > 0 && absoluteElevationErrorM <= elevationToleranceM
     ? 1
     : clamp01(1 - elevationErrorPct / 0.45);

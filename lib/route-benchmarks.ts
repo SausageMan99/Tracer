@@ -16,6 +16,8 @@ export interface RouteBenchmarkCase {
   scenicMode?: boolean;
   tags?: string[];
   tier?: "p0" | "p1" | "p2" | "exploratory";
+  readinessStatus?: "stable" | "unstable" | "readiness_only";
+  betaSmokeExcludedReason?: string;
   expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
   expectedRefusalSubCode?: string;
   adjustedDistanceKm?: { min: number; max: number };
@@ -121,7 +123,9 @@ export interface BenchmarkSummary {
     adjustedDistanceKm?: number | null;
     distanceAdjustmentReason?: string | null;
     expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
-    actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error";
+    readinessStatus?: "stable" | "unstable" | "readiness_only";
+    betaSmokeExcludedReason?: string;
+    actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error" | "route_success";
     expectedRefusalSubCode?: string | null;
     refusalSubCode?: string | null;
     elevationErrorM: number;
@@ -161,6 +165,17 @@ export interface BenchmarkSummary {
 }
 
 export const BENCHMARK_CASES = rawBenchmarkCases as RouteBenchmarkCase[];
+
+export const BETA_SMOKE_CASE_IDS = [
+  "tourville-pommiers-trail-8k",
+  "fontainebleau-trail-15k",
+  "caen-colline-aux-oiseaux-6k-soft",
+  "meudon-forest-trail-10k",
+] as const;
+
+export const READINESS_UNSTABLE_CASE_IDS = [
+  "tourville-pommiers-trail-12k",
+] as const;
 
 export function benchmarkToRequest(benchmark: RouteBenchmarkCase): GenerateRouteRequest {
   return benchmarkToRequestCore(benchmark) as GenerateRouteRequest;

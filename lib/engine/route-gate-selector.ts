@@ -43,6 +43,7 @@ export interface RouteGateSelectionContext {
   targetDistanceKm: number;
   targetElevationM: number;
   profile: SessionProfile;
+  routeGateElevationToleranceM?: number;
   routeIntent?: RouteIntent;
 }
 
@@ -177,6 +178,14 @@ function elevationToleranceM(targetElevationM: number, profile: SessionProfile, 
   return Math.max(90, targetElevationM * 0.45);
 }
 
+function elevationGateToleranceM(context: RouteGateSelectionContext): number {
+  const baseline = elevationToleranceM(context.targetElevationM, context.profile, context.targetDistanceKm);
+  const contract = context.routeGateElevationToleranceM ?? context.routeIntent?.elevationToleranceM;
+  return contract != null && Number.isFinite(contract) && contract > 0
+    ? Math.max(baseline, contract)
+    : baseline;
+}
+
 function computeCriticalStabilityRisk(
   candidate: RouteCandidate,
   context: RouteGateSelectionContext
@@ -295,7 +304,7 @@ export function evaluateRouteHardGates(
     addMaxViolation(violations, "distance_tolerance", distanceErrorRatio, distanceTolerance(profile), false, 0, 8);
   }
 
-  const elevationTolerance = elevationToleranceM(targetElevationM, profile, targetDistanceKm);
+  const elevationTolerance = elevationGateToleranceM(context);
   const elevationErrorM = Math.abs(candidate.ascendM - targetElevationM);
   addMaxViolation(violations, "elevation_tolerance", elevationErrorM, elevationTolerance, true, 20, 0.5);
 
@@ -475,11 +484,11 @@ function stringDelta(key: string, actual: string | undefined, limit: string | un
 }
 
 function candidateThresholds(context: RouteGateSelectionContext): Record<string, number | string | null> {
-  const { targetDistanceKm, targetElevationM, profile, routeIntent } = context;
+  const { targetDistanceKm, profile, routeIntent } = context;
   return {
     distanceToleranceRatio: distanceTolerance(profile),
     distancePolicy: routeIntent?.distancePolicy?.mode ?? null,
-    elevationToleranceM: elevationToleranceM(targetElevationM, profile, targetDistanceKm),
+    elevationToleranceM: elevationGateToleranceM(context),
     minProductionScore: minProductionScore(profile),
     maxPavedRatio: routeIntent?.maxPavedRatio ?? null,
     maxBusyRoadRatio: routeIntent?.maxBusyRoadRatio ?? 0.08,

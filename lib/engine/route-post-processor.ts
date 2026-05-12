@@ -119,7 +119,10 @@ function candidateRankingScore(
   routeIntent?: RouteIntent
 ): number {
   const distancePenalty = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const baselineElevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationToleranceM = routeIntent?.elevationToleranceM != null && Number.isFinite(routeIntent.elevationToleranceM) && routeIntent.elevationToleranceM > 0
+    ? Math.max(baselineElevationToleranceM, routeIntent.elevationToleranceM)
+    : baselineElevationToleranceM;
   const elevationPenalty = Math.max(0, Math.abs(candidate.ascendM - targetElevationM) - elevationToleranceM) / elevationToleranceM;
 
   const quality = candidate.quality;

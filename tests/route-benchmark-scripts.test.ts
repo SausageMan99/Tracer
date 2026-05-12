@@ -51,6 +51,32 @@ describe("route benchmark scripts", () => {
     expect(cases).toEqual(requiredIds);
   });
 
+  it("exposes separate beta smoke and readiness unstable commands for the Tourville12 quarantine", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+    const betaCommand = packageJson.scripts["benchmark:routes:beta-smoke"];
+    const readinessCommand = packageJson.scripts["benchmark:routes:readiness-unstable"];
+
+    expect(betaCommand).toContain("node scripts/run-route-benchmarks.mjs");
+    expect(betaCommand).toContain("--save-artifacts");
+    expect(betaCommand).toContain("artifacts/route-benchmark-results/beta-smoke-latest.json");
+    expect(betaCommand).toContain("artifacts/route-benchmark-results/beta-smoke-routes");
+    expect(betaCommand).toContain("--beta-scope-report");
+    expect(betaCommand).toContain("tourville12_quality_pavement_unstable");
+
+    const betaCases = [...betaCommand.matchAll(/--case\s+([^\s]+)/g)].map((match) => match[1]);
+    expect(betaCases).toEqual([
+      "tourville-pommiers-trail-8k",
+      "fontainebleau-trail-15k",
+      "caen-colline-aux-oiseaux-6k-soft",
+      "meudon-forest-trail-10k",
+    ]);
+    expect(betaCases).not.toContain("tourville-pommiers-trail-12k");
+
+    expect(readinessCommand).toContain("tourville-pommiers-trail-12k");
+    expect(readinessCommand).toContain("artifacts/route-benchmark-results/readiness-unstable-latest.json");
+    expect(readinessCommand).toContain("artifacts/route-benchmark-results/readiness-unstable-routes");
+  });
+
   it("documents the wider benchmark fetch timeout margin for grouped smoke diagnostics", () => {
     const stdout = execFileSync(nodeBin, ["scripts/run-route-benchmarks.mjs", "--help"], {
       cwd: repoRoot,
@@ -58,6 +84,89 @@ describe("route benchmark scripts", () => {
     });
 
     expect(stdout).toContain("Default: 45000");
+  });
+
+  it("writes beta-scope evidence fields when the beta smoke command opts into the report", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-benchmark-beta-scope-"));
+    const output = join(dir, "report.json");
+    const receivedBodies: unknown[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        receivedBodies.push(JSON.parse(body));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          route: {
+            distanceKm: 15.1,
+            ascendM: 230,
+            quality: {
+              productionScore: 0.9,
+              loopClosureKm: 0.1,
+              busyRoadRatio: 0.01,
+              naturalWayRatio: 0.75,
+              pavedRatio: 0.2,
+              trailBeautyScore: 0.8,
+              longestTrailSegmentKm: 4,
+              naturalCorridorRatio: 0.7,
+              repeatEdgeRatio: 0,
+              uTurnRatio: 0,
+              terrainDataConfidence: "high",
+              trailPotential: "high",
+              routeTrailQuality: "high",
+              warnings: [],
+            },
+          },
+        }));
+      });
+    });
+
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("Expected local test server port");
+
+    try {
+      await execFileAsync(
+        nodeBin,
+        [
+          "scripts/run-route-benchmarks.mjs",
+          "--case",
+          "fontainebleau-trail-15k",
+          "--output",
+          output,
+          "--beta-scope-report",
+          "tourville12_quality_pavement_unstable",
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ROUTE_BENCHMARK_BASE_URL: `http://127.0.0.1:${address.port}`,
+          },
+        }
+      );
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => error ? rejectClose(error) : resolveClose());
+      });
+    }
+
+    expect(receivedBodies).toHaveLength(1);
+    const report = JSON.parse(readFileSync(output, "utf8"));
+    expect(report).toMatchObject({
+      failed: 0,
+      beta_smoke_excluded_reason: "tourville12_quality_pavement_unstable",
+      beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+      beta_scope_status: "BETA_SCOPE_CANDIDATE_LOCAL",
+      ga_status: "NO-GO_GA",
+      readiness_blockers: ["tourville-pommiers-trail-12k"],
+      thresholdsChanged: false,
+      surfaceReclassification: false,
+      typedRefusalMasked: false,
+    });
   });
 
   it("persists rejected candidate diagnostics from 422 benchmark responses as artifact-only debug data", async () => {

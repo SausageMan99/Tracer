@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   BENCHMARK_CASES,
+  BETA_SMOKE_CASE_IDS,
+  READINESS_UNSTABLE_CASE_IDS,
   benchmarkToRequest,
   summarizeBenchmarkFailure,
   summarizeBenchmarkResult,
@@ -56,6 +58,28 @@ describe("route production benchmarks", () => {
       expect(benchmark!.thresholds.maxUTurnRatio).toBeGreaterThan(0);
       expect(benchmark!.blockingWarnings).toEqual(expect.arrayContaining(BLOCKING_ROUTE_WARNINGS));
     }
+  });
+
+  it("defines a beta smoke panel that excludes unstable Tourville 12k without dropping it from readiness", () => {
+    expect(BETA_SMOKE_CASE_IDS).toEqual([
+      "tourville-pommiers-trail-8k",
+      "fontainebleau-trail-15k",
+      "caen-colline-aux-oiseaux-6k-soft",
+      "meudon-forest-trail-10k",
+    ]);
+    expect(BETA_SMOKE_CASE_IDS).not.toContain("tourville-pommiers-trail-12k");
+    expect(READINESS_UNSTABLE_CASE_IDS).toContain("tourville-pommiers-trail-12k");
+
+    const tourville12 = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-12k")!;
+    expect(tourville12.tier).toBe("p0");
+    expect(tourville12.tags).toEqual(expect.arrayContaining(["tourville", "trail", "field-feedback", "baron"]));
+    expect(tourville12.readinessStatus).toBe("unstable");
+    expect(tourville12.betaSmokeExcludedReason).toBe("tourville12_quality_pavement_unstable");
+    expect(tourville12.thresholds.maxPavedRatio).toBe(0.42);
+    expect(tourville12.thresholds.minTrailBeautyScore).toBe(0.58);
+    expect(tourville12.thresholds.minNaturalCorridorRatio).toBe(0.45);
+    expect(tourville12.thresholds.maxRepeatEdgeRatio).toBe(0.04);
+    expect(tourville12.thresholds.maxUTurnRatio).toBe(0.01);
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
@@ -117,6 +141,7 @@ describe("route production benchmarks", () => {
       profileId: BENCHMARK_CASES[0].profileId,
       targetDistanceKm: BENCHMARK_CASES[0].targetDistanceKm,
       targetElevationM: BENCHMARK_CASES[0].targetElevationM,
+      routeGateElevationToleranceM: BENCHMARK_CASES[0].thresholds.elevationToleranceM,
       scenicMode: BENCHMARK_CASES[0].scenicMode,
     });
   });
@@ -352,7 +377,7 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("accepts Meudon when route-level trail quality is high while OSM trail potential remains medium", () => {
+  it("rejects Meudon route success even when route-level trail quality is high while OSM trail potential remains medium", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 10.1,
@@ -379,7 +404,9 @@ describe("route production benchmarks", () => {
 
     expect(benchmark.thresholds.minTrailPotential).toBe("medium");
     expect(benchmark.thresholds.minRouteTrailQuality).toBe("high");
-    expect(summary.passed).toBe(true);
+    expect(benchmark.expectedOutcome).toBe("typed_refusal");
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(["expected_typed_refusal"]);
     expect(summary.failures).not.toContain("trail_potential");
     expect(summary.metrics.routeTrailQuality).toBe("high");
   });
@@ -599,7 +626,7 @@ describe("route production benchmarks", () => {
   it("fails Caen benchmark on silent short success without distanceAdjustment", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
     const summary = summarizeBenchmarkResult(benchmark, {
-      distanceKm: 5.35,
+      distanceKm: 5.0,
       ascendM: 50,
       quality: {
         productionScore: 0.82,
@@ -618,7 +645,51 @@ describe("route production benchmarks", () => {
     });
 
     expect(summary.passed).toBe(false);
-    expect(summary.failures).toContain("missing_distance_adjustment");
+    expect(summary.failures).toContain("distance_tolerance");
+  });
+
+  it("accepts Caen park_recovery on a full clean route success without distance adjustment", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 6.46,
+      ascendM: 95,
+      quality: {
+        productionScore: 0.89,
+        loopGapKm: 0.08,
+        busyRoadRatio: 0,
+        trailRatio: 0.79,
+        naturalWayRatio: 0.79,
+        pavedRatio: 0.66,
+        scenicPavedRatio: 0.26,
+        trailBeautyScore: 0.65,
+        longestTrailSegmentKm: 1.41,
+        naturalCorridorRatio: 0.71,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        routeTrailQuality: "medium",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.15,
+          geometryOverlapRatio: 0.12,
+          selfIntersectionCount: 0,
+          sharpTurnDensityPerKm: 0,
+          headingReversalRatio: 0,
+          outAndBackSimilarityRatio: 0,
+          startStemKm: 0.03,
+          endStemKm: 0.05,
+          maxDistanceFromStartKm: 1.3,
+        },
+      },
+      durationMs: 25_016,
+    });
+
+    expect(benchmark.expectedOutcome).toBe("park_recovery");
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+    expect(summary.metrics.actualOutcome).toBe("route_success");
+    expect(summary.metrics.distanceAdjustmentReason).toBeNull();
   });
 
   it("treats Tourville 8k as an honest trail-promise typed refusal smoke contract", () => {
@@ -696,6 +767,7 @@ describe("route production benchmarks", () => {
 
     expect(summary.passed).toBe(false);
     expect(summary.failures).toEqual(expect.arrayContaining([
+      "expected_typed_refusal",
       "paved_ratio",
       "route_trail_quality",
     ]));
@@ -709,7 +781,7 @@ describe("route production benchmarks", () => {
     expect(benchmark.notes).toContain("accès restreint");
   });
 
-  it("passes Meudon smoke on the expected restricted-access refusal, not on silent success", () => {
+  it("passes Meudon smoke on the expected restricted-access refusal", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkFailure(benchmark, {
       status: 422,
@@ -725,6 +797,38 @@ describe("route production benchmarks", () => {
     expect(summary.metrics.expectedRefusalSubCode).toBe("RESTRICTED_ACCESS_BLOCKED");
   });
 
+  it("rejects Meudon smoke when the API returns a route success instead of the honest typed refusal", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 9.9,
+      ascendM: 176,
+      quality: {
+        productionScore: 0.97,
+        loopClosureKm: 0.03,
+        busyRoadRatio: 0,
+        trailRatio: 0.86,
+        naturalWayRatio: 0.9,
+        pavedRatio: 0.14,
+        scenicPavedRatio: 0.04,
+        trailBeautyScore: 0.69,
+        longestTrailSegmentKm: 3.04,
+        naturalCorridorRatio: 0.82,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        warnings: [],
+      },
+      durationMs: 37_267,
+    });
+
+    expect(benchmark.expectedOutcome).toBe("typed_refusal");
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(["expected_typed_refusal"]);
+    expect(summary.metrics.actualOutcome).toBe("route_success");
+  });
+
   it("rejects Meudon smoke when the API returns a generic trail refusal", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkFailure(benchmark, {
@@ -737,6 +841,68 @@ describe("route production benchmarks", () => {
 
     expect(summary.passed).toBe(false);
     expect(summary.failures).toContain("typed_refusal_sub_code_mismatch");
+  });
+
+  it("rejects an expected typed-refusal benchmark on a 200 route success even when route quality metrics are green", () => {
+    const benchmark: RouteBenchmarkCase = {
+      id: "restricted-access-blocked-10k",
+      label: "Restricted access blocked 10k",
+      address: "Synthetic restricted access fixture",
+      profileId: "running_trail",
+      targetDistanceKm: 10,
+      targetElevationM: 180,
+      tier: "p0",
+      tags: ["typed-refusal"],
+      expectedOutcome: "typed_refusal",
+      expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+      thresholds: {
+        distanceToleranceRatio: 0.1,
+        elevationToleranceM: 100,
+        minProductionScore: 0.7,
+        maxLoopClosureKm: 0.35,
+        maxBusyRoadRatio: 0.08,
+        minNaturalWayRatio: 0.4,
+        maxPavedRatio: 0.42,
+        minTrailBeautyScore: 0.6,
+        minLongestTrailSegmentKm: 2.5,
+        minNaturalCorridorRatio: 0.48,
+        maxRepeatEdgeRatio: 0.04,
+        maxUTurnRatio: 0.01,
+        minTerrainDataConfidence: "medium",
+        minTrailPotential: "medium",
+        minRouteTrailQuality: "high",
+        maxDurationMs: 80000,
+      },
+      notes: "Synthetic typed-refusal contract fixture.",
+    };
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 9.9,
+      ascendM: 176,
+      quality: {
+        productionScore: 0.97,
+        loopClosureKm: 0.03,
+        busyRoadRatio: 0,
+        trailRatio: 0.86,
+        naturalWayRatio: 0.9,
+        pavedRatio: 0.14,
+        scenicPavedRatio: 0.04,
+        trailBeautyScore: 0.69,
+        longestTrailSegmentKm: 3.04,
+        naturalCorridorRatio: 0.82,
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        warnings: [],
+      },
+      durationMs: 37_267,
+    });
+
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(["expected_typed_refusal"]);
+    expect(summary.metrics.expectedOutcome).toBe("typed_refusal");
+    expect(summary.metrics.actualOutcome).toBe("route_success");
   });
 
   it("passes an expected typed refusal only when the refusal sub-code matches", () => {

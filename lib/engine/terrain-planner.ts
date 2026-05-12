@@ -43,6 +43,8 @@ export interface RouteIntent {
   strategy: RouteIntentType;
   targetDistanceKm: number;
   targetElevationM: number;
+  /** Optional route/benchmark contract for D+ tolerance; keeps gates aligned with the caller's acceptance contract. */
+  elevationToleranceM?: number;
   targetComponents: string[];
   distancePolicy: RouteDistancePolicy;
   minNaturalZoneDwellKm?: number;

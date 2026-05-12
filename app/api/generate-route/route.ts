@@ -164,6 +164,9 @@ export async function POST(req: NextRequest) {
     profileId: body.profileId,
     targetDistanceKm: body.targetDistanceKm,
     targetElevationM: body.targetElevationM,
+    routeGateElevationToleranceM: typeof body.routeGateElevationToleranceM === "number" && Number.isFinite(body.routeGateElevationToleranceM)
+      ? body.routeGateElevationToleranceM
+      : undefined,
     waypoints: body.waypoints,
     endAddress: body.endAddress,
     scenicMode: body.scenicMode === true ? true : undefined,

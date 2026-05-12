@@ -1293,9 +1293,19 @@ export function resolveSolverDeadline(
   const hugeTransitionToWoods = routeIntent.type === "transition_to_woods" && (
     targetComponentKm >= 80 || routeIntent.beamBudget.maxIterations >= 600
   );
-  const multiplier = hugeTransitionToWoods ? (routeIntent.targetDistanceKm >= 14 ? 14 : 12) : 10;
-  const maxBudgetMs = hugeTransitionToWoods ? (routeIntent.targetDistanceKm >= 14 ? 60_000 : 55_000) : 45_000;
-  const softBudgetMs = Math.max(15_000, Math.min(maxBudgetMs, routeIntent.timeBudgetMs * multiplier));
+  const compactParkLoop = routeIntent.type === "park_loop" && routeIntent.distancePolicy.mode === "adjustable";
+  const multiplier = hugeTransitionToWoods
+    ? (routeIntent.targetDistanceKm >= 14 ? 14 : 12)
+    : compactParkLoop
+      ? 4
+      : 10;
+  const maxBudgetMs = hugeTransitionToWoods
+    ? (routeIntent.targetDistanceKm >= 14 ? 60_000 : 55_000)
+    : compactParkLoop
+      ? 20_000
+      : 45_000;
+  const minBudgetMs = compactParkLoop ? 12_000 : 15_000;
+  const softBudgetMs = Math.max(minBudgetMs, Math.min(maxBudgetMs, routeIntent.timeBudgetMs * multiplier));
   return nowMs + softBudgetMs;
 }
 

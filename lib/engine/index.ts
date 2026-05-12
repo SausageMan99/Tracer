@@ -202,7 +202,7 @@ export async function generateRouteV2(
   // 5. Plan route intent in read-only mode for V2.5 diagnostics
   const routeIntent = await timed("terrain.plan", () => {
     const terrainAudit = auditTerrainData(Array.from(graph.edges.values()));
-    return planRouteIntent({
+    const planned = planRouteIntent({
       graph,
       terrainAudit,
       profile,
@@ -210,6 +210,10 @@ export async function generateRouteV2(
       targetElevationM: request.targetElevationM,
       scenicMode: request.scenicMode,
     });
+    if (request.routeGateElevationToleranceM != null && Number.isFinite(request.routeGateElevationToleranceM)) {
+      return { ...planned, elevationToleranceM: request.routeGateElevationToleranceM };
+    }
+    return planned;
   });
 
   // 6. Derive session weights and score edges
@@ -303,6 +307,7 @@ export async function generateRouteV2(
       targetDistanceKm: request.targetDistanceKm,
       targetElevationM: request.targetElevationM,
       profile,
+      routeGateElevationToleranceM: request.routeGateElevationToleranceM,
       routeIntent,
     };
     if (!isBetaStableCandidate(best, gateContext)) {
@@ -334,6 +339,7 @@ export async function generateRouteV2(
     targetDistanceKm: request.targetDistanceKm,
     targetElevationM: request.targetElevationM,
     profile,
+    routeGateElevationToleranceM: request.routeGateElevationToleranceM,
     routeIntent,
   });
 

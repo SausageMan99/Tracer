@@ -666,6 +666,53 @@ describe("solve natural corridor preference", () => {
     expect(resolveSolverDeadline(routeIntent, {}, nowMs)).toBeLessThanOrEqual(nowMs + 60_000);
   });
 
+  it("keeps compact park-loop recovery solver deadlines below the benchmark duration budget", () => {
+    const nowMs = 1_000;
+    const routeIntent: RouteIntent = {
+      type: "park_loop",
+      strategy: "park_loop",
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      targetComponents: ["tc-1-soft-1"],
+      distancePolicy: {
+        mode: "adjustable",
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        requestedDistanceKm: 6,
+        minAdjustedDistanceKm: 5.16,
+        maxAdjustedDistanceKm: 6,
+        preferCleanAdjustedOverDirtyExact: true,
+      },
+      minNaturalZoneDwellKm: 0.72,
+      minNonPavedTrailStreakKm: 1.2,
+      maxPavedRatio: 0.68,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.06,
+      maxGeometryOverlapRatio: 0.18,
+      minLoopAreaKm2: 0.09,
+      cleanReturnMode: "fallback_allowed",
+      timeBudgetMs: 4_500,
+      beamBudget: { beamWidth: 24, maxIterations: 460, shortlistSize: 24 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: ["Petit parc urbain : boucle courte ou compromis probable, éviter le clean return strict."],
+      terrainComponents: [{
+        id: "tc-1-soft-1",
+        kind: "trail_cluster",
+        center: { lat: 49.1976, lng: -0.3921 },
+        totalKm: 16.031,
+        nonPavedKm: 0.926,
+        pavedKm: 0,
+        unknownSurfaceKm: 14.925,
+        distanceFromStartKm: 0.254,
+        entryNodeIds: [],
+        exitNodeIds: [],
+        nodeIds: [],
+        confidence: "high",
+      }],
+    };
+
+    expect(resolveSolverDeadline(routeIntent, {}, nowMs)).toBeLessThanOrEqual(nowMs + 20_000);
+  });
+
   it("records why the solver returns no paths instead of leaving solver-empty opaque", async () => {
     const nodes = new Map<string, GraphNode>([
       ["start", makeNode("start", 49.14, -0.50)],

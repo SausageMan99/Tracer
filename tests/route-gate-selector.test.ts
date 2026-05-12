@@ -280,6 +280,38 @@ describe("route hard-gate selector", () => {
     expect(rejectionSubCodeForCandidate(lowQualityTourville12NearMiss, context)).toBe("TRAIL_PROMISE_UNMET");
   });
 
+  it("does not reject a Tourville12-quality candidate when the benchmark elevation contract allows its D+ error", () => {
+    const benchmarkAcceptedTourville12 = candidate(80, {
+      distanceKm: 11.45521134837007,
+      ascendM: 36,
+      quality: {
+        productionScore: 0.7800015088899848,
+        pavedRatio: 0.3610274315344112,
+        trailRatio: 0.6389725684655879,
+        naturalWayRatio: 0.8066058956350918,
+        trailBeautyScore: 0.7095486288834659,
+        longestTrailSegmentKm: 4.550377426364412,
+        naturalCorridorRatio: 0.5593468305672051,
+        repeatEdgeRatio: 0.0396524479119001,
+        uTurnRatio: 0.0025526046011465423,
+        trailPotential: "medium",
+        routeTrailQuality: "medium",
+      },
+    });
+    const context = {
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeGateElevationToleranceM: 120,
+      routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
+    };
+    const gate = evaluateRouteHardGates(benchmarkAcceptedTourville12, context);
+
+    expect(Math.abs(benchmarkAcceptedTourville12.ascendM - context.targetElevationM)).toBe(114);
+    expect(gate.violations.map((violation) => violation.key)).not.toContain("elevation_tolerance");
+    expect(isBetaStableCandidate(benchmarkAcceptedTourville12, context)).toBe(true);
+  });
+
   it("selects a medium/high Tourville12 candidate over a higher-scored low-quality near miss", () => {
     const lowQualityNearMiss = candidate(140, {
       distanceKm: 11.2,
