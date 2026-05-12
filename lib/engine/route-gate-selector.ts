@@ -451,10 +451,15 @@ export function rejectionSubCodeForCandidate(
   const hasRestrictedAccessBlock = nonRelaxableViolations.some(
     (violation) => violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS"
   );
-  const otherNonRelaxableSeverity = nonRelaxableViolations
-    .filter((violation) => !(violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS"))
+  const otherNonRelaxableViolations = nonRelaxableViolations.filter(
+    (violation) => !(violation.key === "blocking_warning" && violation.actual === "RESTRICTED_ACCESS")
+  );
+  const otherNonRelaxableSeverity = otherNonRelaxableViolations
     .reduce((sum, violation) => sum + violation.severity, 0);
-  if (hasRestrictedAccessBlock && otherNonRelaxableSeverity <= 0.05) {
+  const hasOnlyMinorTrailBeautyNearMiss = otherNonRelaxableViolations.length > 0 && otherNonRelaxableViolations.every(
+    (violation) => violation.key === "trail_beauty_score" && violation.severity <= 0.12
+  );
+  if (hasRestrictedAccessBlock && (otherNonRelaxableSeverity <= 0.05 || hasOnlyMinorTrailBeautyNearMiss)) {
     return "RESTRICTED_ACCESS_BLOCKED";
   }
   if (

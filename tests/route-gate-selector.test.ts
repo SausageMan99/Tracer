@@ -665,6 +665,40 @@ describe("route hard-gate selector", () => {
     expect(rejectionSubCodeForCandidate(restrictedOnly, context)).toBe("RESTRICTED_ACCESS_BLOCKED");
   });
 
+  it("keeps Meudon-like restricted access refusals typed when trail quality is a near miss", () => {
+    const meudonRestrictedNearMiss = candidate(80, {
+      distanceKm: 9.953,
+      ascendM: 159,
+      quality: {
+        productionScore: 0.968,
+        pavedRatio: 0.313,
+        trailRatio: 0.687,
+        naturalWayRatio: 0.785,
+        trailBeautyScore: 0.579,
+        naturalCorridorRatio: 0.578,
+        longestTrailSegmentKm: 2.648,
+        trailPotential: "high",
+        routeTrailQuality: "medium",
+        repeatEdgeRatio: 0,
+        uTurnRatio: 0,
+        restrictedAccessRatio: 0.02,
+        warnings: ["RESTRICTED_ACCESS", "TRAIL_TOO_FRAGMENTED"],
+      },
+    });
+    const context = {
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 10, targetElevationM: 220, maxPavedRatio: 0.42 }),
+    };
+
+    expect(evaluateRouteHardGates(meudonRestrictedNearMiss, context).violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "blocking_warning", actual: "RESTRICTED_ACCESS" }),
+      expect.objectContaining({ key: "trail_beauty_score" }),
+    ]));
+    expect(rejectionSubCodeForCandidate(meudonRestrictedNearMiss, context)).toBe("RESTRICTED_ACCESS_BLOCKED");
+  });
+
   it("does not hard-reject an otherwise strong forest route for trace restricted-access noise", () => {
     const meudonLike = candidate(80, {
       distanceKm: 9.954,
