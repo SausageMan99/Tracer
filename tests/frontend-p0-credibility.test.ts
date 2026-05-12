@@ -37,17 +37,21 @@ describe("TrailForge front-end P0 credibility copy", () => {
 });
 
 describe("TrailForge front-end P0 result hierarchy", () => {
-  it("places verdict and GPX actions before detailed route explanation and feedback", () => {
+  it("places beta outcome verdict and GPX actions before detailed route explanation and feedback", () => {
     const routeResult = source("components/sidebar/RouteResult.tsx");
 
-    const verdict = routeResult.indexOf("Boucle exploitable");
+    const generated = routeResult.indexOf("Boucle générée");
+    const adjusted = routeResult.indexOf("Distance adaptée");
+    const refused = routeResult.indexOf("Refus honnête beta");
     const gpx = routeResult.indexOf("Télécharger GPX");
     const details = routeResult.indexOf("Pourquoi ce tracé");
     const feedback = routeResult.indexOf("Retour terrain");
     const waitlist = routeResult.indexOf("Tu veux être prévenu quand la génération s’améliore dans ta zone ?");
 
-    expect(verdict).toBeGreaterThan(-1);
-    expect(gpx).toBeGreaterThan(verdict);
+    expect(generated).toBeGreaterThan(-1);
+    expect(adjusted).toBeGreaterThan(-1);
+    expect(refused).toBeGreaterThan(-1);
+    expect(gpx).toBeGreaterThan(Math.min(generated, adjusted));
     expect(details).toBeGreaterThan(gpx);
     expect(feedback).toBeGreaterThan(details);
     expect(waitlist).toBeGreaterThan(feedback);

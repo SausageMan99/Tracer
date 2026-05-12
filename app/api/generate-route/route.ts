@@ -41,6 +41,13 @@ type StripDiagnosticsOptions = {
   includeGenerationDiagnostics: boolean;
 };
 
+function createGenerationId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `gen_${crypto.randomUUID()}`;
+  }
+  return `gen_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function stripDiagnostics<T>(route: T, options: StripDiagnosticsOptions): T {
   if (route == null || typeof route !== "object") return route;
 
@@ -87,11 +94,12 @@ const DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG = ROUTE_CANDIDATES_REJECTED_MESSAGES
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
+  const generationId = createGenerationId();
   // Rate limit check
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
   if (rateLimiter.isLimited(ip)) {
     return NextResponse.json<GenerateRouteError>(
-      { success: false, error: "Trop de requêtes. Réessayez dans un instant.", errorCode: "UNKNOWN" },
+      { success: false, generationId, betaOutcome: "refused", error: "Trop de requêtes. Réessayez dans un instant.", errorCode: "UNKNOWN" },
       { status: 429 }
     );
   }
@@ -102,7 +110,7 @@ export async function POST(req: NextRequest) {
     body = await req.json();
   } catch {
     return NextResponse.json<GenerateRouteError>(
-      { success: false, error: "Corps de requête invalide.", errorCode: "UNKNOWN" },
+      { success: false, generationId, betaOutcome: "refused", error: "Corps de requête invalide.", errorCode: "UNKNOWN" },
       { status: 400 }
     );
   }
@@ -115,7 +123,7 @@ export async function POST(req: NextRequest) {
     typeof body.targetElevationM !== "number"
   ) {
     return NextResponse.json<GenerateRouteError>(
-      { success: false, error: "Paramètres manquants ou invalides.", errorCode: "UNKNOWN" },
+      { success: false, generationId, betaOutcome: "refused", error: "Paramètres manquants ou invalides.", errorCode: "UNKNOWN" },
       { status: 400 }
     );
   }
@@ -123,7 +131,7 @@ export async function POST(req: NextRequest) {
   const profile = PROFILES_BY_ID.get(body.profileId);
   if (!profile) {
     return NextResponse.json<GenerateRouteError>(
-      { success: false, error: "Profil de séance inconnu.", errorCode: "UNKNOWN" },
+      { success: false, generationId, betaOutcome: "refused", error: "Profil de séance inconnu.", errorCode: "UNKNOWN" },
       { status: 400 }
     );
   }
@@ -137,6 +145,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
+        generationId,
+        betaOutcome: "refused",
         error: `Distance hors limites (${profile.distanceRange.min}–${profile.distanceRange.max} km).`,
         errorCode: "UNKNOWN",
       },
@@ -152,6 +162,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
+        generationId,
+        betaOutcome: "refused",
         error: `Dénivelé hors limites (${profile.elevationRange.min}–${profile.elevationRange.max} m).`,
         errorCode: "UNKNOWN",
       },
@@ -195,25 +207,38 @@ export async function POST(req: NextRequest) {
       includeGenerationDiagnostics: body.includeGenerationDiagnostics === true,
     });
 
-    return NextResponse.json({ success: true, route: responseRoute });
+    const betaOutcome = responseRoute != null
+      && typeof responseRoute === "object"
+      && "distanceAdjustment" in responseRoute
+      ? "adjusted"
+      : "generated";
+    const betaRoute = {
+      ...(responseRoute as unknown as Record<string, unknown>),
+      generationId,
+      betaOutcome,
+    };
+
+    return NextResponse.json({ success: true, generationId, route: betaRoute });
   } catch (err) {
     // Typed route generation errors. Vitest module resets can produce structurally
     // identical RouteGenerationError instances from a different module copy, so
     // accept the typed shape as well as instanceof.
     if (err instanceof RouteGenerationError || isRouteGenerationErrorLike(err)) {
-      return mapRouteError(err as RouteGenerationError, body.includeGenerationDiagnostics === true);
+      return mapRouteError(err as RouteGenerationError, generationId, body.includeGenerationDiagnostics === true);
     }
 
     // Legacy string-based errors (from route-generator-legacy.ts)
     const message = err instanceof Error ? err.message : "";
     if (message.startsWith("NO_ROAD_NETWORK") || message.startsWith("ROUTE_CANDIDATES_REJECTED") || message.startsWith("IMPOSSIBLE_ELEVATION") || message === "GEOCODING_FAILED") {
-      return mapLegacyError(message);
+      return mapLegacyError(message, generationId);
     }
 
     console.error("[generate-route] Unexpected error:", err);
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
+        generationId,
+        betaOutcome: "refused",
         errorCode: "UNKNOWN",
         error: "Erreur inattendue. Réessayez dans un instant.",
       },
@@ -234,7 +259,7 @@ function isRouteGenerationErrorLike(value: unknown): value is RouteGenerationErr
     || maybeError.code === "UNKNOWN";
 }
 
-function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics = false): NextResponse<GenerateRouteError> {
+function mapRouteError(err: RouteGenerationError, generationId: string, includeGenerationDiagnostics = false): NextResponse<GenerateRouteError> {
   switch (err.code) {
     case "NO_ROAD_NETWORK": {
       const errorMsg = (err.subCode && NO_ROAD_NETWORK_MESSAGES[err.subCode]) ?? DEFAULT_NO_ROAD_NETWORK_MSG;
@@ -244,6 +269,8 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
+          generationId,
+          betaOutcome: "refused",
           errorCode: "NO_ROAD_NETWORK",
           subCode: err.subCode,
           ...(generationDiagnostics != null ? { generationDiagnostics } : {}),
@@ -260,6 +287,8 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
+          generationId,
+          betaOutcome: "refused",
           errorCode: "ROUTE_CANDIDATES_REJECTED",
           subCode: err.subCode,
           ...(rejectedCandidatesDiagnostics != null ? { rejectedCandidatesDiagnostics } : {}),
@@ -272,6 +301,8 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
       return NextResponse.json<GenerateRouteError>(
         {
           success: false,
+          generationId,
+          betaOutcome: "refused",
           errorCode: "IMPOSSIBLE_ELEVATION",
           error: `Le D+ demandé n'est pas atteignable depuis ce point. Maximum estimé : ${err.maxElevationEstimate ?? 0}m.`,
           maxElevationEstimate: err.maxElevationEstimate,
@@ -280,24 +311,24 @@ function mapRouteError(err: RouteGenerationError, includeGenerationDiagnostics =
       );
     case "GEOCODING_FAILED":
       return NextResponse.json<GenerateRouteError>(
-        { success: false, errorCode: "GEOCODING_FAILED", error: "Adresse introuvable. Vérifiez l'orthographe et réessayez." },
+        { success: false, generationId, betaOutcome: "refused", errorCode: "GEOCODING_FAILED", error: "Adresse introuvable. Vérifiez l'orthographe et réessayez." },
         { status: 422 }
       );
     default:
       return NextResponse.json<GenerateRouteError>(
-        { success: false, errorCode: "UNKNOWN", error: "Erreur inattendue. Réessayez dans un instant." },
+        { success: false, generationId, betaOutcome: "refused", errorCode: "UNKNOWN", error: "Erreur inattendue. Réessayez dans un instant." },
         { status: 500 }
       );
   }
 }
 
 /** Handle legacy string-encoded errors from route-generator-legacy.ts */
-function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
+function mapLegacyError(message: string, generationId: string): NextResponse<GenerateRouteError> {
   if (message.startsWith("NO_ROAD_NETWORK")) {
     const subCode = message.split(":")[1] ?? undefined;
     const errorMsg = subCode != null ? NO_ROAD_NETWORK_MESSAGES[subCode] ?? DEFAULT_NO_ROAD_NETWORK_MSG : DEFAULT_NO_ROAD_NETWORK_MSG;
     return NextResponse.json<GenerateRouteError>(
-      { success: false, errorCode: "NO_ROAD_NETWORK", subCode, error: errorMsg },
+      { success: false, generationId, betaOutcome: "refused", errorCode: "NO_ROAD_NETWORK", subCode, error: errorMsg },
       { status: 422 }
     );
   }
@@ -308,6 +339,8 @@ function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
+        generationId,
+        betaOutcome: "refused",
         errorCode: "ROUTE_CANDIDATES_REJECTED",
         subCode,
         error: errorMsg,
@@ -321,6 +354,8 @@ function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
     return NextResponse.json<GenerateRouteError>(
       {
         success: false,
+        generationId,
+        betaOutcome: "refused",
         errorCode: "IMPOSSIBLE_ELEVATION",
         error: `Le D+ demandé n'est pas atteignable depuis ce point. Maximum estimé : ${maxElev}m.`,
         maxElevationEstimate: maxElev,
@@ -331,7 +366,7 @@ function mapLegacyError(message: string): NextResponse<GenerateRouteError> {
 
   // GEOCODING_FAILED
   return NextResponse.json<GenerateRouteError>(
-    { success: false, errorCode: "GEOCODING_FAILED", error: "Adresse introuvable. Vérifiez l'orthographe et réessayez." },
+    { success: false, generationId, betaOutcome: "refused", errorCode: "GEOCODING_FAILED", error: "Adresse introuvable. Vérifiez l'orthographe et réessayez." },
     { status: 422 }
   );
 }

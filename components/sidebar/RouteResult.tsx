@@ -108,6 +108,10 @@ export default function RouteResult() {
     setCandidateIndex,
     status,
     errorMessage,
+    generationId,
+    betaOutcome,
+    errorCode,
+    errorSubCode,
     clearRoute,
     targetDistanceKm,
     targetElevationM,
@@ -145,11 +149,22 @@ export default function RouteResult() {
       <div className="px-4 md:px-6 py-6">
         <MiniPanel>
           <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.16em", color: "var(--accent-danger)", textTransform: "uppercase", marginBottom: "8px" }}>
-            Pas de boucle fiable trouvée
+            Refus honnête beta
+          </p>
+          <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--accent-amber)", marginBottom: "8px" }}>
+            {errorCode ?? "UNKNOWN"}{errorSubCode ? ` / ${errorSubCode}` : ""}
           </p>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>
             {errorMessage}
           </p>
+          <p style={{ marginTop: "10px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.45 }}>
+            La beta préfère refuser plutôt que vendre une trace mensongère. Essaie une distance plus courte, un départ plus proche des chemins, ou le mode nature urbaine.
+          </p>
+          {generationId && (
+            <p style={{ marginTop: "8px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--text-dim)" }}>
+              génération {generationId}
+            </p>
+          )}
           <button onClick={clearRoute} style={{ marginTop: "14px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", cursor: "pointer" }}>
             Paramètres
           </button>
@@ -177,6 +192,11 @@ export default function RouteResult() {
   const watchExportGuide = buildWatchExportGuide(currentRoute.profile);
   const routeExplanation = buildRouteExplanation(currentRoute, { targetDistanceKm, targetElevationM, scenicMode });
   const total = candidates.length;
+  const outcome = currentRoute.betaOutcome ?? betaOutcome ?? (currentRoute.distanceAdjustment ? "adjusted" : "generated");
+  const outcomeTitle = outcome === "adjusted" ? "Distance adaptée" : "Boucle générée";
+  const outcomeSubtitle = outcome === "adjusted" && currentRoute.distanceAdjustment
+    ? `Demandé ${currentRoute.distanceAdjustment.requestedDistanceKm.toFixed(1)} km · proposé ${currentRoute.distanceAdjustment.adjustedDistanceKm.toFixed(1)} km`
+    : "Promesse tenue sur ce terrain compatible";
 
   return (
     <div className="flex flex-col pb-6">
@@ -196,9 +216,12 @@ export default function RouteResult() {
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
             <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: scoreLabel.color }} />
             <h2 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "22px", color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: 1.05 }}>
-              {scoreLabel.label}
+              {outcomeTitle}
             </h2>
           </div>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: outcome === "adjusted" ? "var(--accent-amber)" : "var(--text-muted)", lineHeight: 1.5, marginBottom: "6px" }}>
+            {outcomeSubtitle}
+          </p>
           <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.6 }}>
             {best.distanceKm.toFixed(1)} km · {best.ascendM.toFixed(0)} m D+ · {formatDuration(best.durationSeconds)} estimée
           </p>
@@ -319,7 +342,7 @@ export default function RouteResult() {
         </MiniPanel>
 
         <MiniPanel label="Retour terrain">
-          <FeedbackButtons route={currentRoute} sessionConfig={{ targetDistanceKm, targetElevationM }} />
+          <FeedbackButtons route={currentRoute} sessionConfig={{ targetDistanceKm, targetElevationM }} outcome={outcome} generationId={currentRoute.generationId ?? generationId ?? undefined} />
         </MiniPanel>
 
         {feedbackCount > 0 && (

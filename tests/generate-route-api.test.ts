@@ -259,6 +259,69 @@ describe("POST /api/generate-route", () => {
     expect(payload.route.distanceAdjustment).toEqual(distanceAdjustment);
   });
 
+  it("labels successful exact routes with generated beta outcome and a generation id", async () => {
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", distanceKm: 10 },
+      candidates: [{ id: "best", distanceKm: 10 }],
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest(baseBody) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route).toMatchObject({ betaOutcome: "generated" });
+    expect(payload.generationId).toMatch(/^gen_/);
+    expect(payload.route.generationId).toBe(payload.generationId);
+  });
+
+  it("labels adjusted-distance routes with adjusted beta outcome", async () => {
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", distanceKm: 5.35 },
+      candidates: [{ id: "best", distanceKm: 5.35 }],
+      distanceAdjustment: {
+        requestedDistanceKm: 6,
+        adjustedDistanceKm: 5.35,
+        reason: "PARK_RECOVERY_SIZE_LIMIT",
+        policy: "adjusted_distance",
+        messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED",
+      },
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({
+      ...baseBody,
+      profileId: "running_recuperation",
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+    }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route).toMatchObject({ betaOutcome: "adjusted" });
+    expect(payload.generationId).toMatch(/^gen_/);
+    expect(payload.route.generationId).toBe(payload.generationId);
+  });
+
+  it("labels typed refusals with refused beta outcome and a generation id", async () => {
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "TRAIL_PROMISE_UNMET" })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest(baseBody) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      betaOutcome: "refused",
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+    });
+    expect(payload.generationId).toMatch(/^gen_/);
+  });
+
   it("keeps legacy generation for waypoint or end-address routes", async () => {
     generateRouteLegacyMock.mockResolvedValue({ id: "point-to-point-route" });
 

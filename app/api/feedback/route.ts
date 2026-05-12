@@ -19,12 +19,18 @@ const rateLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
 function isValidFeedback(body: Record<string, unknown>): boolean {
   if (typeof body.id !== "string" || body.id.length < 1) return false;
   if (body.rating !== "positive" && body.rating !== "negative") return false;
+  if (body.generationId !== undefined && typeof body.generationId !== "string") return false;
+  if (body.outcome !== undefined && body.outcome !== "generated" && body.outcome !== "adjusted" && body.outcome !== "refused") return false;
+  if (body.errorCode !== undefined && typeof body.errorCode !== "string") return false;
+  if (body.subCode !== undefined && typeof body.subCode !== "string") return false;
   if (typeof body.sessionType !== "string") return false;
   if (typeof body.sport !== "string") return false;
   if (typeof body.requestedDistanceKm !== "number") return false;
-  if (typeof body.actualDistanceKm !== "number") return false;
-  if (typeof body.actualElevationM !== "number") return false;
-  if (typeof body.algorithmicScore !== "number") return false;
+  if (body.actualDistanceKm !== null && typeof body.actualDistanceKm !== "number") return false;
+  if (body.actualElevationM !== null && typeof body.actualElevationM !== "number") return false;
+  if (body.algorithmicScore !== null && typeof body.algorithmicScore !== "number") return false;
+  if (body.distanceErrorPct !== undefined && body.distanceErrorPct !== null && typeof body.distanceErrorPct !== "number") return false;
+  if (body.elevationErrorPct !== undefined && body.elevationErrorPct !== null && typeof body.elevationErrorPct !== "number") return false;
   if (body.reasons !== undefined && !Array.isArray(body.reasons)) return false;
   if (
     Array.isArray(body.reasons) &&

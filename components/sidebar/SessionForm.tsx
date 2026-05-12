@@ -215,7 +215,7 @@ export default function SessionForm() {
       });
       const data: GenerateRouteResponse | GenerateRouteError = await res.json();
       if (data.success) setSuccess(data.route);
-      else setError(data.error);
+      else setError(data.error, data);
     } catch {
       setError("Erreur réseau. Réessaie dans quelques secondes.");
     }

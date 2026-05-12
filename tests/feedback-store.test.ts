@@ -36,4 +36,32 @@ describe("feedback-store", () => {
       body: expect.stringContaining("too_much_busy_road"),
     }));
   });
+
+  it("persists beta outcome and generation id for refused feedback", () => {
+    const refusedFeedback: RouteFeedback = {
+      ...baseFeedback,
+      id: "feedback-refused",
+      generationId: "gen_test_refused",
+      outcome: "refused",
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      actualDistanceKm: null,
+      actualElevationM: null,
+      algorithmicScore: null,
+      distanceErrorPct: null,
+      elevationErrorPct: null,
+    };
+
+    saveFeedback(refusedFeedback);
+
+    const stored = JSON.parse(localStorage.getItem("trailforge-feedbacks") ?? "[]");
+    expect(stored[0]).toMatchObject({
+      generationId: "gen_test_refused",
+      outcome: "refused",
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      actualDistanceKm: null,
+      algorithmicScore: null,
+    });
+  });
 });

@@ -407,6 +407,10 @@ export interface SmartRouteStats {
  * `candidates` are sorted descending by `totalScore`.
  */
 export interface GeneratedRoute {
+  /** Stable id tying API output to tester feedback. */
+  generationId?: string;
+  /** Closed-beta product outcome shown to testers. */
+  betaOutcome?: "generated" | "adjusted";
   /** Highest-scoring route candidate — displayed first on the map */
   best: RouteCandidate;
   /** All candidates sorted descending by score (best first) */
@@ -469,6 +473,8 @@ export interface GenerateRouteRequest {
  */
 export interface GenerateRouteResponse {
   success: true;
+  /** Stable id tying input, output, GPX export, and feedback. */
+  generationId: string;
   /** The generated route with candidates and scoring metadata */
   route: GeneratedRoute;
 }
@@ -486,6 +492,10 @@ export interface GenerateRouteResponse {
  */
 export interface GenerateRouteError {
   success: false;
+  /** Stable id tying the failed generation to feedback. */
+  generationId?: string;
+  /** Closed-beta product outcome shown to testers. */
+  betaOutcome?: "refused";
   /** Human-readable French error message for display */
   error: string;
   /** Machine-readable error code for client-side handling */
@@ -528,6 +538,14 @@ export interface AppState {
   status: AppStatus;
   /** Human-readable error message; non-null only when `status === "error"` */
   errorMessage: string | null;
+  /** Stable id for the last API attempt, including refused generations. */
+  generationId: string | null;
+  /** Closed-beta outcome for the current route/error. */
+  betaOutcome: "generated" | "adjusted" | "refused" | null;
+  /** Machine-readable error code for refused outcomes. */
+  errorCode: GenerateRouteError["errorCode"] | null;
+  /** Optional typed error sub-code for refused outcomes. */
+  errorSubCode: string | null;
   /** The most recently generated route; null when status is not "success" */
   currentRoute: GeneratedRoute | null;
   /**
