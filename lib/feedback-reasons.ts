@@ -34,6 +34,26 @@ export const FEEDBACK_REASON_OPTIONS = [
     label: "Bon ratio nature",
     appliesTo: "positive",
   },
+  {
+    code: "refusal_clear",
+    label: "Refus clair",
+    appliesTo: "refusal",
+  },
+  {
+    code: "expected_route",
+    label: "J'attendais une route",
+    appliesTo: "refusal",
+  },
+  {
+    code: "shorter_distance_ok",
+    label: "Distance plus courte OK",
+    appliesTo: "refusal",
+  },
+  {
+    code: "bad_terrain_diagnostic",
+    label: "Mauvais diagnostic terrain",
+    appliesTo: "refusal",
+  },
 ] as const;
 
 export type FeedbackReason = typeof FEEDBACK_REASON_OPTIONS[number]["code"];

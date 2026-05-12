@@ -4,8 +4,9 @@ import { FEEDBACK_REASON_OPTIONS, isFeedbackReason } from "@/lib/feedback-reason
 describe("feedback reasons", () => {
   it("keeps feedback reasons as a small server-safe whitelist", () => {
     expect(FEEDBACK_REASON_OPTIONS.length).toBeGreaterThanOrEqual(5);
-    expect(FEEDBACK_REASON_OPTIONS.length).toBeLessThanOrEqual(8);
+    expect(FEEDBACK_REASON_OPTIONS.length).toBeLessThanOrEqual(12);
     expect(FEEDBACK_REASON_OPTIONS.every((option) => isFeedbackReason(option.code))).toBe(true);
+    expect(FEEDBACK_REASON_OPTIONS.some((option) => option.code === "refusal_clear")).toBe(true);
   });
 
   it("rejects arbitrary free-text values to avoid PII collection", () => {

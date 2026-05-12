@@ -59,12 +59,16 @@ describe("TrailForge front-end P0 result hierarchy", () => {
 
   it("shows route-generation errors with corrective actions but no automatic regeneration", () => {
     const sessionForm = source("components/sidebar/SessionForm.tsx");
+    const routeResult = source("components/sidebar/RouteResult.tsx");
 
     expect(sessionForm).toContain("Pas de boucle fiable trouvée");
     expect(sessionForm).toContain("Réduire le D+");
     expect(sessionForm).toContain("Allonger un peu");
     expect(sessionForm).toContain("Changer le départ");
     expect(sessionForm).toContain("Prioriser trace fiable");
+    expect(routeResult).toContain("Ce refus t&apos;aide à choisir quoi faire ?");
+    expect(routeResult).toContain("outcome: \"refused\"");
+    expect(routeResult).toContain("actualDistanceKm: null");
     expect(sessionForm).not.toMatch(/Réduire le D\+[\s\S]{0,240}handleGenerate\(/);
   });
 });

@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { downloadGPX } from "@/lib/gpx-export";
-import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/feedback-store";
+import { exportFeedbacksAsJSON, loadFeedbacks, saveFeedback, type RouteFeedback } from "@/lib/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import WaitlistForm from "@/components/ui/WaitlistForm";
 import { translateQualityWarning } from "@/lib/route-quality-copy";
 import { buildWatchExportGuide } from "@/lib/watch-export";
 import { buildRouteExplanation } from "@/lib/route-explanations";
 import { buildFeedbackInsights } from "@/lib/feedback-insights";
+import { FEEDBACK_REASON_OPTIONS, type FeedbackReason } from "@/lib/feedback-reasons";
+import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -101,6 +103,105 @@ function MiniPanel({ children, label }: { children: React.ReactNode; label?: str
   );
 }
 
+function RefusalFeedbackButtons({
+  generationId,
+  errorCode,
+  subCode,
+  targetDistanceKm,
+  targetElevationM,
+  selectedProfileId,
+  scenicMode,
+}: {
+  generationId?: string | null;
+  errorCode?: string | null;
+  subCode?: string | null;
+  targetDistanceKm: number;
+  targetElevationM: number;
+  selectedProfileId: string;
+  scenicMode: boolean;
+}) {
+  const [submitted, setSubmitted] = useState<"positive" | "negative" | null>(null);
+  const [selectedReasons, setSelectedReasons] = useState<FeedbackReason[]>([]);
+  const profile = PROFILES_BY_ID.get(selectedProfileId);
+  const refusalReasons = FEEDBACK_REASON_OPTIONS.filter((option) => option.appliesTo === "refusal");
+
+  const toggleReason = (reason: FeedbackReason) => {
+    setSelectedReasons((current) =>
+      current.includes(reason)
+        ? current.filter((item) => item !== reason)
+        : [...current, reason]
+    );
+  };
+
+  const handleFeedback = (rating: "positive" | "negative") => {
+    const feedback: RouteFeedback = {
+      id: crypto.randomUUID(),
+      generationId: generationId ?? undefined,
+      outcome: "refused",
+      errorCode: errorCode ?? undefined,
+      subCode: subCode ?? undefined,
+      timestamp: Date.now(),
+      rating,
+      reasons: selectedReasons,
+      sessionType: profile?.sessionType ?? "unknown",
+      sport: profile?.sport ?? "running",
+      mode: scenicMode ? "SCENIC" : "PERFORMANCE",
+      requestedDistanceKm: targetDistanceKm,
+      requestedElevationM: targetElevationM || null,
+      actualDistanceKm: null,
+      actualElevationM: null,
+      algorithmicScore: null,
+      distanceErrorPct: null,
+      elevationErrorPct: null,
+    };
+
+    saveFeedback(feedback);
+    setSubmitted(rating);
+  };
+
+  if (submitted) {
+    return (
+      <div style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-surface)", textAlign: "center" }}>
+        <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}>
+          Merci, ce refus est relié à la génération beta.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "14px" }}>
+      <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}>
+        Ce refus t&apos;aide à choisir quoi faire ?
+      </p>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button onClick={() => handleFeedback("positive")} style={{ flex: 1, padding: "8px 10px", background: "rgba(168,214,114,0.08)", border: "1px solid rgba(168,214,114,0.2)", borderRadius: "var(--radius-control)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px" }}>
+          Refus clair 👍
+        </button>
+        <button onClick={() => handleFeedback("negative")} style={{ flex: 1, padding: "8px 10px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "var(--radius-control)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px" }}>
+          Pas clair 👎
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }} aria-label="Raisons du feedback refusé">
+        {refusalReasons.map((option) => {
+          const active = selectedReasons.includes(option.code);
+          return (
+            <button
+              key={option.code}
+              type="button"
+              onClick={() => toggleReason(option.code)}
+              aria-pressed={active}
+              style={{ padding: "6px 8px", borderRadius: "999px", border: active ? "1px solid var(--accent-lime)" : "1px solid var(--border)", background: active ? "rgba(168,214,114,0.12)" : "var(--bg-surface)", color: active ? "var(--accent-lime)" : "var(--text-muted)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", letterSpacing: "0.04em" }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function RouteResult() {
   const {
     currentRoute,
@@ -116,6 +217,7 @@ export default function RouteResult() {
     targetDistanceKm,
     targetElevationM,
     scenicMode,
+    selectedProfileId,
   } = useAppStore();
 
   const feedbacks = loadFeedbacks();
@@ -168,6 +270,15 @@ export default function RouteResult() {
           <button onClick={clearRoute} style={{ marginTop: "14px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", cursor: "pointer" }}>
             Paramètres
           </button>
+          <RefusalFeedbackButtons
+            generationId={generationId}
+            errorCode={errorCode}
+            subCode={errorSubCode}
+            targetDistanceKm={targetDistanceKm}
+            targetElevationM={targetElevationM}
+            selectedProfileId={selectedProfileId}
+            scenicMode={scenicMode}
+          />
         </MiniPanel>
       </div>
     );
