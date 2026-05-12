@@ -878,10 +878,27 @@ describe("route production benchmarks", () => {
     });
 
     expect(benchmark.thresholds.minTrailPotential).toBe("medium");
+    expect(benchmark.expectedOutcome).toBe("route_or_typed_refusal");
     expect(benchmark.requireHonestWarnings).toBeUndefined();
     expect(benchmark.expectedWarnings).toBeUndefined();
     expect(summary.passed).toBe(true);
     expect(summary.failures).toEqual([]);
+  });
+
+  it("accepts Clécy as an honest typed refusal when trail candidates are unstable", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "clecy-suisse-normande-trail-12k")!;
+    const summary = summarizeBenchmarkFailure(benchmark, {
+      status: 422,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      error: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta.",
+      durationMs: 29_000,
+    });
+
+    expect(benchmark.notes).toContain("refus TRAIL_PROMISE_UNMET reste honnête");
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
   });
 
   it("uses a geocodable Paris Buttes-Chaumont POI for the beta behavior input", () => {

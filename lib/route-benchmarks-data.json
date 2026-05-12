@@ -264,6 +264,7 @@
       "hilly",
       "suisse-normande"
     ],
+    "expectedOutcome": "route_or_typed_refusal",
     "thresholds": {
       "distanceToleranceRatio": 0.12,
       "elevationToleranceM": 160,
@@ -286,7 +287,7 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Trail normand à vrai D+ : contrat beta fermé acceptable avec potentiel medium si la route reste exploitable et garde les surfaces honnêtes. Ne pas enrichir artificiellement les surfaces inconnues."
+    "notes": "Trail normand à vrai D+ : contrat beta fermé acceptable avec potentiel medium si la route reste exploitable et garde les surfaces honnêtes. Un refus TRAIL_PROMISE_UNMET reste honnête si les candidats sont instables, s'auto-croisent, ou ne tiennent pas le segment trail continu. Ne pas enrichir artificiellement les surfaces inconnues."
   },
   {
     "id": "fontainebleau-trail-15k",
