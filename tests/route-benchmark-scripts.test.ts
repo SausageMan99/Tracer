@@ -364,6 +364,15 @@ describe("route benchmark scripts", () => {
     expect(packageJson.scripts["release:evidence-check"]).toBe("node scripts/release-evidence-check.mjs");
   });
 
+  it("exposes a closed-beta behavior benchmark command", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+
+    expect(packageJson.scripts["benchmark:routes:beta-behavior"]).toContain("tourville-pommiers-trail-8k");
+    expect(packageJson.scripts["benchmark:routes:beta-behavior"]).toContain("caen-colline-aux-oiseaux-6k-soft");
+    expect(packageJson.scripts["benchmark:routes:beta-behavior"]).toContain("paris-buttes-chaumont-5k-constrained");
+    expect(packageJson.scripts["benchmark:routes:beta-behavior"]).toContain("closed_beta_honest_outcomes");
+  });
+
   it("passes the beta evidence ledger only with complete expected refusals and anti-laundering flags", () => {
     const dir = mkdtempSync(join(tmpdir(), "release-evidence-"));
     const reportPath = join(dir, "beta-smoke.json");

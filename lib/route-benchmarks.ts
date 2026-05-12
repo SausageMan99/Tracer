@@ -173,6 +173,17 @@ export const BETA_SMOKE_CASE_IDS = [
   "meudon-forest-trail-10k",
 ] as const;
 
+export const BETA_BEHAVIOR_CASE_IDS = [
+  "tourville-pommiers-trail-8k",
+  "caen-colline-aux-oiseaux-6k-soft",
+  "fontainebleau-trail-15k",
+  "clecy-suisse-normande-trail-12k",
+  "caen-prairie-8k-mixed",
+  "lille-10k-citadel-loop",
+  "paris-buttes-chaumont-5k-constrained",
+  "meudon-forest-trail-10k",
+] as const;
+
 export const READINESS_UNSTABLE_CASE_IDS = [
   "tourville-pommiers-trail-12k",
 ] as const;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BENCHMARK_CASES,
+  BETA_BEHAVIOR_CASE_IDS,
   BETA_SMOKE_CASE_IDS,
   READINESS_UNSTABLE_CASE_IDS,
   benchmarkToRequest,
@@ -80,6 +81,37 @@ describe("route production benchmarks", () => {
     expect(tourville12.thresholds.minNaturalCorridorRatio).toBe(0.45);
     expect(tourville12.thresholds.maxRepeatEdgeRatio).toBe(0.04);
     expect(tourville12.thresholds.maxUTurnRatio).toBe(0.01);
+  });
+
+  it("defines a closed-beta behavior panel focused on honest outcomes", () => {
+    expect(BETA_BEHAVIOR_CASE_IDS).toEqual([
+      "tourville-pommiers-trail-8k",
+      "caen-colline-aux-oiseaux-6k-soft",
+      "fontainebleau-trail-15k",
+      "clecy-suisse-normande-trail-12k",
+      "caen-prairie-8k-mixed",
+      "lille-10k-citadel-loop",
+      "paris-buttes-chaumont-5k-constrained",
+      "meudon-forest-trail-10k",
+    ]);
+
+    const panel = BETA_BEHAVIOR_CASE_IDS.map((id) => BENCHMARK_CASES.find((item) => item.id === id)!);
+    expect(panel).toHaveLength(8);
+    expect(panel.every(Boolean)).toBe(true);
+    expect(panel.map((item) => item.expectedOutcome ?? "exact_distance")).toEqual(expect.arrayContaining([
+      "typed_refusal",
+      "park_recovery",
+      "exact_distance",
+    ]));
+    expect(panel.flatMap((item) => item.tags ?? [])).toEqual(expect.arrayContaining([
+      "field-feedback",
+      "park",
+      "forest",
+      "urban-nature",
+      "constrained",
+      "periurban",
+    ]));
+    expect(BETA_BEHAVIOR_CASE_IDS).not.toContain("tourville-pommiers-trail-12k");
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
