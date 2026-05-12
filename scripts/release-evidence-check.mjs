@@ -13,6 +13,12 @@ const DEFAULT_REPORT = "artifacts/route-benchmark-results/beta-smoke-latest.json
 const DEFAULT_BENCHMARK_DATA = "lib/route-benchmarks-data.json";
 const DEFAULT_EXPECTED_BRANCH = "feat/p1-2-quality-ratio-interpretation";
 const DEFAULT_EXPECTED_HEAD = "f5ccccbf6fab990fa03020ec0a37895c3be654c4";
+const REQUIRED_BETA_SMOKE_CASE_IDS = [
+  "fontainebleau-trail-15k",
+  "caen-colline-aux-oiseaux-6k-soft",
+  "meudon-forest-trail-10k",
+  "tourville-pommiers-trail-8k",
+];
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: npm run release:evidence-check -- [options]
@@ -86,6 +92,37 @@ function checkGitState() {
 
 function byId(items) {
   return new Map((items ?? []).filter((item) => item?.id).map((item) => [item.id, item]));
+}
+
+function checkExactBetaSmokePanel(report) {
+  const results = report?.results;
+  if (!Array.isArray(results)) {
+    failures.push("beta-smoke results must be an array with the exact required beta case panel");
+    return;
+  }
+
+  if (results.length !== REQUIRED_BETA_SMOKE_CASE_IDS.length) {
+    failures.push(`beta-smoke results must contain exactly ${REQUIRED_BETA_SMOKE_CASE_IDS.length} cases, got ${results.length}`);
+  }
+
+  const counts = new Map();
+  for (const result of results) {
+    const id = result?.id;
+    if (typeof id !== "string" || id.length === 0) {
+      failures.push("beta-smoke result is missing a string id");
+      continue;
+    }
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+    if (!REQUIRED_BETA_SMOKE_CASE_IDS.includes(id)) {
+      failures.push(`unexpected beta-smoke case ${id}`);
+    }
+  }
+
+  for (const id of REQUIRED_BETA_SMOKE_CASE_IDS) {
+    const count = counts.get(id) ?? 0;
+    if (count === 0) failures.push(`missing required beta-smoke case ${id}`);
+    if (count > 1) failures.push(`duplicate beta-smoke case ${id}`);
+  }
 }
 
 function checkReportSummary(report) {
@@ -201,6 +238,7 @@ checkGitState();
 const report = readJson(reportPath, "beta smoke report");
 const benchmarkData = readJson(benchmarkDataPath, "benchmark data");
 checkReportSummary(report);
+checkExactBetaSmokePanel(report);
 checkRequiredArtifacts(report);
 checkExpectedContracts(report, benchmarkData);
 checkSurfaceLaundering(report);

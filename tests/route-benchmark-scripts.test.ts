@@ -366,18 +366,22 @@ describe("route benchmark scripts", () => {
     writeFileSync(routeArtifact, "{}", "utf8");
     writeFileSync(edgeArtifact, "{}", "utf8");
     writeFileSync(benchmarkDataPath, JSON.stringify([
+      { id: "fontainebleau-trail-15k" },
       {
-        id: "trail-refusal",
-        expectedOutcome: "typed_refusal",
-        expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
-      },
-      {
-        id: "park-adjusted",
+        id: "caen-colline-aux-oiseaux-6k-soft",
         expectedOutcome: "park_recovery",
         adjustedDistanceKm: { min: 5, max: 6 },
       },
-      { id: "route-success-a" },
-      { id: "route-success-b" },
+      {
+        id: "meudon-forest-trail-10k",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+      },
+      {
+        id: "tourville-pommiers-trail-8k",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+      },
     ]), "utf8");
     const routeArtifacts = { routeJson: routeArtifact, edgeDiagnosticsJson: edgeArtifact };
     writeFileSync(reportPath, JSON.stringify({
@@ -394,18 +398,13 @@ describe("route benchmark scripts", () => {
       typedRefusalMasked: false,
       results: [
         {
-          id: "trail-refusal",
+          id: "fontainebleau-trail-15k",
           passed: true,
-          rejectedCandidatesDiagnostics: { subCode: "TRAIL_PROMISE_UNMET", candidateCount: 1 },
-          metrics: {
-            expectedOutcome: "typed_refusal",
-            actualOutcome: "typed_refusal",
-            expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
-            refusalSubCode: "TRAIL_PROMISE_UNMET",
-          },
+          routeArtifacts,
+          metrics: { actualOutcome: "route_success" },
         },
         {
-          id: "park-adjusted",
+          id: "caen-colline-aux-oiseaux-6k-soft",
           passed: true,
           routeArtifacts,
           metrics: {
@@ -415,16 +414,26 @@ describe("route benchmark scripts", () => {
           },
         },
         {
-          id: "route-success-a",
+          id: "meudon-forest-trail-10k",
           passed: true,
-          routeArtifacts,
-          metrics: { actualOutcome: "route_success" },
+          rejectedCandidatesDiagnostics: { subCode: "RESTRICTED_ACCESS_BLOCKED", candidateCount: 1 },
+          metrics: {
+            expectedOutcome: "typed_refusal",
+            actualOutcome: "typed_refusal",
+            expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+            refusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+          },
         },
         {
-          id: "route-success-b",
+          id: "tourville-pommiers-trail-8k",
           passed: true,
-          routeArtifacts,
-          metrics: { actualOutcome: "route_success" },
+          rejectedCandidatesDiagnostics: { subCode: "TRAIL_PROMISE_UNMET", candidateCount: 1 },
+          metrics: {
+            expectedOutcome: "typed_refusal",
+            actualOutcome: "typed_refusal",
+            expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+            refusalSubCode: "TRAIL_PROMISE_UNMET",
+          },
         },
       ],
     }), "utf8");
@@ -442,39 +451,175 @@ describe("route benchmark scripts", () => {
     expect(result.stdout).toContain("release evidence check passed");
   });
 
-  it("fails beta evidence when typed refusals are silently converted to success or GO claims", () => {
-    const dir = mkdtempSync(join(tmpdir(), "release-evidence-bad-"));
+  it("fails beta evidence unless the exact beta smoke case-id panel is present once", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-evidence-exact-panel-"));
     const reportPath = join(dir, "beta-smoke.json");
     const benchmarkDataPath = join(dir, "benchmarks.json");
+    const routeArtifact = join(dir, "route.json");
+    const edgeArtifact = join(dir, "edges.json");
+    writeFileSync(routeArtifact, "{}", "utf8");
+    writeFileSync(edgeArtifact, "{}", "utf8");
+
+    const routeArtifacts = { routeJson: routeArtifact, edgeDiagnosticsJson: edgeArtifact };
+    const successResult = (id: string) => ({
+      id,
+      passed: true,
+      routeArtifacts,
+      metrics: { actualOutcome: "route_success" },
+    });
+    const meudonTypedRefusal = {
+      id: "meudon-forest-trail-10k",
+      passed: true,
+      rejectedCandidatesDiagnostics: { subCode: "RESTRICTED_ACCESS_BLOCKED", candidateCount: 1 },
+      metrics: {
+        expectedOutcome: "typed_refusal",
+        actualOutcome: "typed_refusal",
+        expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+        refusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+      },
+    };
+    const baseReport = {
+      total: 4,
+      passed: 4,
+      failed: 0,
+      skipped: 0,
+      beta_scope_status: "BETA_SCOPE_CANDIDATE_LOCAL",
+      ga_status: "NO-GO_GA",
+      beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+      readiness_blockers: ["tourville-pommiers-trail-12k"],
+      thresholdsChanged: false,
+      surfaceReclassification: false,
+      typedRefusalMasked: false,
+    };
     writeFileSync(benchmarkDataPath, JSON.stringify([
+      { id: "fontainebleau-trail-15k" },
+      { id: "caen-colline-aux-oiseaux-6k-soft" },
       {
         id: "meudon-forest-trail-10k",
         expectedOutcome: "typed_refusal",
         expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
       },
+      { id: "tourville-pommiers-trail-8k" },
     ]), "utf8");
+
     writeFileSync(reportPath, JSON.stringify({
-      total: 1,
-      passed: 1,
+      ...baseReport,
+      results: [
+        successResult("fontainebleau-trail-15k"),
+        successResult("caen-colline-aux-oiseaux-6k-soft"),
+        successResult("tourville-pommiers-trail-8k"),
+        successResult("fake-extra-success-not-in-benchmark-data"),
+      ],
+    }), "utf8");
+
+    const missingUnknown = spawnSync(nodeBin, [
+      "scripts/release-evidence-check.mjs",
+      "--skip-git",
+      "--report",
+      reportPath,
+      "--benchmark-data",
+      benchmarkDataPath,
+    ], { cwd: repoRoot, encoding: "utf8" });
+
+    expect(missingUnknown.status).toBe(1);
+    expect(missingUnknown.stderr).toContain("missing required beta-smoke case meudon-forest-trail-10k");
+    expect(missingUnknown.stderr).toContain("unexpected beta-smoke case fake-extra-success-not-in-benchmark-data");
+
+    writeFileSync(reportPath, JSON.stringify({
+      ...baseReport,
+      results: [
+        successResult("fontainebleau-trail-15k"),
+        successResult("caen-colline-aux-oiseaux-6k-soft"),
+        successResult("tourville-pommiers-trail-8k"),
+        meudonTypedRefusal,
+        successResult("tourville-pommiers-trail-8k"),
+      ],
+    }), "utf8");
+
+    const duplicate = spawnSync(nodeBin, [
+      "scripts/release-evidence-check.mjs",
+      "--skip-git",
+      "--report",
+      reportPath,
+      "--benchmark-data",
+      benchmarkDataPath,
+    ], { cwd: repoRoot, encoding: "utf8" });
+
+    expect(duplicate.status).toBe(1);
+    expect(duplicate.stderr).toContain("duplicate beta-smoke case tourville-pommiers-trail-8k");
+  });
+
+  it("fails beta evidence when typed refusals are silently converted to success or GO claims", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-evidence-bad-"));
+    const reportPath = join(dir, "beta-smoke.json");
+    const benchmarkDataPath = join(dir, "benchmarks.json");
+    const routeArtifact = join(dir, "route.json");
+    const edgeArtifact = join(dir, "edges.json");
+    writeFileSync(routeArtifact, "{}", "utf8");
+    writeFileSync(edgeArtifact, "{}", "utf8");
+    writeFileSync(benchmarkDataPath, JSON.stringify([
+      { id: "fontainebleau-trail-15k" },
+      { id: "caen-colline-aux-oiseaux-6k-soft" },
+      {
+        id: "meudon-forest-trail-10k",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+      },
+      {
+        id: "tourville-pommiers-trail-8k",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+      },
+    ]), "utf8");
+    const routeArtifacts = { routeJson: routeArtifact, edgeDiagnosticsJson: edgeArtifact };
+    writeFileSync(reportPath, JSON.stringify({
+      total: 4,
+      passed: 4,
       failed: 0,
       skipped: 0,
       beta_scope_status: "BETA_SCOPE_CANDIDATE_LOCAL",
       ga_status: "GO_GA",
-      beta_smoke_excluded_cases: [],
-      readiness_blockers: [],
+      beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+      readiness_blockers: ["tourville-pommiers-trail-12k"],
       thresholdsChanged: false,
       surfaceReclassification: false,
       typedRefusalMasked: false,
-      results: [{
-        id: "meudon-forest-trail-10k",
-        passed: true,
-        metrics: {
-          expectedOutcome: "typed_refusal",
-          actualOutcome: "route_success",
-          expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
-          refusalSubCode: null,
+      results: [
+        {
+          id: "fontainebleau-trail-15k",
+          passed: true,
+          routeArtifacts,
+          metrics: { actualOutcome: "route_success" },
         },
-      }],
+        {
+          id: "caen-colline-aux-oiseaux-6k-soft",
+          passed: true,
+          routeArtifacts,
+          metrics: { actualOutcome: "route_success" },
+        },
+        {
+          id: "meudon-forest-trail-10k",
+          passed: true,
+          routeArtifacts,
+          metrics: {
+            expectedOutcome: "typed_refusal",
+            actualOutcome: "route_success",
+            expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+            refusalSubCode: null,
+          },
+        },
+        {
+          id: "tourville-pommiers-trail-8k",
+          passed: true,
+          rejectedCandidatesDiagnostics: { subCode: "TRAIL_PROMISE_UNMET", candidateCount: 1 },
+          metrics: {
+            expectedOutcome: "typed_refusal",
+            actualOutcome: "typed_refusal",
+            expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+            refusalSubCode: "TRAIL_PROMISE_UNMET",
+          },
+        },
+      ],
     }), "utf8");
 
     const result = spawnSync(nodeBin, [
