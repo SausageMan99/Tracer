@@ -31,6 +31,8 @@ export class RouteGenerationError extends Error {
   readonly rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
   /** Benchmark/debug-only payload for failed generation stages such as SOLVER_EMPTY. */
   readonly generationDiagnostics?: import("./types").RouteGenerationDiagnostics;
+  /** Benchmark/debug-only lightweight per-stage timings for failed generation paths. */
+  readonly stageTimings?: import("./types").RouteGenerationStageTimings;
 
   constructor(
     code: RouteErrorCode,
@@ -39,6 +41,7 @@ export class RouteGenerationError extends Error {
       maxElevationEstimate?: number;
       rejectedCandidatesDiagnostics?: import("./types").RejectedRouteCandidatesDiagnostics;
       generationDiagnostics?: import("./types").RouteGenerationDiagnostics;
+      stageTimings?: import("./types").RouteGenerationStageTimings;
       message?: string;
     }
   ) {
@@ -50,5 +53,6 @@ export class RouteGenerationError extends Error {
     this.maxElevationEstimate = opts?.maxElevationEstimate;
     this.rejectedCandidatesDiagnostics = opts?.rejectedCandidatesDiagnostics;
     this.generationDiagnostics = opts?.generationDiagnostics;
+    this.stageTimings = opts?.stageTimings;
   }
 }

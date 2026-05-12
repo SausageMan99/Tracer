@@ -509,6 +509,8 @@ export interface GenerateRouteError {
   subCode?: string;
   /** Benchmark/debug-only candidate gate report when ROUTE_CANDIDATES_REJECTED is requested with generation diagnostics. */
   rejectedCandidatesDiagnostics?: RejectedRouteCandidatesDiagnostics;
+  /** Benchmark/debug-only lightweight generation timings when requested with generation diagnostics. */
+  stageTimings?: RouteGenerationStageTimings;
   /** Benchmark/debug-only generation report when NO_ROAD_NETWORK/SOLVER_EMPTY is requested with generation diagnostics. */
   generationDiagnostics?: RouteGenerationDiagnostics;
   /**

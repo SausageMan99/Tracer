@@ -163,6 +163,36 @@ describe("POST /api/generate-route", () => {
     });
   });
 
+  it("exposes rejected-candidate stage timings only when benchmark generation diagnostics are requested", async () => {
+    const stageTimings = {
+      totalMs: 1234,
+      stages: [
+        { stage: "solver.solve", durationMs: 400, ok: true },
+        { stage: "postProcess.candidates", durationMs: 700, ok: true },
+        { stage: "guards.betaStability", durationMs: 3, ok: false, errorCode: "ROUTE_CANDIDATES_REJECTED" },
+        { stage: "total", durationMs: 1234, ok: false, errorCode: "ROUTE_CANDIDATES_REJECTED" },
+      ],
+    };
+    generateRouteV2Mock.mockRejectedValue(
+      new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", {
+        subCode: "TRAIL_PROMISE_UNMET",
+        stageTimings,
+      })
+    );
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({ ...baseBody, includeGenerationDiagnostics: true }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(422);
+    expect(payload).toMatchObject({
+      success: false,
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      stageTimings,
+    });
+  });
+
   it("exposes solver-empty generation diagnostics only when benchmark generation diagnostics are requested", async () => {
     const generationDiagnostics = {
       version: 1 as const,

@@ -4,6 +4,7 @@ import type {
   GeneratedRoute,
   RouteGenerationDiagnostics,
   RouteGenerationStageTiming,
+  RouteGenerationStageTimings,
   RouteRequest,
   SessionProfile,
 } from "../types";
@@ -186,6 +187,35 @@ export async function generateRouteV2(
     stages.push(timing);
   };
 
+  const buildFailureStageTimings = (error: unknown): RouteGenerationStageTimings | undefined => {
+    if (!includeGenerationDiagnostics) return undefined;
+    const totalMs = now() - totalStartedAt;
+    const totalTiming: RouteGenerationStageTiming = {
+      stage: "total",
+      durationMs: totalMs,
+      ok: false,
+    };
+    const errorCode = errorCodeFrom(error);
+    if (errorCode) totalTiming.errorCode = errorCode;
+    return {
+      totalMs,
+      stages: [...stages, totalTiming],
+    };
+  };
+
+  const attachFailureStageTimings = (error: unknown): void => {
+    if (!(error instanceof RouteGenerationError)) return;
+    if (error.stageTimings != null) return;
+    const stageTimings = buildFailureStageTimings(error);
+    if (stageTimings == null) return;
+    Object.defineProperty(error, "stageTimings", {
+      value: stageTimings,
+      configurable: true,
+      enumerable: true,
+      writable: false,
+    });
+  };
+
   const timed = async <T>(stage: string, fn: () => T | Promise<T>): Promise<T> => {
     const startedAt = now();
     try {
@@ -194,6 +224,7 @@ export async function generateRouteV2(
       return value;
     } catch (error) {
       recordStage(stage, startedAt, false, error);
+      attachFailureStageTimings(error);
       throw error;
     }
   };

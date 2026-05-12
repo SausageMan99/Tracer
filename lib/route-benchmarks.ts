@@ -4,7 +4,7 @@ import {
   summarizeBenchmarkFailure as summarizeBenchmarkFailureCore,
   summarizeBenchmarkResult as summarizeBenchmarkResultCore,
 } from "./route-benchmarks-core.mjs";
-import type { GenerateRouteRequest, RouteGenerationDiagnostics } from "./types";
+import type { GenerateRouteRequest, RouteGenerationDiagnostics, RouteGenerationStageTimings } from "./types";
 
 export interface RouteBenchmarkCase {
   id: string;
@@ -104,6 +104,7 @@ export interface BenchmarkFailureSample {
   error?: string | null;
   durationMs?: number;
   rejectedCandidatesDiagnostics?: unknown;
+  stageTimings?: RouteGenerationStageTimings | unknown;
   generationDiagnostics?: RouteGenerationDiagnostics | unknown;
   routeArtifacts?: unknown;
 }
@@ -161,6 +162,7 @@ export interface BenchmarkSummary {
       maxDistanceFromStartKm: number;
     };
   };
+  stageTimings?: RouteGenerationStageTimings | unknown;
   generationDiagnostics?: RouteGenerationDiagnostics | unknown;
 }
 

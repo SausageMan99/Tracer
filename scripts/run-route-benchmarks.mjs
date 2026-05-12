@@ -213,6 +213,7 @@ async function runBenchmark(benchmark) {
         subCode: payload.subCode ?? null,
         error: payload.error ?? "No JSON error body",
         rejectedCandidatesDiagnostics: payload.rejectedCandidatesDiagnostics ?? null,
+        stageTimings: payload.stageTimings ?? null,
         generationDiagnostics: payload.generationDiagnostics ?? null,
         routeArtifacts: {
           ...(rejectedCandidateArtifacts ?? {}),

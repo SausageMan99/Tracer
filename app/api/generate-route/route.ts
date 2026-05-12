@@ -284,6 +284,9 @@ function mapRouteError(err: RouteGenerationError, generationId: string, includeG
       const rejectedCandidatesDiagnostics = includeGenerationDiagnostics
         ? err.rejectedCandidatesDiagnostics
         : undefined;
+      const stageTimings = includeGenerationDiagnostics
+        ? err.stageTimings
+        : undefined;
       const errorMsg = (err.subCode && ROUTE_CANDIDATES_REJECTED_MESSAGES[err.subCode]) ?? DEFAULT_ROUTE_CANDIDATES_REJECTED_MSG;
       return NextResponse.json<GenerateRouteError>(
         {
@@ -293,6 +296,7 @@ function mapRouteError(err: RouteGenerationError, generationId: string, includeG
           errorCode: "ROUTE_CANDIDATES_REJECTED",
           subCode: err.subCode,
           ...(rejectedCandidatesDiagnostics != null ? { rejectedCandidatesDiagnostics } : {}),
+          ...(stageTimings != null ? { stageTimings } : {}),
           error: errorMsg,
         },
         { status: 422 }

@@ -1118,12 +1118,21 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("keeps generation diagnostics on benchmark HTTP failures", () => {
+  it("keeps generation diagnostics and stage timings on benchmark HTTP failures", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const generationDiagnostics = {
       version: 1,
       graph: { nodeCount: 240, edgeCount: 580, scenicWayCount: 36 },
       solver: { pathCount: 0, candidateCount: 0, emptyReason: "UNKNOWN_EMPTY" },
+    };
+    const stageTimings = {
+      totalMs: 1900,
+      stages: [
+        { stage: "solver.solve", durationMs: 1200, ok: true },
+        { stage: "postProcess.candidates", durationMs: 600, ok: true },
+        { stage: "guards.betaStability", durationMs: 5, ok: false, errorCode: "ROUTE_CANDIDATES_REJECTED" },
+        { stage: "total", durationMs: 1900, ok: false, errorCode: "ROUTE_CANDIDATES_REJECTED" },
+      ],
     };
 
     const summary = summarizeBenchmarkFailure(benchmark, {
@@ -1133,10 +1142,12 @@ describe("route production benchmarks", () => {
       subCode: "SOLVER_EMPTY",
       error: "Impossible de construire un parcours en boucle.",
       generationDiagnostics,
+      stageTimings,
     });
 
     expect(summary.passed).toBe(false);
     expect(summary.generationDiagnostics).toEqual(generationDiagnostics);
+    expect(summary.stageTimings).toEqual(stageTimings);
   });
 
   it("allows Caen Prairie and Lille Citadelle to pass as honest urban-nature typed refusals", () => {
