@@ -350,4 +350,144 @@ describe("route benchmark scripts", () => {
     expect(report.results[0].verdict).toBe("regressed");
     expect(report.results[0].strictRegressionMetrics).toEqual(["productionScore"]);
   });
+
+  it("exposes a release evidence check command for beta-scope QA", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+
+    expect(packageJson.scripts["release:evidence-check"]).toBe("node scripts/release-evidence-check.mjs");
+  });
+
+  it("passes the beta evidence ledger only with complete expected refusals and anti-laundering flags", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-evidence-"));
+    const reportPath = join(dir, "beta-smoke.json");
+    const benchmarkDataPath = join(dir, "benchmarks.json");
+    const routeArtifact = join(dir, "route.json");
+    const edgeArtifact = join(dir, "edges.json");
+    writeFileSync(routeArtifact, "{}", "utf8");
+    writeFileSync(edgeArtifact, "{}", "utf8");
+    writeFileSync(benchmarkDataPath, JSON.stringify([
+      {
+        id: "trail-refusal",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+      },
+      {
+        id: "park-adjusted",
+        expectedOutcome: "park_recovery",
+        adjustedDistanceKm: { min: 5, max: 6 },
+      },
+      { id: "route-success-a" },
+      { id: "route-success-b" },
+    ]), "utf8");
+    const routeArtifacts = { routeJson: routeArtifact, edgeDiagnosticsJson: edgeArtifact };
+    writeFileSync(reportPath, JSON.stringify({
+      total: 4,
+      passed: 4,
+      failed: 0,
+      skipped: 0,
+      beta_scope_status: "BETA_SCOPE_CANDIDATE_LOCAL",
+      ga_status: "NO-GO_GA",
+      beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+      readiness_blockers: ["tourville-pommiers-trail-12k"],
+      thresholdsChanged: false,
+      surfaceReclassification: false,
+      typedRefusalMasked: false,
+      results: [
+        {
+          id: "trail-refusal",
+          passed: true,
+          rejectedCandidatesDiagnostics: { subCode: "TRAIL_PROMISE_UNMET", candidateCount: 1 },
+          metrics: {
+            expectedOutcome: "typed_refusal",
+            actualOutcome: "typed_refusal",
+            expectedRefusalSubCode: "TRAIL_PROMISE_UNMET",
+            refusalSubCode: "TRAIL_PROMISE_UNMET",
+          },
+        },
+        {
+          id: "park-adjusted",
+          passed: true,
+          routeArtifacts,
+          metrics: {
+            expectedOutcome: "park_recovery",
+            actualOutcome: "adjusted_distance",
+            adjustedDistanceKm: 5.4,
+          },
+        },
+        {
+          id: "route-success-a",
+          passed: true,
+          routeArtifacts,
+          metrics: { actualOutcome: "route_success" },
+        },
+        {
+          id: "route-success-b",
+          passed: true,
+          routeArtifacts,
+          metrics: { actualOutcome: "route_success" },
+        },
+      ],
+    }), "utf8");
+
+    const result = spawnSync(nodeBin, [
+      "scripts/release-evidence-check.mjs",
+      "--skip-git",
+      "--report",
+      reportPath,
+      "--benchmark-data",
+      benchmarkDataPath,
+    ], { cwd: repoRoot, encoding: "utf8" });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("release evidence check passed");
+  });
+
+  it("fails beta evidence when typed refusals are silently converted to success or GO claims", () => {
+    const dir = mkdtempSync(join(tmpdir(), "release-evidence-bad-"));
+    const reportPath = join(dir, "beta-smoke.json");
+    const benchmarkDataPath = join(dir, "benchmarks.json");
+    writeFileSync(benchmarkDataPath, JSON.stringify([
+      {
+        id: "meudon-forest-trail-10k",
+        expectedOutcome: "typed_refusal",
+        expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+      },
+    ]), "utf8");
+    writeFileSync(reportPath, JSON.stringify({
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      beta_scope_status: "BETA_SCOPE_CANDIDATE_LOCAL",
+      ga_status: "GO_GA",
+      beta_smoke_excluded_cases: [],
+      readiness_blockers: [],
+      thresholdsChanged: false,
+      surfaceReclassification: false,
+      typedRefusalMasked: false,
+      results: [{
+        id: "meudon-forest-trail-10k",
+        passed: true,
+        metrics: {
+          expectedOutcome: "typed_refusal",
+          actualOutcome: "route_success",
+          expectedRefusalSubCode: "RESTRICTED_ACCESS_BLOCKED",
+          refusalSubCode: null,
+        },
+      }],
+    }), "utf8");
+
+    const result = spawnSync(nodeBin, [
+      "scripts/release-evidence-check.mjs",
+      "--skip-git",
+      "--report",
+      reportPath,
+      "--benchmark-data",
+      benchmarkDataPath,
+    ], { cwd: repoRoot, encoding: "utf8" });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("expected typed_refusal but got route_success");
+    expect(result.stderr).toContain("ga_status must remain NO-GO_GA");
+  });
 });
