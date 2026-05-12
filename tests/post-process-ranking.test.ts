@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { postProcess } from "@/lib/engine/route-post-processor";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
-import type { EnrichedEdge, EnrichedGraph, GraphNode, SolverPath } from "@/lib/types";
+import type { RouteIntent } from "@/lib/engine/terrain-planner";
+import type { Coordinate, EnrichedEdge, EnrichedGraph, GraphNode, SolverPath } from "@/lib/types";
 
 function makeChainGraph(edgeCount: number): EnrichedGraph {
   const nodes = new Map<string, GraphNode>();
@@ -35,6 +36,70 @@ function makePath(distanceKm: number, offset: number): SolverPath {
     edgeIds: Array.from({ length: edgeCount }, (_, i) => `${offset + i}-${offset + i + 1}`),
     distanceKm,
     totalScore: 100 - offset,
+  };
+}
+
+function addPathFromCoordinates(
+  graph: EnrichedGraph,
+  prefix: string,
+  coordinates: Coordinate[],
+  osmWayIdBase: number,
+  edgeLengthKm: number
+): SolverPath {
+  const nodeIds = coordinates.map((_, index) => `${prefix}-${index}`);
+  const edgeIds: string[] = [];
+
+  coordinates.forEach((coordinate, index) => {
+    graph.nodes.set(`${prefix}-${index}`, {
+      id: `${prefix}-${index}`,
+      lat: coordinate.lat,
+      lng: coordinate.lng,
+      edges: index < coordinates.length - 1 ? [`${prefix}-${index}-${index + 1}`] : [],
+    });
+  });
+
+  for (let index = 0; index < coordinates.length - 1; index += 1) {
+    const id = `${prefix}-${index}-${index + 1}`;
+    edgeIds.push(id);
+    graph.edges.set(id, {
+      id,
+      from: `${prefix}-${index}`,
+      to: `${prefix}-${index + 1}`,
+      lengthKm: edgeLengthKm,
+      highway: "path",
+      surface: "ground",
+      osmWayId: osmWayIdBase + index,
+      score: 0.8,
+    });
+  }
+
+  return {
+    nodeIds,
+    edgeIds,
+    distanceKm: edgeIds.length * edgeLengthKm,
+    totalScore: 100,
+  };
+}
+
+function transitionToWoodsIntent(overrides: Partial<RouteIntent> = {}): RouteIntent {
+  return {
+    type: "transition_to_woods",
+    strategy: "transition_to_woods",
+    targetDistanceKm: 15,
+    targetElevationM: 0,
+    targetComponents: [],
+    distancePolicy: { mode: "strict" },
+    maxPavedRatio: 0.42,
+    maxBusyRoadRatio: 0.08,
+    maxRepeatEdgeRatio: 0.04,
+    maxGeometryOverlapRatio: 0.12,
+    cleanReturnMode: "prefer",
+    timeBudgetMs: 4500,
+    beamBudget: { beamWidth: 20, maxIterations: 300, shortlistSize: 12 },
+    relaxationOrder: [],
+    userWarningsIfRelaxed: [],
+    terrainComponents: [],
+    ...overrides,
   };
 }
 
@@ -277,5 +342,71 @@ describe("postProcess candidate ranking", () => {
       candidate.edgeDiagnostics?.every((edge) => edge.surface === "asphalt")
     );
     expect(scenicPavedCandidate?.quality?.scenicPavedRatio).toBe(1);
+  });
+
+  it("keeps a clean transition-to-woods trail candidate in the dense-graph shortlist ahead of higher-score self-intersecting paths", async () => {
+    const graph: EnrichedGraph = {
+      nodes: new Map(),
+      edges: new Map(),
+      center: { lat: 48.4, lng: 2.7 },
+      radiusKm: 12,
+    };
+    const dirtyGeometry: Coordinate[] = [
+      { lat: 48.400, lng: 2.700 },
+      { lat: 48.420, lng: 2.720 },
+      { lat: 48.400, lng: 2.720 },
+      { lat: 48.420, lng: 2.700 },
+      { lat: 48.410, lng: 2.695 },
+      { lat: 48.410, lng: 2.725 },
+    ];
+    const cleanGeometry: Coordinate[] = [
+      { lat: 48.400, lng: 2.700 },
+      { lat: 48.405, lng: 2.705 },
+      { lat: 48.410, lng: 2.710 },
+      { lat: 48.415, lng: 2.715 },
+      { lat: 48.420, lng: 2.720 },
+      { lat: 48.425, lng: 2.725 },
+    ];
+    const dirtyPaths = Array.from({ length: 28 }, (_, index) => ({
+      ...addPathFromCoordinates(graph, `dirty-${index}`, dirtyGeometry, 1000 + index * 10, 3),
+      totalScore: 300 - index,
+    }));
+    const cleanPath = {
+      ...addPathFromCoordinates(graph, "clean", cleanGeometry, 9000, 3),
+      totalScore: 20,
+    };
+
+    // Force the transition-to-woods dense-graph cap to 28, matching the Fontainebleau artifact.
+    while (graph.edges.size <= 1800) {
+      const index = graph.edges.size;
+      graph.edges.set(`filler-${index}`, {
+        id: `filler-${index}`,
+        from: "unused-a",
+        to: "unused-b",
+        lengthKm: 0.01,
+        highway: "path",
+        osmWayId: 50_000 + index,
+        score: 0.1,
+      });
+    }
+
+    const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+    const nodeElevation = new Map(Array.from(graph.nodes.keys()).map((id) => [id, 100]));
+
+    const candidates = await postProcess(
+      [...dirtyPaths, cleanPath],
+      graph,
+      { lat: 48.4, lng: 2.7 },
+      trailProfile,
+      15,
+      0,
+      nodeElevation,
+      new Set(),
+      transitionToWoodsIntent()
+    );
+
+    expect(candidates.some((candidate) =>
+      candidate.edgeDiagnostics?.every((edge) => Number(edge.osmWayId) >= 9000)
+    )).toBe(true);
   });
 });

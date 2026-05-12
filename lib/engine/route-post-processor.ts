@@ -19,6 +19,7 @@ import {
   computeLoopScore,
 } from "../route-generator-legacy";
 import { assessRouteQuality } from "./route-quality";
+import { computeRouteGeometryMetrics } from "./route-geometry-metrics";
 import { orderCandidatesByHardGates } from "./route-gate-selector";
 import type { RouteIntent, TerrainComponent } from "./terrain-planner";
 
@@ -73,6 +74,18 @@ function quickPavedRatio(path: SolverPath, graph: EnrichedGraph): number {
   return pavedKm / Math.max(totalKm, 0.1);
 }
 
+function estimatePreShortlistGeometryPenalty(
+  path: SolverPath,
+  graph: EnrichedGraph,
+  routeIntent?: RouteIntent
+): number {
+  if (routeIntent?.type !== "forest_loop" && routeIntent?.type !== "transition_to_woods") return 0;
+  const coordinates = buildRouteCoordinates(path, graph);
+  const geometry = computeRouteGeometryMetrics(coordinates, path.distanceKm);
+  const excessSelfIntersections = Math.max(0, geometry.selfIntersectionCount - 1);
+  return geometry.selfIntersectionCount * 1.5 + excessSelfIntersections * 12 + geometry.geometryOverlapRatio * 2;
+}
+
 function rankPathsForPostProcess(
   paths: SolverPath[],
   targetDistanceKm: number,
@@ -89,8 +102,14 @@ function rankPathsForPostProcess(
     .sort((a, b) => {
       const distancePenaltyA = Math.abs(a.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
       const distancePenaltyB = Math.abs(b.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
-      const scoreA = a.totalScore / Math.max(a.distanceKm, 0.1) - distancePenaltyA * 2 - quickPavedRatio(a, graph) * pavementPenaltyWeight;
-      const scoreB = b.totalScore / Math.max(b.distanceKm, 0.1) - distancePenaltyB * 2 - quickPavedRatio(b, graph) * pavementPenaltyWeight;
+      const scoreA = a.totalScore / Math.max(a.distanceKm, 0.1)
+        - distancePenaltyA * 2
+        - quickPavedRatio(a, graph) * pavementPenaltyWeight
+        - estimatePreShortlistGeometryPenalty(a, graph, routeIntent);
+      const scoreB = b.totalScore / Math.max(b.distanceKm, 0.1)
+        - distancePenaltyB * 2
+        - quickPavedRatio(b, graph) * pavementPenaltyWeight
+        - estimatePreShortlistGeometryPenalty(b, graph, routeIntent);
       return scoreB - scoreA;
     })
     .slice(0, limit);
