@@ -297,6 +297,39 @@ export interface RejectedRouteCandidatesDiagnostics {
   topCandidates: RejectedRouteCandidateDebugSummary[];
 }
 
+export type TerrainContextSource = 'ign_poc_fixture' | 'ign_cache' | 'none';
+export type TerrainContextLandcoverClass = 'forest' | 'park' | 'grassland' | 'water_corridor' | 'urban' | 'agriculture' | 'unknown';
+export type TerrainContextConfidence = 'low' | 'medium' | 'high';
+
+export interface TerrainContextSignals {
+  source: TerrainContextSource;
+  landcoverClass?: TerrainContextLandcoverClass;
+  naturalContextScore: number;
+  artificializationScore: number;
+  forestProximityM?: number;
+  parkProximityM?: number;
+  waterProximityM?: number;
+  slopeMeanPct?: number;
+  slopeMaxPct?: number;
+  ignPathProximityM?: number;
+  confidence: TerrainContextConfidence;
+  warnings: string[];
+}
+
+export interface TerrainContextFeature {
+  type: 'Feature';
+  properties: Partial<TerrainContextSignals>;
+  geometry: {
+    type: 'Polygon';
+    coordinates: [number, number][][];
+  };
+}
+
+export interface TerrainContextFeatureCollection {
+  type: 'FeatureCollection';
+  features: TerrainContextFeature[];
+}
+
 export interface RouteEdgeDiagnostic {
   /** Position in the candidate path edge list */
   index: number;
@@ -322,6 +355,7 @@ export interface RouteEdgeDiagnostic {
   ref: string | null;
   componentId: string | null;
   scoreReason: string | null;
+  terrainContext?: TerrainContextSignals;
   flags: {
     trail: boolean;
     paved: boolean;
@@ -641,6 +675,11 @@ export interface EnrichedEdge {
   scoreReason?: string;
   osmWayId: number;
   score: number;
+  /** Optional original edge endpoints for offline fixture/context enrichment. */
+  fromCoordinate?: Coordinate;
+  toCoordinate?: Coordinate;
+  /** Diagnostic-only terrain context from offline/open fixtures. Never rewrites OSM surface semantics. */
+  terrainContext?: TerrainContextSignals;
 }
 
 export interface EnrichedGraph {

@@ -51,6 +51,13 @@ describe("route benchmark scripts", () => {
     expect(cases).toEqual(requiredIds);
   });
 
+  it("exposes an offline IGN POC command without route generation network calls", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+    const command = packageJson.scripts["ign:poc"];
+
+    expect(command).toBe("node scripts/run-ign-terrain-poc.mjs");
+  });
+
   it("exposes separate beta smoke and readiness unstable commands for the Tourville12 quarantine", () => {
     const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
     const betaCommand = packageJson.scripts["benchmark:routes:beta-smoke"];

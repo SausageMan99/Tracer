@@ -12,6 +12,7 @@
     "benchmark:routes:beta-smoke": "node scripts/run-route-benchmarks.mjs --case tourville-pommiers-trail-8k --case fontainebleau-trail-15k --case caen-colline-aux-oiseaux-6k-soft --case meudon-forest-trail-10k --save-artifacts --output artifacts/route-benchmark-results/beta-smoke-latest.json --artifact-dir artifacts/route-benchmark-results/beta-smoke-routes --beta-scope-report tourville12_quality_pavement_unstable",
     "benchmark:routes:readiness-unstable": "node scripts/run-route-benchmarks.mjs --case tourville-pommiers-trail-12k --save-artifacts --output artifacts/route-benchmark-results/readiness-unstable-latest.json --artifact-dir artifacts/route-benchmark-results/readiness-unstable-routes",
     "benchmark:routes:compare": "node scripts/compare-route-benchmarks.mjs",
+    "ign:poc": "node scripts/run-ign-terrain-poc.mjs",
     "release:evidence-check": "node scripts/release-evidence-check.mjs",
     "audit:osm": "node scripts/audit-osm-terrain.mjs",
     "typecheck": "tsc --noEmit",

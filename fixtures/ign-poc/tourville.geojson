@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "forest",
+        "naturalContextScore": 0.95,
+        "artificializationScore": 0.05,
+        "forestProximityM": 0,
+        "confidence": "medium"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-0.60, 49.12],
+          [-0.48, 49.12],
+          [-0.48, 49.20],
+          [-0.60, 49.20],
+          [-0.60, 49.12]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "agriculture",
+        "naturalContextScore": 0.45,
+        "artificializationScore": 0.15,
+        "confidence": "low"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-0.66, 49.10],
+          [-0.42, 49.10],
+          [-0.42, 49.22],
+          [-0.66, 49.22],
+          [-0.66, 49.10]
+        ]]
+      }
+    }
+  ]
+}

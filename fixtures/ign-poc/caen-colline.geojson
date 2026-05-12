@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "park",
+        "naturalContextScore": 0.82,
+        "artificializationScore": 0.18,
+        "parkProximityM": 0,
+        "confidence": "medium"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-0.39, 49.19],
+          [-0.36, 49.19],
+          [-0.36, 49.22],
+          [-0.39, 49.22],
+          [-0.39, 49.19]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "urban",
+        "naturalContextScore": 0.15,
+        "artificializationScore": 0.85,
+        "confidence": "medium"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [-0.43, 49.17],
+          [-0.33, 49.17],
+          [-0.33, 49.24],
+          [-0.43, 49.24],
+          [-0.43, 49.17]
+        ]]
+      }
+    }
+  ]
+}

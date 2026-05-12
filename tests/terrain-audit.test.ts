@@ -131,4 +131,40 @@ describe('terrain audit', () => {
       'Traiter les chemins sans surface comme des candidats trail si leur contexte est boisé ou rural.',
     );
   });
+
+  it('adds terrain-context diagnostics without laundering paved surfaces into natural surface ratios', () => {
+    const report = auditTerrainData([
+      edge({
+        highway: 'footway',
+        surface: 'asphalt',
+        terrainContext: {
+          source: 'ign_poc_fixture',
+          landcoverClass: 'park',
+          naturalContextScore: 0.9,
+          artificializationScore: 0.1,
+          confidence: 'medium',
+          warnings: ['EXPLICIT_PAVED_IN_NATURAL_CONTEXT'],
+        },
+      }),
+      edge({
+        highway: 'residential',
+        surface: 'concrete',
+        terrainContext: {
+          source: 'ign_poc_fixture',
+          landcoverClass: 'forest',
+          naturalContextScore: 0.8,
+          artificializationScore: 0.2,
+          confidence: 'medium',
+          warnings: ['EXPLICIT_PAVED_IN_NATURAL_CONTEXT'],
+        },
+      }),
+      edge({ highway: 'path', surface: 'ground' }),
+    ]);
+
+    expect(report.metrics.naturalSurfaceRatio).toBeCloseTo(1 / 3);
+    expect(report.metrics.terrainContextCoverageRatio).toBeCloseTo(2 / 3);
+    expect(report.metrics.highNaturalContextRatio).toBeCloseTo(2 / 3);
+    expect(report.metrics.explicitPavedInNaturalContextRatio).toBeCloseTo(2 / 3);
+    expect(report.metrics.artificializedContextRatio).toBe(0);
+  });
 });
