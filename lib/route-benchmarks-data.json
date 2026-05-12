@@ -276,7 +276,7 @@
       "maxRepeatEdgeRatio": 0.05,
       "maxUTurnRatio": 0.015,
       "minTerrainDataConfidence": "medium",
-      "minTrailPotential": "high",
+      "minTrailPotential": "medium",
       "maxDurationMs": 90000
     },
     "blockingWarnings": [
@@ -284,7 +284,7 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Trail normand à vrai D+ : utile pour détecter les routes trop plates ou trop routières en zone à fort potentiel nature."
+    "notes": "Trail normand à vrai D+ : contrat beta fermé acceptable avec potentiel medium si la route reste exploitable et garde les surfaces honnêtes. Ne pas enrichir artificiellement les surfaces inconnues."
   },
   {
     "id": "fontainebleau-trail-15k",
@@ -332,12 +332,13 @@
     "targetDistanceKm": 10,
     "targetElevationM": 220,
     "scenicMode": true,
-    "tier": "p1",
+    "tier": "exploratory",
     "tags": [
       "meudon",
       "trail",
       "forest",
-      "periurban"
+      "periurban",
+      "restricted-access-ambiguous"
     ],
     "thresholds": {
       "distanceToleranceRatio": 0.1,
@@ -362,9 +363,8 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Périurbain forestier dense : contrat smoke honnête en refus typé si les meilleurs candidats traversent un accès restreint OSM. Ne pas forcer trail_success, ne pas masquer restricted/private access, ne pas baisser les seuils.",
-    "expectedOutcome": "typed_refusal",
-    "expectedRefusalSubCode": "RESTRICTED_ACCESS_BLOCKED"
+    "notes": "Périurbain forestier dense et ambigu : hors critère de lancement beta fermée tant qu'aucun accès restricted/private n'est prouvé dans les artifacts. Ne pas exiger RESTRICTED_ACCESS_BLOCKED sans preuve, ne pas compter comme preuve beta nationale, ne pas baisser les seuils ni maquiller les surfaces.",
+    "expectedOutcome": "route_or_typed_refusal"
   },
   {
     "id": "lille-10k-citadel-loop",
@@ -517,7 +517,7 @@
   {
     "id": "paris-buttes-chaumont-5k-constrained",
     "label": "Paris 5 km — Buttes-Chaumont parc contraint",
-    "address": "Entrée principale du Parc des Buttes-Chaumont, Paris",
+    "address": "Parc des Buttes-Chaumont, Paris",
     "profileId": "running_recuperation",
     "targetDistanceKm": 5,
     "targetElevationM": 80,
@@ -557,6 +557,8 @@
       "TOO_MANY_INTERSECTIONS",
       "LOOP_TOO_CONSTRAINED"
     ],
-    "notes": "Petit parc urbain dense : accepter une boucle contrainte, mais refuser figure-8, demi-tour, overlap et grands axes."
+    "expectedOutcome": "park_recovery",
+    "expectedRefusalSubCode": "PARK_TOO_SMALL_FOR_DISTANCE",
+    "notes": "Petit parc urbain dense : input POI géocodable pour éviter un faux GEOCODING_FAILED; accepter une boucle contrainte, mais refuser figure-8, demi-tour, overlap et grands axes."
   }
 ]

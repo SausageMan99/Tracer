@@ -179,6 +179,13 @@ Initial panel should cover 8–10 cases:
 
 Pass condition is not “everything green”. Pass condition is “every output is honest”.
 
+Panel stabilization notes after RCA 2026-05-12:
+
+- Paris Buttes-Chaumont must use a geocodable POI input (`Parc des Buttes-Chaumont, Paris`) so the panel tests route behavior, not a false geocoder miss.
+- Meudon remains exploratory/restricted-access-ambiguous. Do not require `RESTRICTED_ACCESS_BLOCKED` unless artifacts prove restricted/private edges; do not count a Meudon success as national beta readiness.
+- Clécy can be accepted as a closed-beta Normandy outdoor case with medium trail potential when the route is exploitable and keeps surface metrics honest; weak OSM warnings are useful evidence but should not make the panel flaky when the engine does not emit them deterministically.
+- Caen Prairie and Lille remain visible behavior bugs/contract checks if they fail; do not hide them to manufacture a green beta panel.
+
 ## Closed beta success metrics
 
 With 15–30 testers:

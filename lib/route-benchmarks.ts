@@ -18,7 +18,7 @@ export interface RouteBenchmarkCase {
   tier?: "p0" | "p1" | "p2" | "exploratory";
   readinessStatus?: "stable" | "unstable" | "readiness_only";
   betaSmokeExcludedReason?: string;
-  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
+  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal";
   expectedRefusalSubCode?: string;
   adjustedDistanceKm?: { min: number; max: number };
   thresholds: {
@@ -122,7 +122,7 @@ export interface BenchmarkSummary {
     requestedDistanceKm?: number | null;
     adjustedDistanceKm?: number | null;
     distanceAdjustmentReason?: string | null;
-    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery";
+    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal";
     readinessStatus?: "stable" | "unstable" | "readiness_only";
     betaSmokeExcludedReason?: string;
     actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error" | "route_success";

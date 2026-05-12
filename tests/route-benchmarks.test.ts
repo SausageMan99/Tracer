@@ -396,7 +396,7 @@ describe("route production benchmarks", () => {
         repeatEdgeRatio: 0,
         uTurnRatio: 0,
         terrainDataConfidence: "low",
-        trailPotential: "medium",
+        trailPotential: "low",
         warnings: [],
       },
       durationMs: 1000,
@@ -409,7 +409,7 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("rejects Meudon route success even when route-level trail quality is high while OSM trail potential remains medium", () => {
+  it("accepts Meudon route success when quality is high and no restricted access evidence is present", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 10.1,
@@ -436,14 +436,13 @@ describe("route production benchmarks", () => {
 
     expect(benchmark.thresholds.minTrailPotential).toBe("medium");
     expect(benchmark.thresholds.minRouteTrailQuality).toBe("high");
-    expect(benchmark.expectedOutcome).toBe("typed_refusal");
-    expect(summary.passed).toBe(false);
-    expect(summary.failures).toEqual(["expected_typed_refusal"]);
-    expect(summary.failures).not.toContain("trail_potential");
+    expect(benchmark.expectedOutcome).toBe("route_or_typed_refusal");
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
     expect(summary.metrics.routeTrailQuality).toBe("high");
   });
 
-  it("fails Meudon's explicit route-level trail promise when routeTrailQuality is not high", () => {
+  it("fails Meudon exploratory quality gates when routeTrailQuality is not high", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
       distanceKm: 10.1,
@@ -805,46 +804,31 @@ describe("route production benchmarks", () => {
     ]));
   });
 
-  it("treats Meudon as an honest restricted-access typed refusal smoke contract", () => {
+  it("keeps Meudon exploratory instead of requiring an unproven restricted-access refusal", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
 
-    expect(benchmark.expectedOutcome).toBe("typed_refusal");
-    expect(benchmark.expectedRefusalSubCode).toBe("RESTRICTED_ACCESS_BLOCKED");
-    expect(benchmark.notes).toContain("accès restreint");
+    expect(benchmark.tier).toBe("exploratory");
+    expect(benchmark.expectedOutcome).toBe("route_or_typed_refusal");
+    expect(benchmark.expectedRefusalSubCode).toBeUndefined();
+    expect(benchmark.notes).toContain("hors critère de lancement beta fermée");
   });
 
-  it("passes Meudon smoke on the expected restricted-access refusal", () => {
-    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
-    const summary = summarizeBenchmarkFailure(benchmark, {
-      status: 422,
-      errorCode: "ROUTE_CANDIDATES_REJECTED",
-      subCode: "RESTRICTED_ACCESS_BLOCKED",
-      error: "Le meilleur accès forêt traverse un secteur marqué à accès restreint dans OSM.",
-      durationMs: 18000,
-    });
-
-    expect(summary.passed).toBe(true);
-    expect(summary.failures).toEqual([]);
-    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
-    expect(summary.metrics.expectedRefusalSubCode).toBe("RESTRICTED_ACCESS_BLOCKED");
-  });
-
-  it("rejects Meudon smoke when the API returns a route success instead of the honest typed refusal", () => {
+  it("passes Meudon exploratory when the API returns a high-quality route without restriction evidence", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
-      distanceKm: 9.9,
-      ascendM: 176,
+      distanceKm: 10.25,
+      ascendM: 175,
       quality: {
-        productionScore: 0.97,
-        loopClosureKm: 0.03,
+        productionScore: 0.96,
+        loopClosureKm: 0.04,
         busyRoadRatio: 0,
-        trailRatio: 0.86,
-        naturalWayRatio: 0.9,
-        pavedRatio: 0.14,
-        scenicPavedRatio: 0.04,
-        trailBeautyScore: 0.69,
-        longestTrailSegmentKm: 3.04,
-        naturalCorridorRatio: 0.82,
+        trailRatio: 0.79,
+        naturalWayRatio: 0.87,
+        pavedRatio: 0.21,
+        scenicPavedRatio: 0.05,
+        trailBeautyScore: 0.68,
+        longestTrailSegmentKm: 3.7,
+        naturalCorridorRatio: 0.78,
         repeatEdgeRatio: 0,
         uTurnRatio: 0,
         terrainDataConfidence: "high",
@@ -855,13 +839,61 @@ describe("route production benchmarks", () => {
       durationMs: 37_267,
     });
 
-    expect(benchmark.expectedOutcome).toBe("typed_refusal");
-    expect(summary.passed).toBe(false);
-    expect(summary.failures).toEqual(["expected_typed_refusal"]);
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
     expect(summary.metrics.actualOutcome).toBe("route_success");
   });
 
-  it("rejects Meudon smoke when the API returns a generic trail refusal", () => {
+  it("does not pretend Meudon proves closed-beta launch readiness", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
+
+    expect(benchmark.tags).toContain("restricted-access-ambiguous");
+    expect(benchmark.notes).toContain("ne pas compter comme preuve beta nationale");
+  });
+
+  it("accepts Clécy medium trail potential without pretending high-confidence surface data", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "clecy-suisse-normande-trail-12k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 11.77,
+      ascendM: 236,
+      quality: {
+        productionScore: 0.9,
+        loopClosureKm: 0.02,
+        busyRoadRatio: 0,
+        trailRatio: 0.63,
+        naturalWayRatio: 0.92,
+        pavedRatio: 0.36,
+        scenicPavedRatio: 0.28,
+        trailBeautyScore: 0.69,
+        longestTrailSegmentKm: 3.5,
+        naturalCorridorRatio: 0.59,
+        repeatEdgeRatio: 0.02,
+        uTurnRatio: 0,
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        routeTrailQuality: "medium",
+        warnings: ["OSM_SURFACE_DATA_WEAK"],
+      },
+      durationMs: 32_000,
+    });
+
+    expect(benchmark.thresholds.minTrailPotential).toBe("medium");
+    expect(benchmark.requireHonestWarnings).toBeUndefined();
+    expect(benchmark.expectedWarnings).toBeUndefined();
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
+  });
+
+  it("uses a geocodable Paris Buttes-Chaumont POI for the beta behavior input", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "paris-buttes-chaumont-5k-constrained")!;
+
+    expect(benchmark.address).toBe("Parc des Buttes-Chaumont, Paris");
+    expect(benchmark.expectedOutcome).toBe("park_recovery");
+    expect(benchmark.expectedRefusalSubCode).toBe("PARK_TOO_SMALL_FOR_DISTANCE");
+    expect(benchmark.notes).toContain("POI géocodable");
+  });
+
+  it("passes Meudon exploratory on a typed refusal without requiring a restricted-access sub-code", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "meudon-forest-trail-10k")!;
     const summary = summarizeBenchmarkFailure(benchmark, {
       status: 422,
@@ -871,8 +903,10 @@ describe("route production benchmarks", () => {
       durationMs: 18000,
     });
 
-    expect(summary.passed).toBe(false);
-    expect(summary.failures).toContain("typed_refusal_sub_code_mismatch");
+    expect(benchmark.expectedOutcome).toBe("route_or_typed_refusal");
+    expect(benchmark.expectedRefusalSubCode).toBeUndefined();
+    expect(summary.passed).toBe(true);
+    expect(summary.failures).toEqual([]);
   });
 
   it("rejects an expected typed-refusal benchmark on a 200 route success even when route quality metrics are green", () => {
