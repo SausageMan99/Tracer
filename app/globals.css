@@ -405,6 +405,23 @@ input[type="range"].dark-slider::-moz-range-thumb {
 .lab-steps span { font-family: var(--font-ibm-plex-mono), monospace; color: var(--accent-lime); font-size: 10px; letter-spacing: 0.18em; margin-bottom: 24px; }
 .lab-steps strong { font-family: var(--font-fraunces), serif; color: var(--text-primary); font-size: 32px; font-weight: 500; letter-spacing: -0.05em; }
 .lab-steps p { color: var(--text-muted); margin: 8px 0 0; line-height: 1.5; }
+
+:focus-visible { outline: 2px solid rgba(215,232,176,0.78); outline-offset: 3px; }
+::selection { background: rgba(215,232,176,0.28); color: var(--text-primary); }
+
+.tf-result-cartouche { overflow: hidden; border: 1px solid rgba(200,214,185,0.16); border-radius: var(--radius-card); background: linear-gradient(180deg, rgba(232,223,200,0.055), rgba(17,26,21,0.82)); box-shadow: inset 0 0 0 1px rgba(7,17,13,0.48); }
+.tf-result-cartouche-map { position: relative; height: 150px; background: radial-gradient(circle at 52% 45%, rgba(215,232,176,0.12), transparent 48%), rgba(7,17,13,0.58); }
+.tf-result-cartouche-map::before { content: ""; position: absolute; inset: 0; background-image: var(--topo-lines); background-size: 210px 210px; opacity: 0.48; }
+.tf-result-cartouche svg { position: relative; z-index: 1; width: 100%; height: 100%; color: var(--accent-lime); overflow: visible; }
+.cartouche-contour { fill: none; stroke: rgba(232,223,200,0.2); stroke-width: 1; }
+.cartouche-path-muted { fill: none; stroke: rgba(200,214,185,0.38); stroke-width: 1.2; stroke-dasharray: 5 10; stroke-linecap: round; animation: vein-scan 6s ease-in-out infinite; }
+.cartouche-path-muted-b { animation-delay: 1.7s; opacity: 0.58; }
+.cartouche-route { fill: none; stroke: var(--accent-lime); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 900; stroke-dashoffset: 900; filter: drop-shadow(0 0 14px rgba(215,232,176,0.28)); animation: route-draw 2.8s 0.2s var(--ease-out-expo) forwards; }
+.tf-result-cartouche circle { fill: var(--accent-lime); }
+.tf-result-cartouche-body { padding: 14px; border-top: 1px solid rgba(200,214,185,0.12); }
+.tf-result-cartouche-body p { margin: 0 0 5px; font-family: var(--font-ibm-plex-mono), monospace; color: var(--accent-sage); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
+.tf-result-cartouche-body strong { display: block; color: var(--text-primary); font-family: var(--font-fraunces), serif; font-size: 28px; font-weight: 500; letter-spacing: -0.045em; line-height: 1; }
+.tf-result-cartouche-body span { display: block; margin-top: 7px; color: var(--text-dim); font-family: var(--font-ibm-plex-mono), monospace; font-size: 10px; line-height: 1.45; text-transform: uppercase; letter-spacing: 0.08em; }
 @keyframes ghost-fade { 0%, 100% { opacity: 0.12; } 45% { opacity: 0.42; } 70% { opacity: 0.05; } }
 @keyframes vein-scan { 0%, 100% { stroke-dashoffset: 0; opacity: 0.22; } 50% { stroke-dashoffset: -48; opacity: 0.62; } }
 @media (max-width: 980px) {
@@ -415,4 +432,9 @@ input[type="range"].dark-slider::-moz-range-thumb {
   .composition-lab { min-height: auto; padding: 10px; }
   .lab-map { min-height: 300px; }
   .lab-steps strong { font-size: 26px; }
+  .tf-result-cartouche-map { height: 132px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: 0.001ms !important; }
+  .cartouche-route, .lab-choice, .living-route { stroke-dashoffset: 0 !important; }
 }

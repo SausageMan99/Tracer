@@ -175,7 +175,9 @@ export default function SessionForm() {
           setMapCenter({ lat: latitude, lng: longitude });
           return;
         }
-        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}`)
+        const geocodeUrl = new URL(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json`);
+        geocodeUrl.searchParams.set("access_token", token);
+        fetch(geocodeUrl.toString())
           .then((r) => r.json())
           .then((data) => {
             const placeName = data.features?.[0]?.place_name ?? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;

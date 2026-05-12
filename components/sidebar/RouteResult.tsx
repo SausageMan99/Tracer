@@ -103,6 +103,37 @@ function MiniPanel({ children, label }: { children: React.ReactNode; label?: str
   );
 }
 
+function ResultCartouche({
+  distanceKm,
+  ascendM,
+  score,
+}: {
+  distanceKm: number;
+  ascendM: number;
+  score: number;
+}) {
+  return (
+    <div className="tf-result-cartouche" aria-label="Aperçu cartographique du résultat">
+      <div className="tf-result-cartouche-map" aria-hidden="true">
+        <svg viewBox="0 0 360 220" preserveAspectRatio="none">
+          <path className="cartouche-contour" d="M-12 58 C62 18 126 22 188 58 C248 92 304 86 374 46" />
+          <path className="cartouche-contour" d="M-18 116 C54 82 116 80 182 120 C244 158 304 152 378 106" />
+          <path className="cartouche-contour" d="M-8 176 C64 134 140 148 200 178 C260 208 316 198 374 156" />
+          <path className="cartouche-path-muted" d="M48 166 C96 118 136 132 178 86 C220 42 268 50 318 76" />
+          <path className="cartouche-path-muted cartouche-path-muted-b" d="M40 64 C104 88 136 112 184 118 C236 124 278 150 326 186" />
+          <path className="cartouche-route" d="M82 158 C42 112 72 56 144 50 C222 42 296 78 300 132 C304 184 188 202 116 178 C102 174 90 166 82 158 Z" />
+          <circle cx="82" cy="158" r="4.5" />
+        </svg>
+      </div>
+      <div className="tf-result-cartouche-body">
+        <p>Boucle terrain stabilisée</p>
+        <strong>{distanceKm.toFixed(1)} km · {ascendM.toFixed(0)} m D+</strong>
+        <span>indice beta {Math.round(score * 100)} · GPX exportable après vérification</span>
+      </div>
+    </div>
+  );
+}
+
 function RefusalFeedbackButtons({
   generationId,
   errorCode,
@@ -343,6 +374,8 @@ export default function RouteResult() {
       </div>
 
       <div className="px-4 md:px-6" style={{ paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <ResultCartouche distanceKm={best.distanceKm} ascendM={best.ascendM} score={best.totalScore} />
+
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <button
             onClick={handleDownloadGPX}

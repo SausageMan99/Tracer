@@ -41,14 +41,14 @@ const SLOPE_COLOR_EXPR = [
   "interpolate",
   ["linear"],
   ["get", "slope"],
-  -8,  "#15803d",
-  -3,  "#22c55e",
-  -0.5,"#86efac",
-   0.5,"#cbd5e1",
-   4,  "#fde047",
-   7,  "#fb923c",
-  10,  "#ef4444",
-  14,  "#7f1d1d",
+  -8,  "#6D8A5F",
+  -3,  "#9FB48C",
+  -0.5,"#D7E8B0",
+   0.5,"#E8DFC8",
+   4,  "#C9A46F",
+   7,  "#A86F43",
+  10,  "#B85A4E",
+  14,  "#6E302B",
 ] as unknown as mapboxgl.Expression;
 
 // ── Create an arrow image via canvas ─────────────────────────────────────────
@@ -91,7 +91,7 @@ function ensureLayers(map: mapboxgl.Map) {
     type: "line",
     source: "route-full",
     layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-    paint: { "line-color": "#0f172a", "line-width": 7, "line-opacity": 0.5 },
+    paint: { "line-color": "#07110D", "line-width": 8, "line-opacity": 0.64 },
   });
 
   map.addLayer({
@@ -392,7 +392,7 @@ export default function MapView() {
     const storeState = useAppStore.getState();
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: "mapbox://styles/mapbox/outdoors-v12",
       center: [storeState.mapCenter.lng, storeState.mapCenter.lat],
       zoom: storeState.mapZoom,
     });
@@ -534,7 +534,7 @@ export default function MapView() {
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(5,8,6,0.48)",
+              background: "radial-gradient(circle at 50% 45%, rgba(215,232,176,0.12), rgba(5,8,6,0.62) 58%, rgba(5,8,6,0.78))",
             }}
           />
           {/* Radar pulse rings */}
@@ -588,7 +588,7 @@ export default function MapView() {
               opacity: 0.9,
             }}
           >
-            Génération en cours
+            Lecture du terrain
           </p>
         </div>
       )}
@@ -614,9 +614,9 @@ export default function MapView() {
               Couleurs de pente
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#86efac" }} />plat / roulant</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#fde047" }} />montée modérée</span>
-              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#ef4444" }} />montée raide</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#D7E8B0" }} />plat / roulant</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#C9A46F" }} />montée modérée</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#B85A4E" }} />montée raide</span>
             </div>
           </div>
         </div>

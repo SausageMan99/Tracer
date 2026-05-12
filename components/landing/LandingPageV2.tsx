@@ -196,7 +196,7 @@ export default function LandingPageV2() {
             TrailForge lit les chemins, le relief et les zones naturelles autour de ton départ pour composer une boucle qui a du caractère.
           </p>
           <div className="hero-actions">
-            <Link href="/app" className="primary-action">Dessiner une boucle</Link>
+            <Link href="/app" className="primary-action">Dessiner la boucle</Link>
             <span>pas de dashboard · pas de route parfaite · une trace honnête à éprouver dehors</span>
           </div>
         </div>
@@ -274,7 +274,7 @@ export default function LandingPageV2() {
       <section className="tf-final-cta">
         <TrailForgeMark />
         <h2>Une carte qui donne envie de sortir, pas un SaaS qui parle d’IA.</h2>
-        <Link href="/app" className="primary-action">Tester le nouveau flow</Link>
+        <Link href="/app" className="primary-action">Dessiner la boucle</Link>
       </section>
     </main>
   );
