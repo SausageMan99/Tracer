@@ -5,6 +5,7 @@ import type {
   RouteGenerationDiagnostics,
   RouteGenerationStageTiming,
   RouteRequest,
+  SessionProfile,
 } from "../types";
 import { PROFILES_BY_ID } from "../session-profiles";
 import { geocodeAddress, haversineKm } from "../route-generator-legacy";
@@ -85,6 +86,35 @@ function inferSolverEmptyReason(diagnostics?: SolverEmptyDiagnostics): string {
   if ((diagnostics.prunedDistanceBudget ?? 0) > 0) return "DISTANCE_BUDGET_EXHAUSTED";
   if ((diagnostics.noExpandableEdges ?? 0) > 0) return "NO_EXPANDABLE_EDGES";
   return "UNKNOWN_EMPTY";
+}
+
+export interface SolverEmptyErrorContractInput {
+  profile: SessionProfile;
+  routeIntent?: RouteGenerationDiagnostics["terrain"]["routeIntent"];
+  graphNodeCount: number;
+  graphEdgeCount: number;
+  emptyReason: string;
+}
+
+export function determineSolverEmptyErrorContract(input: SolverEmptyErrorContractInput): {
+  code: "NO_ROAD_NETWORK" | "ROUTE_CANDIDATES_REJECTED";
+  subCode: "SOLVER_EMPTY" | "URBAN_NATURE_PROMISE_UNMET";
+} {
+  const hasHealthyGraph = input.graphNodeCount > 0 && input.graphEdgeCount > 0;
+  const isPavedCapExhausted = input.emptyReason === "PAVED_CAP_EXHAUSTED";
+  const isUrbanRunningContract = input.profile.sport === "running" && (
+    input.profile.sessionType !== "trail" ||
+    input.routeIntent?.type === "urban_nature_loop" ||
+    input.routeIntent?.strategy === "urban_nature_loop" ||
+    input.routeIntent?.type === "park_loop" ||
+    input.routeIntent?.strategy === "park_loop"
+  );
+
+  if (hasHealthyGraph && isPavedCapExhausted && isUrbanRunningContract) {
+    return { code: "ROUTE_CANDIDATES_REJECTED", subCode: "URBAN_NATURE_PROMISE_UNMET" };
+  }
+
+  return { code: "NO_ROAD_NETWORK", subCode: "SOLVER_EMPTY" };
 }
 
 function buildGenerationDiagnostics(args: {
@@ -242,8 +272,16 @@ export async function generateRouteV2(
   ));
 
   if (solverPaths.length === 0) {
-    throw new RouteGenerationError("NO_ROAD_NETWORK", {
-      subCode: "SOLVER_EMPTY",
+    const emptyReason = inferSolverEmptyReason(solverEmptyDiagnostics);
+    const errorContract = determineSolverEmptyErrorContract({
+      profile,
+      routeIntent,
+      graphNodeCount: graph.nodes.size,
+      graphEdgeCount: graph.edges.size,
+      emptyReason,
+    });
+    throw new RouteGenerationError(errorContract.code, {
+      subCode: errorContract.subCode,
       generationDiagnostics: includeGenerationDiagnostics
         ? buildGenerationDiagnostics({
             request,
@@ -255,7 +293,7 @@ export async function generateRouteV2(
             routeIntent,
             solverPathCount: 0,
             candidateCount: 0,
-            emptyReason: inferSolverEmptyReason(solverEmptyDiagnostics),
+            emptyReason,
             emptyDiagnostics: solverEmptyDiagnostics,
           })
         : undefined,

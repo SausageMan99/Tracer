@@ -13,6 +13,7 @@ import type { RouteIntent } from "@/lib/engine/terrain-planner";
 import type { RouteCandidate } from "@/lib/types";
 
 const trailProfile = PROFILES_BY_ID.get("running_trail")!;
+const enduranceProfile = PROFILES_BY_ID.get("running_endurance")!;
 const recoveryProfile = PROFILES_BY_ID.get("running_recuperation")!;
 
 function quality(overrides: Partial<RouteQualityMetrics> = {}): RouteQualityMetrics {
@@ -90,6 +91,40 @@ function intent(overrides: Partial<RouteIntent> = {}): RouteIntent {
 }
 
 describe("route hard-gate selector", () => {
+
+  it("classifies paved urban-nature endurance rejections as urban contract misses, not trail promise misses", () => {
+    const pavedUrbanCandidate = candidate(80, {
+      distanceKm: 10.1,
+      ascendM: 80,
+      quality: {
+        productionScore: 0.81,
+        pavedRatio: 0.76,
+        naturalWayRatio: 0.24,
+        trailBeautyScore: 0.42,
+        longestTrailSegmentKm: 0.6,
+        naturalCorridorRatio: 0.24,
+        trailPotential: "medium",
+        routeTrailQuality: "low",
+      },
+    });
+    const context = {
+      targetDistanceKm: 10,
+      targetElevationM: 80,
+      profile: enduranceProfile,
+      routeIntent: intent({
+        type: "urban_nature_loop",
+        strategy: "urban_nature_loop",
+        targetDistanceKm: 10,
+        targetElevationM: 80,
+        maxPavedRatio: 0.68,
+        maxRepeatEdgeRatio: 0.06,
+        maxGeometryOverlapRatio: 0.18,
+      }),
+    };
+
+    expect(evaluateRouteHardGates(pavedUrbanCandidate, context).violations.map((violation) => violation.key)).toContain("paved_ratio");
+    expect(rejectionSubCodeForCandidate(pavedUrbanCandidate, context)).toBe("URBAN_NATURE_PROMISE_UNMET");
+  });
 
   it("prefers clean adjusted recovery park distance over dirty exact-distance candidates", () => {
     const cleanAdjusted = candidate(50, {

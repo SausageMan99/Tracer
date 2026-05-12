@@ -1139,6 +1139,22 @@ describe("route production benchmarks", () => {
     expect(summary.generationDiagnostics).toEqual(generationDiagnostics);
   });
 
+  it("allows Caen Prairie and Lille Citadelle to pass as honest urban-nature typed refusals", () => {
+    for (const id of ["caen-prairie-8k-mixed", "lille-10k-citadel-loop"]) {
+      const benchmark = BENCHMARK_CASES.find((item) => item.id === id)!;
+
+      expect(benchmark.expectedOutcome).toBe("route_or_typed_refusal");
+      expect(benchmark.expectedRefusalSubCode).toBe("URBAN_NATURE_PROMISE_UNMET");
+      expect(summarizeBenchmarkFailure(benchmark, {
+        status: 422,
+        errorCode: "ROUTE_CANDIDATES_REJECTED",
+        subCode: "URBAN_NATURE_PROMISE_UNMET",
+        error: "urban contract miss",
+        durationMs: 10_000,
+      }).passed).toBe(true);
+    }
+  });
+
   it("requires an honest OSM warning on the poor-data benchmark", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "osm-poor-rural-trail-8k")!;
     const summary = summarizeBenchmarkResult(benchmark, {

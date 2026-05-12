@@ -196,7 +196,9 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Cas périurbain normand : exploiter Prairie/Orne sans dériver vers de grands axes du centre."
+    "notes": "Cas périurbain normand : exploiter Prairie/Orne sans dériver vers de grands axes du centre.",
+    "expectedOutcome": "route_or_typed_refusal",
+    "expectedRefusalSubCode": "URBAN_NATURE_PROMISE_UNMET"
   },
   {
     "id": "caen-colline-aux-oiseaux-6k-soft",
@@ -399,7 +401,9 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Cas Reddit critique : éviter une trace 7–8 km et favoriser Citadelle/canal plutôt que centre dense."
+    "notes": "Cas Reddit critique : éviter une trace 7–8 km et favoriser Citadelle/canal plutôt que centre dense.",
+    "expectedOutcome": "route_or_typed_refusal",
+    "expectedRefusalSubCode": "URBAN_NATURE_PROMISE_UNMET"
   },
   {
     "id": "paris-19-canal-running",

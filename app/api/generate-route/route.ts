@@ -86,6 +86,7 @@ const DEFAULT_NO_ROAD_NETWORK_MSG =
 const ROUTE_CANDIDATES_REJECTED_MESSAGES: Record<string, string> = {
   PARK_TOO_SMALL_FOR_DISTANCE: "Le parc est trop contraint pour tenir cette distance sans dépasser la promesse bitume/sécurité. Essayez une distance plus courte.",
   RESTRICTED_ACCESS_BLOCKED: "Le meilleur accès forêt traverse un secteur marqué à accès restreint dans OSM. Départ refusé pour cette beta : choisissez une autre entrée de forêt.",
+  URBAN_NATURE_PROMISE_UNMET: "Le secteur est routable, mais aucune boucle urban-nature assez honnête n'a été trouvée pour cette distance. Essayez une distance plus courte ou un départ plus proche du parc/canal.",
   TRAIL_PROMISE_UNMET: "Aucune boucle stable ne respecte assez les promesses terrain/sécurité pour cette beta. Essayez une distance plus courte ou un autre départ.",
 };
 

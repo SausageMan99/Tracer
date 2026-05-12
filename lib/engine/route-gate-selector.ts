@@ -250,6 +250,16 @@ function routeTrailQualityLabel(rank: number): "medium" | "high" {
   return rank >= 2 ? "high" : "medium";
 }
 
+function isUrbanNatureContract(context: RouteGateSelectionContext): boolean {
+  return context.profile.sport === "running" && (
+    context.profile.sessionType !== "trail" ||
+    context.routeIntent?.type === "urban_nature_loop" ||
+    context.routeIntent?.strategy === "urban_nature_loop" ||
+    context.routeIntent?.type === "park_loop" ||
+    context.routeIntent?.strategy === "park_loop"
+  );
+}
+
 function addMaxViolation(
   violations: RouteHardGateViolation[],
   key: RouteHardGateKey,
@@ -468,6 +478,9 @@ export function rejectionSubCodeForCandidate(
     (pavedViolation != null || distanceViolation != null || compactnessViolation != null)
   ) {
     return "PARK_TOO_SMALL_FOR_DISTANCE";
+  }
+  if (isUrbanNatureContract(context) && (pavedViolation != null || context.profile.sessionType !== "trail")) {
+    return "URBAN_NATURE_PROMISE_UNMET";
   }
   return "TRAIL_PROMISE_UNMET";
 }
