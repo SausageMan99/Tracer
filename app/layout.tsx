@@ -1,48 +1,40 @@
 import type { Metadata, Viewport } from "next";
 import {
-  Playfair_Display,
-  Syne,
-  Inter,
-  JetBrains_Mono,
+  Fraunces,
+  Instrument_Sans,
+  IBM_Plex_Mono,
 } from "next/font/google";
 import "./globals.css";
 import SmoothScrollProvider from "@/components/providers/SmoothScrollProvider";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 
-const playfairDisplay = Playfair_Display({
+const fraunces = Fraunces({
   subsets: ["latin"],
-  weight: ["400", "700"],
+  weight: ["400", "500", "600", "700"],
   style: ["normal", "italic"],
-  variable: "--font-playfair",
+  variable: "--font-fraunces",
   display: "swap",
 });
 
-const syne = Syne({
+const instrumentSans = Instrument_Sans({
   subsets: ["latin"],
-  weight: ["400", "600", "700"],
-  variable: "--font-syne",
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-instrument",
   display: "swap",
 });
 
-const inter = Inter({
+const ibmPlexMono = IBM_Plex_Mono({
   subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-inter",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
-  variable: "--font-jetbrains",
+  weight: ["400", "500", "600"],
+  variable: "--font-ibm-plex-mono",
   display: "swap",
 });
 
 export const metadata: Metadata = {
-  title: "TrailForge — Boucles trail prêtes pour ta montre",
+  title: "TrailForge — Laisse le terrain dessiner ta sortie",
   description:
-    "Crée une boucle trail fiable autour d’un point de départ. Distance, D+, surface et export GPX pour Garmin, COROS, Suunto ou Strava.",
+    "TrailForge compose des boucles GPX depuis le terrain : chemins, relief, zones naturelles et export montre GPS.",
   icons: { icon: "/favicon.ico" },
 };
 
@@ -60,7 +52,7 @@ export default function RootLayout({
     <html
       lang="fr"
       suppressHydrationWarning
-      className={`${playfairDisplay.variable} ${syne.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`${fraunces.variable} ${instrumentSans.variable} ${ibmPlexMono.variable}`}
     >
       <body className="antialiased">
         <SmoothScrollProvider>{children}</SmoothScrollProvider>

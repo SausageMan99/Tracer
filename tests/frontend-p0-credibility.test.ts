@@ -16,7 +16,7 @@ describe("TrailForge front-end P0 credibility copy", () => {
 
     expect(appSources).not.toMatch(/phase 1|Phase 1|promesse magique|signal terrain|santé de (?:la )?boucle|terrain décide|Atelier trail|Modifier le brief/);
     expect(appSources).toContain("Boucle trail courte");
-    expect(appSources).toContain("Crée une boucle trail GPX autour de ton départ.");
+    expect(appSources).toContain("Laisse le terrain dessiner une boucle GPX autour de ton départ.");
     expect(appSources).toContain("Paramètres");
     expect(appSources).toContain("Style de sortie");
     expect(appSources).toContain("Préférence terrain");
@@ -32,7 +32,7 @@ describe("TrailForge front-end P0 credibility copy", () => {
 
     expect(sessionForm).toContain("TrailForge cherche une boucle GPX courte autour de ton départ. La fiabilité sera affichée avant export.");
     expect(sessionForm).not.toContain("Avant génération");
-    expect(sessionForm).toContain("Chercher une boucle");
+    expect(sessionForm).toContain("Dessiner la boucle");
   });
 });
 

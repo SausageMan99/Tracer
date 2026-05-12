@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import TrailForgeMark from "@/components/brand/TrailForgeMark";
 import { useAppStore } from "@/lib/store";
 
 export default function AppNav() {
@@ -57,30 +58,13 @@ export default function AppNav() {
           style={{ display: "flex", alignItems: "center", gap: "9px", textDecoration: "none", minWidth: 0 }}
           aria-label="Retour à la landing TrailForge"
         >
-          <span
-            aria-hidden="true"
-            style={{
-              width: "24px",
-              height: "24px",
-              borderRadius: "8px",
-              border: "1px solid rgba(163,201,106,0.26)",
-              background: "rgba(163,201,106,0.08)",
-              display: "grid",
-              placeItems: "center",
-              color: "var(--accent-lime)",
-              flexShrink: 0,
-            }}
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" width="14" height="14">
-              <path d="m3 17 5-9 4 6 3-5 6 8" />
-            </svg>
-          </span>
+          <TrailForgeMark compact />
           <span style={{ display: "flex", flexDirection: "column", gap: "1px", minWidth: 0 }}>
-            <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: "12px", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {title}
             </span>
-            <span className="hidden md:block" style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", fontWeight: 700, letterSpacing: "0.24em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-              Boucles 5–15 km · GPX montre
+            <span className="hidden md:block" style={{ fontFamily: "var(--font-ibm-plex-mono), monospace", fontSize: "8px", fontWeight: 600, letterSpacing: "0.24em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+              la carte vivante · GPX terrain
             </span>
           </span>
         </Link>

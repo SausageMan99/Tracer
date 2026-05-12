@@ -12,10 +12,10 @@ import type {
 import AddressInput from "@/components/sidebar/AddressInput";
 
 const LOADING_STEPS = [
-  "Lecture des chemins proches",
-  "Recherche d'une boucle fermée",
-  "Contrôle distance / D+",
-  "Préparation du GPX",
+  "La carte lit les chemins autour du départ",
+  "Le relief et les lisières deviennent contraintes",
+  "La boucle cherche son retour propre",
+  "Le GPX se prépare sans maquiller le terrain",
 ];
 
 const PHASE1_PROFILE_IDS = ["running_trail_decouverte", "running_trail", "running_endurance"] as const;
@@ -28,16 +28,16 @@ const PHASE1_MAX_ELEVATION_M = 600;
 
 const INTENTION_COPY: Record<string, { label: string; caption: string }> = {
   running_trail_decouverte: {
-    label: "Facile",
-    caption: "Trail accessible, peu technique.",
+    label: "Lisières calmes",
+    caption: "Une sortie accessible, chemins lisibles.",
   },
   running_trail: {
-    label: "Modéré",
-    caption: "Sentiers variés, un vrai peu de D+.",
+    label: "Chemins sauvages",
+    caption: "Sentiers variés, terrain plus vivant.",
   },
   running_endurance: {
-    label: "Régulier",
-    caption: "Boucle stable, effort zone 2.",
+    label: "Sortie roulante",
+    caption: "Boucle régulière, effort doux et continu.",
   },
 };
 
@@ -267,7 +267,7 @@ export default function SessionForm() {
           Nouvelle boucle trail
         </h1>
         <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.55 }}>
-          Crée une boucle trail GPX autour de ton départ.
+            Laisse le terrain dessiner une boucle GPX autour de ton départ.
         </p>
       </div>
 
@@ -493,7 +493,7 @@ export default function SessionForm() {
             transition: "all 0.2s var(--ease-out-expo)",
           }}
         >
-          {isLoading ? "Ça explore le terrain…" : "Chercher une boucle"}
+        {isLoading ? "La carte dessine…" : "Dessiner la boucle"}
         </button>
 
         {!isLoading && (
