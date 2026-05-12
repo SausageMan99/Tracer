@@ -26,7 +26,12 @@ function intent(overrides: Partial<RouteIntent> = {}): RouteIntent {
 }
 
 describe("urban solver-empty refusal contract", () => {
-  it("does not expose a healthy urban graph paved-cap exhaustion as raw NO_ROAD_NETWORK", () => {
+  it.each([
+    "PAVED_CAP_EXHAUSTED",
+    "RETURN_PATH_MISSING",
+    "DISTANCE_BUDGET_EXHAUSTED",
+    "POST_PROCESS_EMPTY",
+  ])("does not expose Paris dense urban %s as raw NO_ROAD_NETWORK", (emptyReason) => {
     const profile = PROFILES_BY_ID.get("running_endurance")!;
 
     expect(determineSolverEmptyErrorContract({
@@ -34,7 +39,7 @@ describe("urban solver-empty refusal contract", () => {
       routeIntent: intent(),
       graphNodeCount: 21_802,
       graphEdgeCount: 48_242,
-      emptyReason: "PAVED_CAP_EXHAUSTED",
+      emptyReason,
     })).toEqual({
       code: "ROUTE_CANDIDATES_REJECTED",
       subCode: "URBAN_NATURE_PROMISE_UNMET",

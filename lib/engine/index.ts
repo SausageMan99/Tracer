@@ -101,16 +101,16 @@ export function determineSolverEmptyErrorContract(input: SolverEmptyErrorContrac
   subCode: "SOLVER_EMPTY" | "URBAN_NATURE_PROMISE_UNMET";
 } {
   const hasHealthyGraph = input.graphNodeCount > 0 && input.graphEdgeCount > 0;
-  const isPavedCapExhausted = input.emptyReason === "PAVED_CAP_EXHAUSTED";
-  const isUrbanRunningContract = input.profile.sport === "running" && (
-    input.profile.sessionType !== "trail" ||
+  const isUrbanNatureIntent =
     input.routeIntent?.type === "urban_nature_loop" ||
     input.routeIntent?.strategy === "urban_nature_loop" ||
     input.routeIntent?.type === "park_loop" ||
-    input.routeIntent?.strategy === "park_loop"
+    input.routeIntent?.strategy === "park_loop";
+  const isUrbanRunningContract = input.profile.sport === "running" && (
+    input.profile.sessionType !== "trail" || isUrbanNatureIntent
   );
 
-  if (hasHealthyGraph && isPavedCapExhausted && isUrbanRunningContract) {
+  if (hasHealthyGraph && isUrbanRunningContract) {
     return { code: "ROUTE_CANDIDATES_REJECTED", subCode: "URBAN_NATURE_PROMISE_UNMET" };
   }
 
@@ -314,8 +314,16 @@ export async function generateRouteV2(
   ));
 
   if (candidates.length === 0) {
-    throw new RouteGenerationError("NO_ROAD_NETWORK", {
-      subCode: "SOLVER_EMPTY",
+    const emptyReason = "POST_PROCESS_EMPTY";
+    const errorContract = determineSolverEmptyErrorContract({
+      profile,
+      routeIntent,
+      graphNodeCount: graph.nodes.size,
+      graphEdgeCount: graph.edges.size,
+      emptyReason,
+    });
+    throw new RouteGenerationError(errorContract.code, {
+      subCode: errorContract.subCode,
       generationDiagnostics: includeGenerationDiagnostics
         ? buildGenerationDiagnostics({
             request,
@@ -327,7 +335,7 @@ export async function generateRouteV2(
             routeIntent,
             solverPathCount: solverPaths.length,
             candidateCount: 0,
-            emptyReason: "POST_PROCESS_EMPTY",
+            emptyReason,
             emptyDiagnostics: solverEmptyDiagnostics,
           })
         : undefined,
