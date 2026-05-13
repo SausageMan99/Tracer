@@ -469,6 +469,36 @@ describe("route hard-gate selector", () => {
     expect(isBetaStableCandidate(cleanComplexTrail, context)).toBe(true);
   });
 
+  it("allows two trace self-intersections on high-quality Fontainebleau-style forest trail routes when overlap and backtracking stay clean", () => {
+    const fontainebleauTraceCrossing = candidate(80, {
+      distanceKm: 14.7,
+      ascendM: 157,
+      quality: {
+        productionScore: 0.956,
+        pavedRatio: 0.167,
+        naturalWayRatio: 0.997,
+        trailRatio: 0.833,
+        repeatEdgeRatio: 0.039,
+        uTurnRatio: 0,
+        trailBeautyScore: 0.83,
+        naturalCorridorRatio: 0.79,
+        longestTrailSegmentKm: 4.9,
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        geometry: { ...quality().geometry!, selfIntersectionCount: 2, geometryOverlapRatio: 0.018, outAndBackSimilarityRatio: 0 },
+      },
+    });
+    const context = {
+      targetDistanceKm: 15,
+      targetElevationM: 200,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 15, targetElevationM: 200, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
+    };
+
+    expect(evaluateRouteHardGates(fontainebleauTraceCrossing, context).violations.map((violation) => violation.key)).not.toContain("geometry_self_intersection");
+    expect(isBetaStableCandidate(fontainebleauTraceCrossing, context)).toBe(true);
+  });
+
   it("rejects adjusted recovery park candidates that break pavement or geometry caps", () => {
     const overPaved = candidate(80, { distanceKm: 5.35, ascendM: 50, quality: { pavedRatio: 0.7 } });
     const dirtyGeometry = candidate(70, {

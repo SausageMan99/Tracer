@@ -117,12 +117,23 @@ function allowsTraceSelfIntersection(
 ): boolean {
   if (context.profile.sessionType !== "trail") return false;
   if (context.routeIntent?.type !== "transition_to_woods" && context.routeIntent?.type !== "forest_loop") return false;
-  if ((geometry?.selfIntersectionCount ?? 0) > 1) return false;
+
+  const selfIntersectionCount = geometry?.selfIntersectionCount ?? 0;
+  const routeTrailQualityRank = routeTrailQualityRankFor(quality?.routeTrailQuality);
+  const allowsSecondForestTraceCrossing =
+    context.targetDistanceKm >= 14 &&
+    routeTrailQualityRank >= 2 &&
+    (geometry?.geometryOverlapRatio ?? 1) <= 0.02 &&
+    (quality?.repeatEdgeRatio ?? 1) <= maxRepeatEdgeRatio(context.profile, context.routeIntent) &&
+    (quality?.uTurnRatio ?? 1) <= maxUTurnRatio(context.profile);
+  const maxTraceSelfIntersections = allowsSecondForestTraceCrossing ? 2 : 1;
+
+  if (selfIntersectionCount > maxTraceSelfIntersections) return false;
   if ((geometry?.geometryOverlapRatio ?? 1) > Math.min(0.08, maxGeometryOverlapRatio(context.profile, context.routeIntent) * 0.75)) return false;
   if ((geometry?.outAndBackSimilarityRatio ?? 1) > 0.12) return false;
-  if ((quality?.repeatEdgeRatio ?? 1) > maxRepeatEdgeRatio(context.profile, context.routeIntent) * 0.8) return false;
-  if ((quality?.uTurnRatio ?? 1) > maxUTurnRatio(context.profile) * 0.8) return false;
-  return routeTrailQualityRankFor(quality?.routeTrailQuality) >= 1;
+  if ((quality?.repeatEdgeRatio ?? 1) > maxRepeatEdgeRatio(context.profile, context.routeIntent) * (allowsSecondForestTraceCrossing ? 1 : 0.8)) return false;
+  if ((quality?.uTurnRatio ?? 1) > maxUTurnRatio(context.profile) * (allowsSecondForestTraceCrossing ? 1 : 0.8)) return false;
+  return routeTrailQualityRank >= 1;
 }
 
 const HEALTHY_GATE_MARGIN_RATIO = 0.12;
