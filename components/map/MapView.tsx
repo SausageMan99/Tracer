@@ -384,10 +384,11 @@ export default function MapView() {
   const rafRef = useRef<number>(0);
 
   const { currentRoute, scenicMode, hoveredRouteProgress, status, mapCenter, mapZoom } = useAppStore();
+  const hasMapboxToken = Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
 
   // ── Initialise map once ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapContainerRef.current || mapRef.current) return;
+    if (!hasMapboxToken || !mapContainerRef.current || mapRef.current) return;
 
     const storeState = useAppStore.getState();
     const map = new mapboxgl.Map({
@@ -436,7 +437,7 @@ export default function MapView() {
       setTimeout(() => window.removeEventListener("unhandledrejection", swallowAbort), 0);
       mapRef.current = null;
     };
-  }, []); // mount-only effect: map is initialised once and torn down on unmount
+  }, [hasMapboxToken]); // mount-only effect: map is initialised once and torn down on unmount
 
   // ── Re-render when route or scenic mode changes ───────────────────────────
   useEffect(() => {
@@ -471,6 +472,29 @@ export default function MapView() {
 
   // ── Stats overlay data ────────────────────────────────────────────────────
   const best = currentRoute?.best;
+
+  if (!hasMapboxToken) {
+    return (
+      <div className="relative w-full h-full" aria-label="Carte locale indisponible sans jeton Mapbox">
+        <div className="carto-plate" style={{ minHeight: "100%", height: "100%", transform: "none", border: "none" }}>
+          <svg viewBox="0 0 920 640" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+            <rect width="920" height="640" fill="currentColor" opacity="0.03" />
+            <g className="map-contours">
+              {Array.from({ length: 16 }).map((_, index) => (
+                <path key={index} d={`M ${-80 + index * 13} ${56 + index * 31} C ${118 + index * 6} ${8 + index * 18}, ${220 + index * 20} ${168 + index * 9}, ${360 + index * 10} ${112 + index * 23} S ${655 + index * 10} ${76 + index * 25}, ${1010} ${128 + index * 24}`} />
+              ))}
+              <path className="river" d="M66 540 C162 468 238 476 326 400 C430 310 512 334 610 256 C698 186 774 180 872 110" />
+              <path className="track" d="M152 506 C244 430 300 420 370 330 C438 244 522 218 642 240 C724 254 788 214 850 146" />
+              <path className="route-line" d="M250 488 C154 426 190 270 326 210 C468 148 644 190 690 314 C742 456 568 558 414 552 C342 550 288 526 250 488 Z" />
+              <circle className="start-pin" cx="250" cy="488" r="6" />
+            </g>
+          </svg>
+          <div className="map-sheet-index">carte locale · jeton Mapbox absent</div>
+          <div className="map-annotation map-annotation-a">la console reste utilisable</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full h-full">
