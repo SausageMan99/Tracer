@@ -22,7 +22,7 @@ export default function TrailForgeMark({ href, compact = false, muted = false }:
       {!compact && (
         <span className="tf-mark-text">
           <span>TRAILFORGE</span>
-          <small>Route generation for trail running & cycling</small>
+          <small>Génération de routes pour trail running & vélo</small>
         </span>
       )}
     </span>

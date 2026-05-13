@@ -35,7 +35,10 @@ export const metadata: Metadata = {
   title: "TrailForge — Laisse le terrain dessiner ta sortie",
   description:
     "TrailForge compose des boucles GPX depuis le terrain : chemins, relief, zones naturelles et export montre GPS.",
-  icons: { icon: "/favicon.png" },
+  icons: {
+    icon: "/favicon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
