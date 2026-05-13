@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import TrailForgeMark from "@/components/brand/TrailForgeMark";
 import GrainOverlay from "@/components/ui/GrainOverlay";
 
@@ -11,6 +12,20 @@ const fieldReadings = [
 ];
 
 const constraints = ["éviter départementales", "garder les bois", "boucle courte", "GPX exportable"];
+
+const brandMotifs = [
+  ["WAYPOINT", "un point de départ net, jamais décoratif"],
+  ["ROUTE", "une trace qui émerge après lecture du terrain"],
+  ["CONTOUR", "relief visible avant les métriques"],
+  ["COMPASS", "orientation claire, action unique"],
+];
+
+const palette = [
+  ["Forest", "#0B1F17"],
+  ["Parchment", "#E6D6C4"],
+  ["Stone", "#A89C90"],
+  ["Black", "#0A0A0A"],
+];
 
 function FieldMapPlate({ compact = false }: { compact?: boolean }) {
   return (
@@ -80,7 +95,7 @@ export default function LandingPageV2() {
           <Link href="/app" className="field-cta">Dessiner la boucle</Link>
         </aside>
         <div className="hero-statement">
-          <p className="field-kicker">instrument GPX / carnet de terrain</p>
+          <p className="field-kicker">organic / technical / exploratory</p>
           <h1>Laisse le terrain dessiner ta sortie.</h1>
           <p className="field-lede">TrailForge lit chemins, relief, lisières et mauvais retours avant de proposer une boucle courte exportable en GPX.</p>
         </div>
@@ -106,6 +121,31 @@ export default function LandingPageV2() {
         <div className="constraint-ledger">
           {constraints.map((constraint, index) => (
             <div key={constraint}><span>{String(index + 1).padStart(2, "0")}</span>{constraint}</div>
+          ))}
+        </div>
+      </section>
+
+      <section className="brand-system-strip" aria-label="Système graphique TrailForge">
+        <div className="brand-system-copy">
+          <p className="field-kicker">graphic system</p>
+          <h2>Une marque forgée par la trace, pas par un dashboard.</h2>
+          <p>Le signe devient app icon, badge, repère de carte et cartouche GPX. La palette reste volontairement courte pour garder le produit lisible en forêt, sur fond carte ou en plein mobile.</p>
+        </div>
+        <div className="motif-grid">
+          {brandMotifs.map(([label, caption]) => (
+            <article key={label}>
+              <span>{label}</span>
+              <strong>{caption}</strong>
+            </article>
+          ))}
+        </div>
+        <div className="palette-row">
+          {palette.map(([name, color]) => (
+            <div key={name} className="palette-chip" style={{ "--swatch": color } as CSSProperties}>
+              <span />
+              <strong>{name}</strong>
+              <em>{color}</em>
+            </div>
           ))}
         </div>
       </section>
