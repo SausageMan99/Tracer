@@ -6,8 +6,8 @@ It reads `artifacts/route-benchmark-results/beta-smoke-latest.json` and `lib/rou
 
 Checks covered:
 
-- current git branch is `feat/p1-2-quality-ratio-interpretation`;
-- local `HEAD` contains the expected pushed beta base commit, and `origin/feat/p1-2-quality-ratio-interpretation` is still either that beta base or the same local head if pushed later;
+- current git branch is `main`;
+- local `HEAD` contains the expected beta base commit, and `origin/main` is still either that beta base or the same local head if pushed later;
 - working tree is clean at sign-off time;
 - beta smoke remains exactly 4/4 with no failed or skipped case;
 - beta smoke contains exactly these four case IDs once each: `fontainebleau-trail-15k`, `caen-colline-aux-oiseaux-6k-soft`, `meudon-forest-trail-10k`, `tourville-pommiers-trail-8k`;

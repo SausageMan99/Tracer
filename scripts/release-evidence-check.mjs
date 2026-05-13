@@ -11,8 +11,8 @@ const args = process.argv.slice(2);
 
 const DEFAULT_REPORT = "artifacts/route-benchmark-results/beta-smoke-latest.json";
 const DEFAULT_BENCHMARK_DATA = "lib/route-benchmarks-data.json";
-const DEFAULT_EXPECTED_BRANCH = "feat/p1-2-quality-ratio-interpretation";
-const DEFAULT_EXPECTED_HEAD = "f5ccccbf6fab990fa03020ec0a37895c3be654c4";
+const DEFAULT_EXPECTED_BRANCH = "main";
+const DEFAULT_EXPECTED_HEAD = "eb94111da3142523b2d446d0eedcdba6420b77e9";
 const REQUIRED_BETA_SMOKE_CASE_IDS = [
   "fontainebleau-trail-15k",
   "caen-colline-aux-oiseaux-6k-soft",

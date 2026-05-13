@@ -364,6 +364,15 @@ describe("route benchmark scripts", () => {
     expect(packageJson.scripts["release:evidence-check"]).toBe("node scripts/release-evidence-check.mjs");
   });
 
+  it("documents main as the default beta evidence sign-off branch", () => {
+    const stdout = execFileSync(nodeBin, ["scripts/release-evidence-check.mjs", "--help"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+
+    expect(stdout).toContain("--expected-branch <branch>   Expected git branch. Default: main");
+  });
+
   it("exposes a closed-beta behavior benchmark command", () => {
     const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
 
