@@ -242,7 +242,7 @@ describe("route benchmark scripts", () => {
         [
           "scripts/run-route-benchmarks.mjs",
           "--case",
-          "tourville-pommiers-trail-8k",
+          "clecy-suisse-normande-trail-12k",
           "--save-artifacts",
           "--output",
           output,
@@ -275,10 +275,10 @@ describe("route benchmark scripts", () => {
       subCode: "TRAIL_PROMISE_UNMET",
       rejectedCandidatesDiagnostics,
       routeArtifacts: {
-        rejectedCandidatesJson: expect.stringContaining("tourville-pommiers-trail-8k.rejected-candidates.json"),
+        rejectedCandidatesJson: expect.stringContaining("clecy-suisse-normande-trail-12k.rejected-candidates.json"),
       },
     });
-    const artifact = JSON.parse(readFileSync(join(artifactDir, "tourville-pommiers-trail-8k.rejected-candidates.json"), "utf8"));
+    const artifact = JSON.parse(readFileSync(join(artifactDir, "clecy-suisse-normande-trail-12k.rejected-candidates.json"), "utf8"));
     expect(artifact).toEqual(rejectedCandidatesDiagnostics);
   });
 

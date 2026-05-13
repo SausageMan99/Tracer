@@ -99,7 +99,7 @@ describe("route production benchmarks", () => {
     expect(panel).toHaveLength(8);
     expect(panel.every(Boolean)).toBe(true);
     expect(panel.map((item) => item.expectedOutcome ?? "exact_distance")).toEqual(expect.arrayContaining([
-      "typed_refusal",
+      "best_effort_route",
       "park_recovery",
       "exact_distance",
     ]));
@@ -723,70 +723,68 @@ describe("route production benchmarks", () => {
     expect(summary.metrics.distanceAdjustmentReason).toBeNull();
   });
 
-  it("treats Tourville 8k as an honest trail-promise typed refusal smoke contract", () => {
+  it("treats Tourville 8k as a best-effort trail-unavailable smoke contract", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
 
     expect(benchmark.tier).toBe("p0");
     expect(SPRINT_4_SMOKE_CASE_IDS).toContain("tourville-pommiers-trail-8k");
-    expect(benchmark.expectedOutcome).toBe("typed_refusal");
-    expect(benchmark.expectedRefusalSubCode).toBe("TRAIL_PROMISE_UNMET");
-    expect(benchmark.notes).toContain("refus typé");
+    expect(benchmark.expectedOutcome).toBe("best_effort_route");
+    expect(benchmark.notes).toContain("meilleure boucle nature");
   });
 
-  it("passes Tourville 8k smoke only on ROUTE_CANDIDATES_REJECTED / TRAIL_PROMISE_UNMET", () => {
+  it("passes Tourville 8k smoke on a safe best-effort route with explicit trail-unavailable notice", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
-    const summary = summarizeBenchmarkFailure(benchmark, {
-      status: 422,
-      errorCode: "ROUTE_CANDIDATES_REJECTED",
-      subCode: "TRAIL_PROMISE_UNMET",
-      error: "Aucune boucle 8 km assez stable ne respecte la promesse trail.",
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 7.69,
+      ascendM: 185,
+      terrainFallback: {
+        reason: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+        policy: "best_effort_terrain",
+        requestedTerrain: "trail",
+        deliveredTerrain: "best_effort_nature",
+        messageCode: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+        message: "Chemin trail non disponible dans cette localisation : meilleure boucle nature proposée.",
+      },
+      quality: {
+        productionScore: 0.93,
+        loopClosureKm: 0.12,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.79,
+        pavedRatio: 0.49,
+        trailBeautyScore: 0.52,
+        longestTrailSegmentKm: 0.9,
+        naturalCorridorRatio: 0.38,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        routeTrailQuality: "low",
+        terrainDataConfidence: "medium",
+        trailPotential: "medium",
+        warnings: ["TOO_MUCH_PAVEMENT", "TRAIL_TOO_FRAGMENTED"],
+      },
       durationMs: 11_750,
     });
 
     expect(summary.passed).toBe(true);
     expect(summary.failures).toEqual([]);
-    expect(summary.metrics.actualOutcome).toBe("typed_refusal");
-    expect(summary.metrics.expectedRefusalSubCode).toBe("TRAIL_PROMISE_UNMET");
+    expect(summary.metrics.actualOutcome).toBe("best_effort_route");
+    expect(summary.metrics.terrainFallbackReason).toBe("TRAIL_NOT_AVAILABLE_IN_LOCATION");
   });
 
-  it("rejects Tourville 8k smoke on generic HTTP errors or mismatched refusal sub-codes", () => {
-    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
-
-    const genericError = summarizeBenchmarkFailure(benchmark, {
-      status: 500,
-      errorCode: "INTERNAL_SERVER_ERROR",
-      error: "boom",
-      durationMs: 1000,
-    });
-    expect(genericError.passed).toBe(false);
-    expect(genericError.failures).toContain("expected_typed_refusal");
-
-    const wrongSubCode = summarizeBenchmarkFailure(benchmark, {
-      status: 422,
-      errorCode: "ROUTE_CANDIDATES_REJECTED",
-      subCode: "PARK_TOO_SMALL_FOR_DISTANCE",
-      error: "wrong refusal",
-      durationMs: 1000,
-    });
-    expect(wrongSubCode.passed).toBe(false);
-    expect(wrongSubCode.failures).toContain("typed_refusal_sub_code_mismatch");
-  });
-
-  it("rejects Tourville 8k smoke on silent route success instead of the typed refusal", () => {
+  it("rejects Tourville 8k smoke on silent route success without explicit trail-unavailable notice", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-8k")!;
     const summary = summarizeBenchmarkResult(benchmark, {
-      distanceKm: 7.2,
-      ascendM: 120,
+      distanceKm: 7.69,
+      ascendM: 185,
       quality: {
-        productionScore: 0.82,
+        productionScore: 0.93,
         loopClosureKm: 0.12,
-        busyRoadRatio: 0.01,
-        naturalWayRatio: 0.45,
-        pavedRatio: 0.48498181916497407,
-        trailBeautyScore: 0.7,
-        longestTrailSegmentKm: 1.7,
-        naturalCorridorRatio: 0.45,
-        repeatEdgeRatio: 0,
+        busyRoadRatio: 0,
+        naturalWayRatio: 0.79,
+        pavedRatio: 0.49,
+        trailBeautyScore: 0.52,
+        longestTrailSegmentKm: 0.9,
+        naturalCorridorRatio: 0.38,
+        repeatEdgeRatio: 0.01,
         uTurnRatio: 0,
         routeTrailQuality: "low",
         terrainDataConfidence: "medium",
@@ -797,11 +795,7 @@ describe("route production benchmarks", () => {
     });
 
     expect(summary.passed).toBe(false);
-    expect(summary.failures).toEqual(expect.arrayContaining([
-      "expected_typed_refusal",
-      "paved_ratio",
-      "route_trail_quality",
-    ]));
+    expect(summary.failures).toContain("missing_best_effort_terrain_fallback");
   });
 
   it("keeps Meudon exploratory instead of requiring an unproven restricted-access refusal", () => {

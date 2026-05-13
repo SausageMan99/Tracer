@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   auditTerrainData: vi.fn(),
   planRouteIntent: vi.fn(),
   isBetaStableCandidate: vi.fn(),
+  isBestEffortTrailFallbackCandidate: vi.fn(),
   rejectionSubCodeForCandidate: vi.fn(),
   buildRejectedCandidatesDiagnostics: vi.fn(),
   distanceAcceptanceForCandidate: vi.fn(),
@@ -49,6 +50,7 @@ vi.mock("@/lib/engine/terrain-planner", () => ({
 
 vi.mock("@/lib/engine/route-gate-selector", () => ({
   isBetaStableCandidate: mocks.isBetaStableCandidate,
+  isBestEffortTrailFallbackCandidate: mocks.isBestEffortTrailFallbackCandidate,
   rejectionSubCodeForCandidate: mocks.rejectionSubCodeForCandidate,
   buildRejectedCandidatesDiagnostics: mocks.buildRejectedCandidatesDiagnostics,
   distanceAcceptanceForCandidate: mocks.distanceAcceptanceForCandidate,
@@ -119,6 +121,7 @@ describe("generateRouteV2 failure stage timings", () => {
     mocks.auditTerrainData.mockReturnValue({});
     mocks.planRouteIntent.mockReturnValue(strictTrailIntent());
     mocks.isBetaStableCandidate.mockReturnValue(false);
+    mocks.isBestEffortTrailFallbackCandidate.mockReturnValue(false);
     mocks.rejectionSubCodeForCandidate.mockReturnValue("TRAIL_PROMISE_UNMET");
     mocks.buildRejectedCandidatesDiagnostics.mockReturnValue({
       subCode: "TRAIL_PROMISE_UNMET",

@@ -333,6 +333,35 @@ describe("POST /api/generate-route", () => {
     expect(payload.route.generationId).toBe(payload.generationId);
   });
 
+  it("labels best-effort trail fallback routes as adjusted and exposes trail-unavailable copy", async () => {
+    const terrainFallback = {
+      reason: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+      policy: "best_effort_terrain",
+      requestedTerrain: "trail",
+      deliveredTerrain: "best_effort_nature",
+      messageCode: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+      message: "Chemin trail non disponible dans cette localisation : meilleure boucle nature proposée.",
+    };
+    generateRouteV2Mock.mockResolvedValue({
+      best: { id: "best", distanceKm: 7.9 },
+      candidates: [{ id: "best", distanceKm: 7.9 }],
+      terrainFallback,
+    });
+
+    const { POST } = await import("@/app/api/generate-route/route");
+    const response = await POST(makeRequest({
+      ...baseBody,
+      profileId: "running_trail",
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+    }) as never);
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload.route).toMatchObject({ betaOutcome: "adjusted", terrainFallback });
+    expect(payload.route.terrainFallback.message).toMatch(/trail non disponible/i);
+  });
+
   it("labels typed refusals with refused beta outcome and a generation id", async () => {
     generateRouteV2Mock.mockRejectedValue(
       new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", { subCode: "TRAIL_PROMISE_UNMET" })

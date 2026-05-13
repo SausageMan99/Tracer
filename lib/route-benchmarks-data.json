@@ -76,9 +76,8 @@
       "U_TURN_DETECTED",
       "TOO_MUCH_BACKTRACKING"
     ],
-    "notes": "Contrat beta honnête : refus typé si aucune boucle 8 km stable ne respecte la promesse trail depuis ce départ. Ne pas accepter les candidats trop bitumés, trop fragmentés ou routeTrailQuality low.",
-    "expectedOutcome": "typed_refusal",
-    "expectedRefusalSubCode": "TRAIL_PROMISE_UNMET"
+    "notes": "Contrat beta honnête : si aucune boucle 8 km ne respecte la promesse trail depuis ce départ, proposer la meilleure boucle nature sûre avec un message explicite indiquant que le chemin trail n'est pas disponible dans cette localisation.",
+    "expectedOutcome": "best_effort_route"
   },
   {
     "id": "tourville-pommiers-trail-10k",

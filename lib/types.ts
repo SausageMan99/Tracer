@@ -173,6 +173,15 @@ export interface RouteDistanceAdjustment {
   messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED";
 }
 
+export interface RouteTerrainFallback {
+  reason: "TRAIL_NOT_AVAILABLE_IN_LOCATION";
+  policy: "best_effort_terrain";
+  requestedTerrain: "trail";
+  deliveredTerrain: "best_effort_nature";
+  messageCode: "TRAIL_NOT_AVAILABLE_IN_LOCATION";
+  message: string;
+}
+
 /**
  * A fully evaluated route candidate produced by the generation pipeline.
  * Scores range from 0 to 1; `totalScore` is the weighted sum used for ranking.
@@ -426,6 +435,8 @@ export interface GeneratedRoute {
   routeIntent?: import("./engine/terrain-planner").RouteIntent;
   /** Explicit public contract when a recovery park route returns a clean shorter loop instead of silently pretending the requested distance was met. */
   distanceAdjustment?: RouteDistanceAdjustment;
+  /** Explicit public contract when no honest trail route exists and the beta returns the safest best-effort nature loop. */
+  terrainFallback?: RouteTerrainFallback;
   /**
    * SmartRoute post-processing statistics.
    * Present only when SmartRoute was successfully applied server-side.

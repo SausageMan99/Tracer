@@ -2,6 +2,7 @@ import type {
   Coordinate,
   EnrichedGraph,
   GeneratedRoute,
+  RouteTerrainFallback,
   RouteGenerationDiagnostics,
   RouteGenerationStageTiming,
   RouteGenerationStageTimings,
@@ -16,7 +17,7 @@ import { deriveWeights, scoreEdges } from "./edge-scorer";
 import { solve } from "./orienteering-solver";
 import type { SolverEmptyDiagnostics } from "./orienteering-solver";
 import { postProcess } from "./route-post-processor";
-import { buildRejectedCandidatesDiagnostics, distanceAcceptanceForCandidate, isBetaStableCandidate, rejectionSubCodeForCandidate } from "./route-gate-selector";
+import { buildRejectedCandidatesDiagnostics, distanceAcceptanceForCandidate, isBestEffortTrailFallbackCandidate, isBetaStableCandidate, rejectionSubCodeForCandidate } from "./route-gate-selector";
 import { auditTerrainData } from "./terrain-audit";
 import { planRouteIntent } from "./terrain-planner";
 
@@ -374,6 +375,7 @@ export async function generateRouteV2(
   }
 
   const best = candidates[0];
+  let terrainFallback: RouteTerrainFallback | undefined;
 
   // 9. Beta fail-clean: do not return a success when the selected candidate
   // violates a product promise or blocking safety gate. Critical stability risk
@@ -389,6 +391,17 @@ export async function generateRouteV2(
     };
     if (!isBetaStableCandidate(best, gateContext)) {
       const subCode = rejectionSubCodeForCandidate(best, gateContext);
+      if (subCode === "TRAIL_PROMISE_UNMET" && isBestEffortTrailFallbackCandidate(best, gateContext)) {
+        terrainFallback = {
+          reason: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+          policy: "best_effort_terrain",
+          requestedTerrain: "trail",
+          deliveredTerrain: "best_effort_nature",
+          messageCode: "TRAIL_NOT_AVAILABLE_IN_LOCATION",
+          message: "Chemin trail non disponible dans cette localisation : meilleure boucle nature proposée.",
+        };
+        return;
+      }
       throw new RouteGenerationError("ROUTE_CANDIDATES_REJECTED", {
         subCode,
         rejectedCandidatesDiagnostics: includeGenerationDiagnostics
@@ -437,6 +450,7 @@ export async function generateRouteV2(
     profile,
     routeIntent,
     ...(distanceAdjustment != null ? { distanceAdjustment } : {}),
+    ...(terrainFallback != null ? { terrainFallback } : {}),
   };
 
   if (includeGenerationDiagnostics) {

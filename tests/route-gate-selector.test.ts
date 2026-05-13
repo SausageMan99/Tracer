@@ -3,6 +3,7 @@ import {
   buildRejectedCandidatesDiagnostics,
   distanceAcceptanceForCandidate,
   evaluateRouteHardGates,
+  isBestEffortTrailFallbackCandidate,
   orderCandidatesByHardGates,
   isBetaStableCandidate,
   rejectionSubCodeForCandidate,
@@ -124,6 +125,54 @@ describe("route hard-gate selector", () => {
 
     expect(evaluateRouteHardGates(pavedUrbanCandidate, context).violations.map((violation) => violation.key)).toContain("paved_ratio");
     expect(rejectionSubCodeForCandidate(pavedUrbanCandidate, context)).toBe("URBAN_NATURE_PROMISE_UNMET");
+  });
+
+  it("allows a safe trail miss to ship as best-effort when only trail availability gates fail", () => {
+    const safeRoadNatureFallback = candidate(80, {
+      distanceKm: 7.9,
+      ascendM: 120,
+      quality: {
+        productionScore: 0.86,
+        pavedRatio: 0.54,
+        naturalWayRatio: 0.58,
+        trailBeautyScore: 0.5,
+        longestTrailSegmentKm: 0.7,
+        naturalCorridorRatio: 0.36,
+        trailPotential: "medium",
+        routeTrailQuality: "low",
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+      },
+    });
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 8, targetElevationM: 120, maxPavedRatio: 0.48 }),
+    };
+
+    expect(isBetaStableCandidate(safeRoadNatureFallback, context)).toBe(false);
+    expect(rejectionSubCodeForCandidate(safeRoadNatureFallback, context)).toBe("TRAIL_PROMISE_UNMET");
+    expect(isBestEffortTrailFallbackCandidate(safeRoadNatureFallback, context)).toBe(true);
+  });
+
+  it("does not best-effort fallback unsafe trail misses with repeat, u-turn, distance, busy-road, or access blocks", () => {
+    const context = {
+      targetDistanceKm: 8,
+      targetElevationM: 120,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 8, targetElevationM: 120, maxPavedRatio: 0.48 }),
+    };
+
+    for (const unsafeCandidate of [
+      candidate(80, { distanceKm: 6.5, quality: { routeTrailQuality: "low" } }),
+      candidate(80, { quality: { routeTrailQuality: "low", busyRoadRatio: 0.2 } }),
+      candidate(80, { quality: { routeTrailQuality: "low", repeatEdgeRatio: 0.08 } }),
+      candidate(80, { quality: { routeTrailQuality: "low", uTurnRatio: 0.04 } }),
+      candidate(80, { quality: { routeTrailQuality: "low", warnings: ["RESTRICTED_ACCESS"], restrictedAccessRatio: 0.02 } }),
+    ]) {
+      expect(isBestEffortTrailFallbackCandidate(unsafeCandidate, context)).toBe(false);
+    }
   });
 
   it("prefers clean adjusted recovery park distance over dirty exact-distance candidates", () => {

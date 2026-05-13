@@ -210,7 +210,7 @@ export async function POST(req: NextRequest) {
 
     const betaOutcome = responseRoute != null
       && typeof responseRoute === "object"
-      && "distanceAdjustment" in responseRoute
+      && ("distanceAdjustment" in responseRoute || "terrainFallback" in responseRoute)
       ? "adjusted"
       : "generated";
     const betaRoute = {

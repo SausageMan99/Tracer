@@ -449,6 +449,27 @@ export function isBetaStableCandidate(
   return gate.bucket === 0 || isTinyRecoveryParkCompactnessMiss(gate, context);
 }
 
+const BEST_EFFORT_TRAIL_FALLBACK_VIOLATIONS = new Set<RouteHardGateKey>([
+  "elevation_tolerance",
+  "paved_ratio",
+  "trail_beauty_score",
+  "natural_corridor_ratio",
+  "longest_trail_segment",
+  "trail_potential",
+  "route_trail_quality",
+]);
+
+export function isBestEffortTrailFallbackCandidate(
+  candidate: RouteCandidate,
+  context: RouteGateSelectionContext
+): boolean {
+  if (context.profile.sessionType !== "trail") return false;
+  const gate = evaluateRouteHardGates(candidate, context);
+  if (gate.strictViable) return false;
+  if (gate.violations.length === 0) return false;
+  return gate.violations.every((violation) => BEST_EFFORT_TRAIL_FALLBACK_VIOLATIONS.has(violation.key));
+}
+
 export function rejectionSubCodeForCandidate(
   candidate: RouteCandidate,
   context: RouteGateSelectionContext

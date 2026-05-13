@@ -18,7 +18,7 @@ export interface RouteBenchmarkCase {
   tier?: "p0" | "p1" | "p2" | "exploratory";
   readinessStatus?: "stable" | "unstable" | "readiness_only";
   betaSmokeExcludedReason?: string;
-  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal";
+  expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal" | "best_effort_route";
   expectedRefusalSubCode?: string;
   adjustedDistanceKm?: { min: number; max: number };
   thresholds: {
@@ -95,6 +95,7 @@ export interface BenchmarkRouteSample {
   };
   durationMs?: number;
   distanceAdjustment?: import("./types").RouteDistanceAdjustment;
+  terrainFallback?: import("./types").RouteTerrainFallback;
 }
 
 export interface BenchmarkFailureSample {
@@ -123,12 +124,14 @@ export interface BenchmarkSummary {
     requestedDistanceKm?: number | null;
     adjustedDistanceKm?: number | null;
     distanceAdjustmentReason?: string | null;
-    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal";
+    expectedOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "park_recovery" | "route_or_typed_refusal" | "best_effort_route";
     readinessStatus?: "stable" | "unstable" | "readiness_only";
     betaSmokeExcludedReason?: string;
-    actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error" | "route_success";
+    actualOutcome?: "exact_distance" | "adjusted_distance" | "typed_refusal" | "http_error" | "route_success" | "best_effort_route";
     expectedRefusalSubCode?: string | null;
     refusalSubCode?: string | null;
+    terrainFallbackReason?: string | null;
+    terrainFallbackMessageCode?: string | null;
     elevationErrorM: number;
     productionScore: number;
     loopClosureKm: number;
