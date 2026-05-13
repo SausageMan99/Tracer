@@ -3,7 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  benchmarkToRequestCore,
+  summarizeBenchmarkFailure,
+  summarizeBenchmarkResult,
+} from "../lib/route-benchmarks-core.mjs";
+import {
   routeToEdgeDiagnosticsArtifact,
+  routeToEdgesGeoJson,
   routeToGeoJson,
 } from "../lib/route-benchmark-artifacts.mjs";
 
@@ -15,8 +21,10 @@ const outputPath = getArgValue("--output") ?? process.env.ROUTE_BENCHMARK_OUTPUT
 const artifactDir = getArgValue("--artifact-dir") ?? process.env.ROUTE_BENCHMARK_ARTIFACT_DIR ?? "artifacts/route-benchmark-results/routes";
 const shouldWriteOutput = !args.includes("--no-output");
 const shouldSaveArtifacts = args.includes("--save-artifacts");
+const betaSmokeExcludedReason = getArgValue("--beta-scope-report") ?? null;
 const caseFilters = args.flatMap((arg, index) => arg === "--case" ? [args[index + 1]].filter(Boolean) : arg.startsWith("--case=") ? [arg.slice("--case=".length)] : []);
 const hasExternalRoutingKey = Boolean(process.env.ORS_API_KEY || process.env.GRAPHHOPPER_API_KEY);
+const benchmarkTimeoutMarginMs = Number(process.env.ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS ?? 45_000);
 
 if (args.includes("--help") || args.includes("-h")) {
   console.log(`Usage: npm run benchmark:routes -- [options]
@@ -24,16 +32,18 @@ if (args.includes("--help") || args.includes("-h")) {
 Runs TrailForge route benchmarks against /api/generate-route and fails on quality threshold regressions.
 
 Environment:
-  ROUTE_BENCHMARK_BASE_URL     Target app URL. Default: http://localhost:3000
-  ROUTE_BENCHMARK_OUTPUT       JSON report path. Default: artifacts/route-benchmark-results/latest.json
-  ROUTE_BENCHMARK_ARTIFACT_DIR Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_BASE_URL          Target app URL. Default: http://localhost:3000
+  ROUTE_BENCHMARK_OUTPUT            JSON report path. Default: artifacts/route-benchmark-results/latest.json
+  ROUTE_BENCHMARK_ARTIFACT_DIR      Per-route artifact directory. Default: artifacts/route-benchmark-results/routes
+  ROUTE_BENCHMARK_TIMEOUT_MARGIN_MS Extra timeout budget above each case maxDurationMs. Default: 45000
 
 Options:
   --case <id-or-prefix>        Run only matching benchmark id(s). Repeatable.
   --list                       Print benchmark ids and exit.
   --output <path>              Override JSON report path.
   --artifact-dir <path>        Override per-route artifact directory.
-  --save-artifacts             Save route JSON, best-route GeoJSON, and candidate edge-diagnostics JSON artifacts.
+  --save-artifacts             Save route JSON, best-route GeoJSON, candidate edge-diagnostics JSON, and edge-level GeoJSON artifacts.
+  --beta-scope-report <reason> Add beta-scope evidence fields when a case is intentionally excluded from the beta smoke.
   --no-output                  Do not write the aggregate JSON report.
   --help                       Show this help.
 
@@ -50,7 +60,9 @@ let benchmarks = JSON.parse(await readFile(benchmarkDataPath, "utf8"));
 
 if (args.includes("--list")) {
   for (const benchmark of benchmarks) {
-    console.log(`${benchmark.id}\t${benchmark.label}`);
+    const tier = benchmark.tier ?? "unclassified";
+    const tags = (benchmark.tags ?? []).join(",");
+    console.log(`${benchmark.id}\t${tier}\t${tags}\t${benchmark.label}`);
   }
   process.exit(0);
 }
@@ -76,100 +88,14 @@ function getArgValue(name) {
 
 function requestFrom(benchmark) {
   return {
-    address: benchmark.address,
-    profileId: benchmark.profileId,
-    targetDistanceKm: benchmark.targetDistanceKm,
-    targetElevationM: benchmark.targetElevationM,
-    scenicMode: benchmark.scenicMode,
+    ...benchmarkToRequestCore(benchmark),
     includeEdgeDiagnostics: true,
+    includeGenerationDiagnostics: true,
   };
 }
 
 function requiresExternalRouting(benchmark) {
   return benchmark.profileId.startsWith("cycling_");
-}
-
-function compareOrderedLevel(actual, minimum) {
-  const rank = { unknown: -1, low: 0, medium: 1, high: 2 };
-  return rank[actual ?? "unknown"] - rank[minimum];
-}
-
-function warningToFailure(warning) {
-  if (warning === "ONEWAY_VIOLATION") return "oneway_violation";
-  if (warning === "U_TURN_DETECTED") return "u_turn_detected";
-  if (warning === "TOO_MUCH_BACKTRACKING") return "backtracking_detected";
-  return `blocking_warning:${warning}`;
-}
-
-function summarizeBenchmarkResult(benchmark, route, durationMs) {
-  const quality = route.quality ?? {};
-  const distanceKm = route.distanceKm ?? 0;
-  const ascendM = route.ascendM ?? 0;
-  const distanceErrorRatio = Math.abs(distanceKm - benchmark.targetDistanceKm) / benchmark.targetDistanceKm;
-  const elevationErrorM = Math.abs(ascendM - benchmark.targetElevationM);
-  const productionScore = quality.productionScore ?? 0;
-  const loopClosureKm = quality.loopGapKm ?? quality.loopClosureKm ?? Number.POSITIVE_INFINITY;
-  const busyRoadRatio = quality.busyRoadRatio ?? 1;
-  const naturalWayRatio = quality.trailRatio ?? quality.naturalWayRatio ?? 0;
-  const pavedRatio = quality.pavedRatio ?? 0;
-  const trailBeautyScore = quality.trailBeautyScore ?? 0;
-  const longestTrailSegmentKm = quality.longestTrailSegmentKm ?? 0;
-  const naturalCorridorRatio = quality.naturalCorridorRatio ?? 0;
-  const repeatEdgeRatio = quality.repeatEdgeRatio ?? 0;
-  const uTurnRatio = quality.uTurnRatio ?? 0;
-  const terrainDataConfidence = quality.terrainDataConfidence ?? "unknown";
-  const trailPotential = quality.trailPotential ?? "unknown";
-  const warnings = quality.warnings ?? [];
-  const failures = [];
-
-  if (distanceErrorRatio > benchmark.thresholds.distanceToleranceRatio) failures.push("distance_tolerance");
-  if (elevationErrorM > benchmark.thresholds.elevationToleranceM) failures.push("elevation_tolerance");
-  if (productionScore < benchmark.thresholds.minProductionScore) failures.push("production_score");
-  if (loopClosureKm > benchmark.thresholds.maxLoopClosureKm) failures.push("loop_closure");
-  if (busyRoadRatio > benchmark.thresholds.maxBusyRoadRatio) failures.push("busy_road_ratio");
-  if (benchmark.thresholds.minNaturalWayRatio !== undefined && naturalWayRatio < benchmark.thresholds.minNaturalWayRatio) failures.push("natural_way_ratio");
-  if (benchmark.thresholds.maxPavedRatio !== undefined && pavedRatio > benchmark.thresholds.maxPavedRatio) failures.push("paved_ratio");
-  if (benchmark.thresholds.minTrailBeautyScore !== undefined && trailBeautyScore < benchmark.thresholds.minTrailBeautyScore) failures.push("trail_beauty_score");
-  if (benchmark.thresholds.minLongestTrailSegmentKm !== undefined && longestTrailSegmentKm < benchmark.thresholds.minLongestTrailSegmentKm) failures.push("longest_trail_segment");
-  if (benchmark.thresholds.minNaturalCorridorRatio !== undefined && naturalCorridorRatio < benchmark.thresholds.minNaturalCorridorRatio) failures.push("natural_corridor_ratio");
-  if (benchmark.thresholds.maxRepeatEdgeRatio !== undefined && repeatEdgeRatio > benchmark.thresholds.maxRepeatEdgeRatio) failures.push("repeat_edge_ratio");
-  if (benchmark.thresholds.maxUTurnRatio !== undefined && uTurnRatio > benchmark.thresholds.maxUTurnRatio) failures.push("u_turn_ratio");
-  if (benchmark.thresholds.minTerrainDataConfidence !== undefined && compareOrderedLevel(terrainDataConfidence, benchmark.thresholds.minTerrainDataConfidence) < 0) failures.push("terrain_data_confidence");
-  if (benchmark.thresholds.minTrailPotential !== undefined && compareOrderedLevel(trailPotential, benchmark.thresholds.minTrailPotential) < 0) failures.push("trail_potential");
-  if (benchmark.thresholds.maxDurationMs !== undefined && durationMs > benchmark.thresholds.maxDurationMs) failures.push("duration_ms");
-
-  for (const warning of benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"]) {
-    if (warnings.includes(warning)) failures.push(warningToFailure(warning));
-  }
-
-  return {
-    id: benchmark.id,
-    label: benchmark.label,
-    passed: failures.length === 0,
-    failures,
-    metrics: {
-      distanceKm,
-      ascendM,
-      distanceErrorRatio,
-      elevationErrorM,
-      productionScore,
-      loopClosureKm,
-      busyRoadRatio,
-      naturalWayRatio,
-      pavedRatio,
-      trailBeautyScore,
-      longestTrailSegmentKm,
-      naturalCorridorRatio,
-      repeatEdgeRatio,
-      uTurnRatio,
-      terrainDataConfidence,
-      trailPotential,
-      durationMs,
-      warnings,
-    },
-    thresholds: benchmark.thresholds,
-    blockingWarnings: benchmark.blockingWarnings ?? ["ONEWAY_VIOLATION"],
-  };
 }
 
 async function saveRouteArtifacts(benchmark, payload) {
@@ -198,7 +124,48 @@ async function saveRouteArtifacts(benchmark, payload) {
     artifacts.edgeDiagnosticsJson = edgeDiagnosticsArtifactPath.replace(`${repoRoot}/`, "");
   }
 
+  const edgeGeoJson = routeToEdgesGeoJson(benchmark, payload.route);
+  if (edgeGeoJson) {
+    const edgeGeoJsonArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.edges.geojson`);
+    await writeFile(edgeGeoJsonArtifactPath, `${JSON.stringify(edgeGeoJson, null, 2)}\n`, "utf8");
+    artifacts.edgeDiagnosticsGeoJson = edgeGeoJsonArtifactPath.replace(`${repoRoot}/`, "");
+  }
+
   return artifacts;
+}
+
+async function saveRejectedCandidatesArtifacts(benchmark, payload) {
+  if (!shouldSaveArtifacts || payload?.rejectedCandidatesDiagnostics == null) return null;
+  const absoluteArtifactDir = resolve(repoRoot, artifactDir);
+  await mkdir(absoluteArtifactDir, { recursive: true });
+
+  const rejectedCandidatesArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.rejected-candidates.json`);
+  await writeFile(
+    rejectedCandidatesArtifactPath,
+    `${JSON.stringify(payload.rejectedCandidatesDiagnostics, null, 2)}\n`,
+    "utf8"
+  );
+
+  return {
+    rejectedCandidatesJson: rejectedCandidatesArtifactPath.replace(`${repoRoot}/`, ""),
+  };
+}
+
+async function saveGenerationDiagnosticsArtifacts(benchmark, payload) {
+  if (!shouldSaveArtifacts || payload?.generationDiagnostics == null) return null;
+  const absoluteArtifactDir = resolve(repoRoot, artifactDir);
+  await mkdir(absoluteArtifactDir, { recursive: true });
+
+  const generationDiagnosticsArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.generation-diagnostics.json`);
+  await writeFile(
+    generationDiagnosticsArtifactPath,
+    `${JSON.stringify(payload.generationDiagnostics, null, 2)}\n`,
+    "utf8"
+  );
+
+  return {
+    generationDiagnosticsJson: generationDiagnosticsArtifactPath.replace(`${repoRoot}/`, ""),
+  };
 }
 
 async function runBenchmark(benchmark) {
@@ -206,6 +173,8 @@ async function runBenchmark(benchmark) {
     return {
       id: benchmark.id,
       label: benchmark.label,
+      tier: benchmark.tier,
+      tags: benchmark.tags ?? [],
       passed: true,
       skipped: true,
       failures: [],
@@ -217,31 +186,44 @@ async function runBenchmark(benchmark) {
   }
 
   const started = Date.now();
+  const timeoutMs = Math.max(
+    1_000,
+    Number(benchmark.thresholds?.maxDurationMs ?? 90_000) + benchmarkTimeoutMarginMs
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(requestFrom(benchmark)),
+      signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     const durationMs = Date.now() - started;
 
     if (!response.ok || payload.success !== true) {
-      return {
-        id: benchmark.id,
-        label: benchmark.label,
-        passed: false,
-        failures: ["http_error"],
+      const rejectedCandidateArtifacts = await saveRejectedCandidatesArtifacts(benchmark, payload);
+      const generationDiagnosticsArtifacts = await saveGenerationDiagnosticsArtifacts(benchmark, payload);
+      return summarizeBenchmarkFailure(benchmark, {
         status: response.status,
         durationMs,
         errorCode: payload.errorCode ?? "UNKNOWN",
+        subCode: payload.subCode ?? null,
         error: payload.error ?? "No JSON error body",
-      };
+        rejectedCandidatesDiagnostics: payload.rejectedCandidatesDiagnostics ?? null,
+        stageTimings: payload.stageTimings ?? null,
+        generationDiagnostics: payload.generationDiagnostics ?? null,
+        routeArtifacts: {
+          ...(rejectedCandidateArtifacts ?? {}),
+          ...(generationDiagnosticsArtifacts ?? {}),
+        },
+      });
     }
 
     const best = payload.route?.best;
-    const summary = summarizeBenchmarkResult(benchmark, best ?? {}, durationMs);
+    const summary = summarizeBenchmarkResult(benchmark, payload.route ?? best ?? {}, durationMs);
     const routeArtifacts = await saveRouteArtifacts(benchmark, payload);
 
     return {
@@ -250,20 +232,31 @@ async function runBenchmark(benchmark) {
       durationMs,
       routeArtifacts,
       routeArtifact: routeArtifacts?.routeJson,
+      requestTimeoutMs: timeoutMs,
+      stageTimings: payload.route?.stageTimings ?? null,
+      diagnostics: payload.route?.diagnostics ?? null,
       errorCode: null,
       error: null,
     };
   } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
     return {
       id: benchmark.id,
       label: benchmark.label,
+      tier: benchmark.tier,
+      tags: benchmark.tags ?? [],
       passed: false,
-      failures: ["network_error"],
+      failures: [aborted ? "duration_timeout" : "network_error"],
       status: 0,
       durationMs: Date.now() - started,
-      errorCode: "NETWORK_ERROR",
-      error: error instanceof Error ? error.message : String(error),
+      requestTimeoutMs: timeoutMs,
+      errorCode: aborted ? "BENCHMARK_TIMEOUT" : "NETWORK_ERROR",
+      error: aborted
+        ? `Benchmark exceeded ${timeoutMs}ms fetch timeout for case ${benchmark.id}`
+        : error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -288,6 +281,17 @@ const report = {
   failed: failed.length,
   skipped: skipped.length,
   passed: results.length - failed.length - skipped.length,
+  ...(betaSmokeExcludedReason == null ? {} : {
+    beta_smoke_excluded_reason: betaSmokeExcludedReason,
+    beta_smoke_excluded_cases: ["tourville-pommiers-trail-12k"],
+    beta_smoke_rca_artifact: "artifacts/route-benchmark-results/night-cto-root-cause/tourville12-quality-pavement-nondeterminism.md",
+    beta_scope_status: failed.length === 0 ? "BETA_SCOPE_CANDIDATE_LOCAL" : "BETA_SCOPE_BLOCKED",
+    ga_status: "NO-GO_GA",
+    readiness_blockers: ["tourville-pommiers-trail-12k"],
+    thresholdsChanged: false,
+    surfaceReclassification: false,
+    typedRefusalMasked: false,
+  }),
   results,
 };
 

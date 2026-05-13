@@ -19,6 +19,8 @@ import {
   computeLoopScore,
 } from "../route-generator-legacy";
 import { assessRouteQuality } from "./route-quality";
+import { computeRouteGeometryMetrics } from "./route-geometry-metrics";
+import { orderCandidatesByHardGates } from "./route-gate-selector";
 import type { RouteIntent, TerrainComponent } from "./terrain-planner";
 
 const MAX_ROUTE_POINTS = 200;
@@ -60,30 +62,86 @@ function estimateDuration(
   return (distanceKm * baseMinPerKm + climbPenalty) * 60;
 }
 
+function quickPavedRatio(path: SolverPath, graph: EnrichedGraph): number {
+  let totalKm = 0;
+  let pavedKm = 0;
+  for (const edgeId of path.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    totalKm += edge.lengthKm;
+    if (isPavedLikeEdge(edge)) pavedKm += edge.lengthKm;
+  }
+  return pavedKm / Math.max(totalKm, 0.1);
+}
+
+function estimatePreShortlistGeometryPenalty(
+  path: SolverPath,
+  graph: EnrichedGraph,
+  routeIntent?: RouteIntent
+): number {
+  if (routeIntent?.type !== "forest_loop" && routeIntent?.type !== "transition_to_woods") return 0;
+  const coordinates = buildRouteCoordinates(path, graph);
+  const geometry = computeRouteGeometryMetrics(coordinates, path.distanceKm);
+  const excessSelfIntersections = Math.max(0, geometry.selfIntersectionCount - 1);
+  return geometry.selfIntersectionCount * 1.5 + excessSelfIntersections * 12 + geometry.geometryOverlapRatio * 2;
+}
+
 function rankPathsForPostProcess(
   paths: SolverPath[],
   targetDistanceKm: number,
-  limit: number
+  limit: number,
+  graph: EnrichedGraph,
+  routeIntent?: RouteIntent
 ): SolverPath[] {
+  const pavementPenaltyWeight = routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop"
+    ? 1.8
+    : routeIntent?.type === "forest_loop" || routeIntent?.type === "transition_to_woods"
+      ? 1.0
+      : 0;
   return [...paths]
     .sort((a, b) => {
       const distancePenaltyA = Math.abs(a.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
       const distancePenaltyB = Math.abs(b.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
-      const scoreA = a.totalScore / Math.max(a.distanceKm, 0.1) - distancePenaltyA * 2;
-      const scoreB = b.totalScore / Math.max(b.distanceKm, 0.1) - distancePenaltyB * 2;
+      const scoreA = a.totalScore / Math.max(a.distanceKm, 0.1)
+        - distancePenaltyA * 2
+        - quickPavedRatio(a, graph) * pavementPenaltyWeight
+        - estimatePreShortlistGeometryPenalty(a, graph, routeIntent);
+      const scoreB = b.totalScore / Math.max(b.distanceKm, 0.1)
+        - distancePenaltyB * 2
+        - quickPavedRatio(b, graph) * pavementPenaltyWeight
+        - estimatePreShortlistGeometryPenalty(b, graph, routeIntent);
       return scoreB - scoreA;
     })
     .slice(0, limit);
+}
+
+
+function resolveShortlistLimit(routeIntent: RouteIntent | undefined, profile: SessionProfile, graph: EnrichedGraph): number {
+  const legacy = profile.sessionType === "trail" ? 40 : 24;
+  if (!routeIntent) return legacy;
+
+  const base = routeIntent.beamBudget.shortlistSize;
+  const intentFloor = routeIntent.type === "forest_loop" || routeIntent.type === "transition_to_woods"
+    ? 32
+    : routeIntent.type === "urban_nature_loop"
+      ? 24
+      : 14;
+  const denseCap = graph.edges.size > 1800 ? (routeIntent.type === "urban_nature_loop" || routeIntent.type === "park_loop" ? 48 : 28) : 44;
+  return Math.min(denseCap, Math.max(base, intentFloor));
 }
 
 function candidateRankingScore(
   candidate: RouteCandidate,
   targetDistanceKm: number,
   targetElevationM: number,
-  profile: SessionProfile
+  profile: SessionProfile,
+  routeIntent?: RouteIntent
 ): number {
   const distancePenalty = Math.abs(candidate.distanceKm - targetDistanceKm) / Math.max(targetDistanceKm, 0.1);
-  const elevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const baselineElevationToleranceM = targetElevationM <= 50 ? 60 : Math.max(90, targetElevationM * 0.45);
+  const elevationToleranceM = routeIntent?.elevationToleranceM != null && Number.isFinite(routeIntent.elevationToleranceM) && routeIntent.elevationToleranceM > 0
+    ? Math.max(baselineElevationToleranceM, routeIntent.elevationToleranceM)
+    : baselineElevationToleranceM;
   const elevationPenalty = Math.max(0, Math.abs(candidate.ascendM - targetElevationM) - elevationToleranceM) / elevationToleranceM;
 
   const quality = candidate.quality;
@@ -92,14 +150,22 @@ function candidateRankingScore(
   const uTurnRatio = quality?.uTurnRatio ?? 0;
   const trailBeautyScore = quality?.trailBeautyScore ?? 0;
   const naturalCorridorRatio = quality?.naturalCorridorRatio ?? 0;
-  const longestNonPavedTrailStreakKm = quality?.longestNonPavedTrailStreakKm ?? 0;
+  const longestTrailSegmentKm = quality?.longestTrailSegmentKm ?? 0;
   const scenicPavedRatio = quality?.scenicPavedRatio ?? 0;
   const routeIntentFailures = quality?.routeIntentFailures ?? [];
+  const routeIntentMatchScore = quality?.routeIntentMatchScore ?? 1;
+  const geometryOverlapRatio = quality?.geometry?.geometryOverlapRatio ?? 0;
   const forestOrParkRatio = quality?.forestOrParkRatio ?? 0;
   const trailDeficitPenalty = targetDistanceKm >= 8 ? Math.max(0, 0.2 - trailRatio) * 0.8 : 0;
 
   if (profile.sessionType !== "trail") {
-    return candidate.totalScore - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty;
+    const geometrySelfIntersections = quality?.geometry?.selfIntersectionCount ?? 0;
+    const recoveryRepeatPenalty = repeatEdgeRatio * 6 + uTurnRatio * 4;
+    const recoveryGeometryPenalty = geometryOverlapRatio * 1.2 + geometrySelfIntersections * 0.9;
+    const recoveryPavementPenalty = Math.max(0, (quality?.pavedRatio ?? 0) - (routeIntent?.maxPavedRatio ?? 0.65)) * 8;
+    const recoveryIntentFailurePenalty = routeIntentFailures.includes("paved_ratio") ? 0.35 : 0;
+    const recoveryNatureBonus = naturalCorridorRatio * 0.18 + trailBeautyScore * 0.14;
+    return candidate.totalScore + recoveryNatureBonus - distancePenalty * 0.5 - elevationPenalty * 0.35 - trailDeficitPenalty - recoveryRepeatPenalty - recoveryGeometryPenalty - recoveryPavementPenalty - recoveryIntentFailurePenalty;
   }
 
   const backtrackingPenalty = repeatEdgeRatio * 8 + uTurnRatio * 5;
@@ -115,17 +181,18 @@ function candidateRankingScore(
   const warningPenalty = quality?.warnings.includes("TOO_MUCH_BACKTRACKING") ? 0.45 : 0;
   const pavementPenalty = Math.max(0, (quality?.pavedRatio ?? 0) - 0.42) * 0.9;
   const scenicPavedPenalty = Math.max(0, scenicPavedRatio - 0.15) * 1.4;
-  const expectedNonPavedStreakKm = Math.min(3, Math.max(0.8, targetDistanceKm * 0.18));
-  const nonPavedStreakPenalty = Math.max(
+  const expectedTrailSegmentKm = routeIntent?.minNonPavedTrailStreakKm ?? (targetDistanceKm >= 8 ? Math.min(3, Math.max(1.6, targetDistanceKm * 0.2)) : Math.min(3, Math.max(0.8, targetDistanceKm * 0.18)));
+  const trailSegmentPenalty = Math.max(
     0,
-    (expectedNonPavedStreakKm - longestNonPavedTrailStreakKm) / expectedNonPavedStreakKm
-  ) * 1.2;
+    (expectedTrailSegmentKm - longestTrailSegmentKm) / expectedTrailSegmentKm
+  ) * 1.6;
   const routeIntentFailurePenalty = routeIntentFailures.filter((failure) =>
-    failure === "paved_ratio" || failure === "non_paved_streak"
-  ).length * 0.35;
+    failure === "paved_ratio" || failure === "non_paved_streak" || failure === "geometry_overlap"
+  ).length * 0.35 + Math.max(0, 1 - routeIntentMatchScore) * 0.35;
+  const geometryPenalty = geometryOverlapRatio * 1.4;
   const trailQualityBonus = trailBeautyScore * 0.24 + naturalCorridorRatio * 0.14 + forestOrParkRatio * 0.1;
 
-  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - scenicPavedPenalty - nonPavedStreakPenalty - routeIntentFailurePenalty - benchmarkFailurePenalty;
+  return candidate.totalScore + trailQualityBonus - distancePenalty * 0.45 - elevationPenalty * 0.25 - trailDeficitPenalty - backtrackingPenalty - warningPenalty - pavementPenalty - scenicPavedPenalty - trailSegmentPenalty - routeIntentFailurePenalty - geometryPenalty - benchmarkFailurePenalty;
 }
 
 function isPavedLikeEdge(edge: EnrichedEdge): boolean {
@@ -238,6 +305,40 @@ async function mapWithConcurrency<T, R>(
   return results;
 }
 
+function buildRouteCoordinates(solverPath: SolverPath, graph: EnrichedGraph): Coordinate[] {
+  const coords: Coordinate[] = [];
+
+  for (const edgeId of solverPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+
+    const from = graph.nodes.get(edge.from);
+    const to = graph.nodes.get(edge.to);
+    if (!from || !to) continue;
+
+    const fromCoord = { lat: from.lat, lng: from.lng };
+    const toCoord = { lat: to.lat, lng: to.lng };
+
+    if (coords.length === 0) {
+      coords.push(fromCoord);
+    } else {
+      const last = coords[coords.length - 1];
+      if (last.lat !== fromCoord.lat || last.lng !== fromCoord.lng) {
+        coords.push(fromCoord);
+      }
+    }
+
+    coords.push(toCoord);
+  }
+
+  if (coords.length >= 2) return coords;
+
+  return solverPath.nodeIds
+    .map((nid) => graph.nodes.get(nid))
+    .filter((n): n is NonNullable<typeof n> => n != null)
+    .map((n) => ({ lat: n.lat, lng: n.lng }));
+}
+
 export async function postProcess(
   paths: SolverPath[],
   graph: EnrichedGraph,
@@ -253,17 +354,15 @@ export async function postProcess(
 
   // Keep a distance-aware shortlist. Raw solver score alone can prefer shorter
   // high-quality loops and discard the only path that actually matches the ask.
-  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, profile.sessionType === "trail" ? 40 : 24);
+  const topPaths = rankPathsForPostProcess(paths, targetDistanceKm, resolveShortlistLimit(routeIntent, profile, graph), graph, routeIntent);
 
   const candidates: RouteCandidate[] = await mapWithConcurrency(
     topPaths,
     6,
     async (solverPath) => {
-      // Reconstruct coordinates from nodeIds
-      const fullCoords: Coordinate[] = solverPath.nodeIds
-        .map((nid) => graph.nodes.get(nid))
-        .filter((n): n is NonNullable<typeof n> => n != null)
-        .map((n) => ({ lat: n.lat, lng: n.lng }));
+      // Reconstruct display coordinates from the actual traversed edges. nodeIds
+      // can be a simplified solver path; the map/GPX need the edge-by-edge line.
+      const fullCoords = buildRouteCoordinates(solverPath, graph);
 
       // Subsample to ≤200 points
       const sampled = subsampleCoords(fullCoords, MAX_ROUTE_POINTS);
@@ -294,7 +393,7 @@ export async function postProcess(
 
       const elevationSmoothingThresholdM = profile.sessionType === "trail"
         ? 35
-        : (targetElevationM <= 50 ? 35 : 20);
+        : (targetElevationM <= 50 ? 45 : 20);
       const { ascendM, descendM } = computeAscent(
         elevations.filter((e): e is number => e != null),
         elevationSmoothingThresholdM
@@ -365,11 +464,11 @@ export async function postProcess(
     }
   );
 
-  // Sort by totalScore descending
-  candidates.sort((a, b) =>
-    candidateRankingScore(b, targetDistanceKm, targetElevationM, profile) -
-    candidateRankingScore(a, targetDistanceKm, targetElevationM, profile)
+  const rankedCandidates = orderCandidatesByHardGates(
+    candidates,
+    { targetDistanceKm, targetElevationM, profile, routeIntent },
+    (candidate) => candidateRankingScore(candidate, targetDistanceKm, targetElevationM, profile, routeIntent)
   );
 
-  return candidates;
+  return rankedCandidates;
 }

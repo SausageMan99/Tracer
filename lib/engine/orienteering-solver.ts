@@ -1,4 +1,5 @@
 import type { EnrichedGraph, SolverPath } from "../types";
+import type { RouteIntent } from "./terrain-planner";
 import { haversineKm } from "../route-generator-legacy";
 import { findShortestPath, ReturnDistanceCache } from "./pathfinder";
 
@@ -19,6 +20,9 @@ interface BeamState {
   longestNaturalStreakKm: number;
   naturalSegmentCount: number;
   wasOnNaturalCorridor: boolean;
+  pavedDistanceKm: number;
+  targetComponentNaturalDistanceKm: number;
+  enteredTargetComponent: boolean;
 }
 
 interface SolverConfig {
@@ -32,6 +36,43 @@ interface NaturalAnchor {
   center: { lat: number; lng: number };
   totalNaturalKm: number;
   nodeIds: Set<string>;
+  entryNodeIds?: Set<string>;
+  componentId?: string;
+  isTarget?: boolean;
+}
+
+export interface SolverEmptyDiagnostics {
+  configsTried?: number;
+  iterations?: number;
+  statesVisited?: number;
+  edgesConsidered?: number;
+  statesExpanded?: number;
+  noExpandableEdges?: number;
+  prunedDistanceBudget?: number;
+  prunedReturnBudget?: number;
+  returnPathMissing?: number;
+  returnRepeatCap?: number;
+  returnPavedCap?: number;
+  deadlineReached?: boolean;
+  targetEntryNodeCount?: number;
+  targetEntryStatesReached?: number;
+  targetEntryAccessPathsTried?: number;
+  targetEntryAccessSeeds?: number;
+  validPaths?: number;
+}
+
+export interface SolverRuntimeBudget {
+  deadlineMs?: number;
+  emptyDiagnostics?: SolverEmptyDiagnostics;
+}
+
+function incrementDiagnostic(
+  diagnostics: SolverEmptyDiagnostics | undefined,
+  key: keyof Omit<SolverEmptyDiagnostics, "deadlineReached">
+): void {
+  if (!diagnostics) return;
+  const current = diagnostics[key];
+  diagnostics[key] = (typeof current === "number" ? current : 0) + 1;
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -79,6 +120,61 @@ function isNaturalCorridorEdge(edge: { highway: string; surface?: string; scenic
     NATURAL_HIGHWAY_TYPES.has(edge.highway) ||
     (edge.surface != null && NATURAL_SURFACES.has(edge.surface))
   );
+}
+
+function buildTargetComponentAnchors(routeIntent?: RouteIntent): NaturalAnchor[] {
+  if (!routeIntent || routeIntent.targetComponents.length === 0) return [];
+
+  const targetComponentIds = new Set(routeIntent.targetComponents);
+  return routeIntent.terrainComponents
+    .filter((component) => targetComponentIds.has(component.id))
+    .filter((component) => component.nodeIds.length > 0)
+    .map((component) => ({
+      center: component.center,
+      totalNaturalKm: Math.max(component.nonPavedKm, component.totalKm, 0.1),
+      nodeIds: new Set(component.nodeIds),
+      entryNodeIds: new Set(component.entryNodeIds),
+      componentId: component.id,
+      isTarget: true,
+    }));
+}
+
+function mergeTargetAnchorsFirst(targetAnchors: NaturalAnchor[], discoveredAnchors: NaturalAnchor[]): NaturalAnchor[] {
+  if (targetAnchors.length === 0) return discoveredAnchors;
+
+  const overlapsTarget = (anchor: NaturalAnchor): boolean => {
+    for (const target of targetAnchors) {
+      let overlap = 0;
+      for (const nodeId of Array.from(anchor.nodeIds)) {
+        if (target.nodeIds.has(nodeId)) overlap += 1;
+      }
+      if (overlap / Math.max(1, Math.min(anchor.nodeIds.size, target.nodeIds.size)) >= 0.5) return true;
+    }
+    return false;
+  };
+
+  return [
+    ...targetAnchors,
+    ...discoveredAnchors.filter((anchor) => !overlapsTarget(anchor)),
+  ].slice(0, 6);
+}
+
+function buildTargetNodeSet(routeIntent?: RouteIntent): Set<string> {
+  if (!routeIntent || routeIntent.targetComponents.length === 0) return new Set();
+  const targetComponentIds = new Set(routeIntent.targetComponents);
+  const nodeIds = new Set<string>();
+  for (const component of routeIntent.terrainComponents) {
+    if (!targetComponentIds.has(component.id)) continue;
+    for (const nodeId of component.nodeIds) nodeIds.add(nodeId);
+  }
+  return nodeIds;
+}
+
+function isTargetNaturalEdge(
+  edge: { from: string; to: string; highway: string; surface?: string; scenic?: boolean },
+  targetNodeIds: Set<string>
+): boolean {
+  return targetNodeIds.has(edge.from) && targetNodeIds.has(edge.to) && isNaturalCorridorEdge(edge);
 }
 
 function buildNaturalAnchors(graph: EnrichedGraph, targetDistanceKm: number): NaturalAnchor[] {
@@ -169,7 +265,8 @@ function scoreNaturalAnchorPull(
 
     const approachRatio = (currentDistance - nextDistance) / Math.max(currentDistance, 0.1);
     const anchorScale = Math.min(1, anchor.totalNaturalKm / Math.max(MIN_NATURAL_ANCHOR_KM, targetDistanceKm * 0.45));
-    const pull = approachRatio * anchorScale * NATURAL_ANCHOR_PULL_BONUS;
+    const targetMultiplier = anchor.isTarget ? 1.8 : 1;
+    const pull = approachRatio * anchorScale * NATURAL_ANCHOR_PULL_BONUS * targetMultiplier;
     bestPull = Math.max(bestPull, pull);
   }
 
@@ -188,10 +285,12 @@ function scoreNaturalAnchorEntry(
   if (state.longestNaturalStreakKm >= MIN_CORRIDOR_STREAK_KM) return 0;
 
   for (const anchor of anchors) {
-    const isEnteringAnchor = !anchor.nodeIds.has(currentNodeId) && anchor.nodeIds.has(toNodeId);
-    if (isEnteringAnchor) {
+    const isEnteringByNodeSet = !anchor.nodeIds.has(currentNodeId) && anchor.nodeIds.has(toNodeId);
+    const isEnteringByGate = anchor.entryNodeIds?.has(toNodeId) === true && !anchor.nodeIds.has(currentNodeId);
+    if (isEnteringByNodeSet || isEnteringByGate) {
       const anchorScale = Math.min(1, anchor.totalNaturalKm / Math.max(MIN_NATURAL_ANCHOR_KM, targetDistanceKm * 0.25));
-      return NATURAL_ANCHOR_ENTRY_BONUS * anchorScale;
+      const targetMultiplier = anchor.isTarget ? 1.7 : 1;
+      return NATURAL_ANCHOR_ENTRY_BONUS * anchorScale * targetMultiplier;
     }
   }
 
@@ -241,13 +340,66 @@ function advanceNaturalCorridorState(state: BeamState, edge: { lengthKm: number;
   };
 }
 
-function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]): number {
+
+function scoreIntentEdge(
+  edge: { from: string; to: string; lengthKm: number; highway: string; surface?: string; scenic?: boolean },
+  state: BeamState,
+  targetDistanceKm: number,
+  targetNodeIds: Set<string>,
+  intent?: RouteIntent
+): number {
+  if (!intent) return 0;
+  const progress = state.distanceKm / Math.max(targetDistanceKm, 0.1);
+  const paved = edge.surface != null && PAVED_SURFACES.has(edge.surface);
+  const nonPavedNatural = isNaturalCorridorEdge(edge);
+  let score = 0;
+
+  if (intent.type === "forest_loop" || intent.type === "transition_to_woods") {
+    if (nonPavedNatural) score += 0.12;
+    if (paved && edge.scenic === true) score -= 0.22;
+    if (state.longestNaturalStreakKm < (intent.minNonPavedTrailStreakKm ?? MIN_CORRIDOR_STREAK_KM) && nonPavedNatural) {
+      score += Math.min(0.22, edge.lengthKm * 0.16);
+    }
+    if (isTargetNaturalEdge(edge, targetNodeIds)) {
+      const dwellTargetKm = Math.max(1, intent.minNaturalZoneDwellKm ?? MIN_CORRIDOR_STREAK_KM);
+      const dwellProgress = Math.min(1, state.targetComponentNaturalDistanceKm / dwellTargetKm);
+      score += Math.min(0.26, edge.lengthKm * 0.2) * (1.2 - dwellProgress * 0.4);
+    } else if (state.enteredTargetComponent && state.targetComponentNaturalDistanceKm < (intent.minNonPavedTrailStreakKm ?? MIN_CORRIDOR_STREAK_KM)) {
+      score -= 0.32;
+    }
+  } else if (intent.type === "park_loop") {
+    if (progress > 0.55) score += 0.04;
+    if (nonPavedNatural) score += 0.14;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) score += Math.min(0.42, edge.lengthKm * 0.55);
+    if (!state.enteredTargetComponent && progress < 0.75 && paved) score -= 0.12;
+    if (paved && edge.scenic === true) score -= 0.1;
+  } else if (intent.type === "urban_nature_loop") {
+    if (edge.scenic === true) score += paved ? -0.04 : 0.1;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) score += Math.min(0.34, edge.lengthKm * 0.45);
+    if (!state.enteredTargetComponent && progress < 0.65 && paved) score -= 0.08;
+    if (nonPavedNatural) score += state.longestNaturalStreakKm < (intent.minNonPavedTrailStreakKm ?? 0.8) ? 0.16 : 0.08;
+  }
+
+  const projectedPavedRatio = (state.pavedDistanceKm + (paved ? edge.lengthKm : 0)) / Math.max(state.distanceKm + edge.lengthKm, 0.1);
+  if (intent.maxPavedRatio != null && projectedPavedRatio > intent.maxPavedRatio) {
+    const overflow = projectedPavedRatio - intent.maxPavedRatio;
+    const isWoodsIntent = intent.type === "forest_loop" || intent.type === "transition_to_woods";
+    const pavedOverflowPenalty = paved ? (isWoodsIntent ? 0.34 : 0.18) : (isWoodsIntent ? 0.1 : 0.06);
+    const earlyPavedPenalty = paved && progress < 0.75 ? (isWoodsIntent ? 0.2 : 0.12) : 0;
+    score -= pavedOverflowPenalty + earlyPavedPenalty + Math.min(isWoodsIntent ? 0.85 : 0.55, overflow * (paved ? (isWoodsIntent ? 2.4 : 1.4) : (isWoodsIntent ? 1.2 : 0.8)));
+  }
+
+  return score;
+}
+
+function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[], targetNodeIds: Set<string> = new Set()): number {
   let rawScore = 0;
   let totalDistanceKm = 0;
   let naturalDistanceKm = 0;
   let currentNaturalStreakKm = 0;
   let longestNaturalStreakKm = 0;
   let naturalSegmentCount = 0;
+  let targetNaturalDistanceKm = 0;
   let wasNatural = false;
 
   for (const edgeId of edgeIds) {
@@ -259,6 +411,9 @@ function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]
     const isNatural = isNaturalCorridorEdge(edge);
     if (isNatural) {
       naturalDistanceKm += edge.lengthKm;
+      if (targetNodeIds.has(edge.from) && targetNodeIds.has(edge.to)) {
+        targetNaturalDistanceKm += edge.lengthKm;
+      }
       currentNaturalStreakKm = wasNatural ? currentNaturalStreakKm + edge.lengthKm : edge.lengthKm;
       longestNaturalStreakKm = Math.max(longestNaturalStreakKm, currentNaturalStreakKm);
       if (!wasNatural) naturalSegmentCount++;
@@ -276,17 +431,167 @@ function scorePathWithCorridorPreference(graph: EnrichedGraph, edgeIds: string[]
   const lowNaturePenalty = scoreLowNatureRoutePenalty(totalDistanceKm, naturalDistanceKm);
   const corridorBonus = totalDistanceKm * (naturalRatio * 0.15 + longestCorridorRatio * 0.25);
   const massifVisitBonus = longestNaturalStreakKm * NATURAL_MASSIF_VISIT_BONUS_PER_KM;
+  const targetComponentBonus = targetNaturalDistanceKm * 0.7;
 
-  return rawScore + corridorBonus + massifVisitBonus - fragmentationPenalty - lowNaturePenalty;
+  return rawScore + corridorBonus + massifVisitBonus + targetComponentBonus - fragmentationPenalty - lowNaturePenalty;
 }
 
-function buildSolverPath(graph: EnrichedGraph, nodeIds: string[], edgeIds: string[], distanceKm: number): SolverPath {
+function buildSolverPath(
+  graph: EnrichedGraph,
+  nodeIds: string[],
+  edgeIds: string[],
+  distanceKm: number,
+  relaxationsUsed: string[] = [],
+  targetNodeIds: Set<string> = new Set()
+): SolverPath {
   return {
     nodeIds,
     edgeIds,
-    totalScore: scorePathWithCorridorPreference(graph, edgeIds),
+    totalScore: scorePathWithCorridorPreference(graph, edgeIds, targetNodeIds),
     distanceKm,
+    relaxationsUsed,
   };
+}
+
+function pavedDistanceForEdges(graph: EnrichedGraph, edgeIds: string[]): number {
+  return edgeIds.reduce((sum, edgeId) => {
+    const edge = graph.edges.get(edgeId);
+    return sum + (edge?.surface != null && PAVED_SURFACES.has(edge.surface) ? edge.lengthKm : 0);
+  }, 0);
+}
+
+function edgeVisitsForPath(graph: EnrichedGraph, edgeIds: string[]): Map<string, number> {
+  const visits = new Map<string, number>();
+  for (const edgeId of edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const key = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
+    visits.set(key, (visits.get(key) ?? 0) + 1);
+  }
+  return visits;
+}
+
+function buildAccessSeedState(
+  graph: EnrichedGraph,
+  accessPath: NonNullable<ReturnType<typeof findShortestPath>>,
+  targetNodeIds: Set<string>
+): BeamState | null {
+  const currentNodeId = accessPath.nodeIds.at(-1);
+  if (!currentNodeId) return null;
+
+  let naturalDistanceKm = 0;
+  let naturalStreakKm = 0;
+  let longestNaturalStreakKm = 0;
+  let naturalSegmentCount = 0;
+  let wasOnNaturalCorridor = false;
+  let targetComponentNaturalDistanceKm = 0;
+  const cumulativeAscentM = 0;
+  const cumulativeDescentM = 0;
+
+  for (const edgeId of accessPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const corridorState = advanceNaturalCorridorState({
+      nodeIds: [],
+      edgeIds: [],
+      edgeVisits: new Map(),
+      currentNodeId: edge.from,
+      lastFrom: null,
+      distanceKm: 0,
+      totalScore: 0,
+      cumulativeAscentM,
+      cumulativeDescentM,
+      naturalDistanceKm,
+      naturalStreakKm,
+      longestNaturalStreakKm,
+      naturalSegmentCount,
+      wasOnNaturalCorridor,
+      pavedDistanceKm: 0,
+      targetComponentNaturalDistanceKm,
+      enteredTargetComponent: targetComponentNaturalDistanceKm > 0,
+    }, edge);
+    naturalDistanceKm = corridorState.naturalDistanceKm;
+    naturalStreakKm = corridorState.naturalStreakKm;
+    longestNaturalStreakKm = corridorState.longestNaturalStreakKm;
+    naturalSegmentCount = corridorState.naturalSegmentCount;
+    wasOnNaturalCorridor = corridorState.wasOnNaturalCorridor;
+    if (isTargetNaturalEdge(edge, targetNodeIds)) {
+      targetComponentNaturalDistanceKm += edge.lengthKm;
+    }
+  }
+
+  return {
+    nodeIds: accessPath.nodeIds,
+    edgeIds: accessPath.edgeIds,
+    edgeVisits: edgeVisitsForPath(graph, accessPath.edgeIds),
+    currentNodeId,
+    lastFrom: accessPath.nodeIds.length >= 2 ? accessPath.nodeIds[accessPath.nodeIds.length - 2] : null,
+    distanceKm: accessPath.distanceKm,
+    totalScore: scorePathWithCorridorPreference(graph, accessPath.edgeIds, targetNodeIds),
+    cumulativeAscentM,
+    cumulativeDescentM,
+    naturalDistanceKm,
+    naturalStreakKm,
+    longestNaturalStreakKm,
+    naturalSegmentCount,
+    wasOnNaturalCorridor,
+    pavedDistanceKm: pavedDistanceForEdges(graph, accessPath.edgeIds),
+    targetComponentNaturalDistanceKm,
+    enteredTargetComponent: targetComponentNaturalDistanceKm > 0 || targetNodeIds.has(currentNodeId),
+  };
+}
+
+function buildTargetEntryAccessSeedStates(args: {
+  graph: EnrichedGraph;
+  startNodeId: string;
+  targetAnchors: NaturalAnchor[];
+  targetNodeIds: Set<string>;
+  routeIntent?: RouteIntent;
+  targetDistanceKm: number;
+  maxDist: number;
+  beamWidth: number;
+  diagnostics?: SolverEmptyDiagnostics;
+}): BeamState[] {
+  if (args.routeIntent?.type !== "transition_to_woods" || args.targetAnchors.length === 0) return [];
+
+  const startNode = args.graph.nodes.get(args.startNodeId);
+  const entryNodeIds = Array.from(new Set(args.targetAnchors.flatMap((anchor) => Array.from(anchor.entryNodeIds ?? []))))
+    .filter((nodeId) => nodeId !== args.startNodeId && args.graph.nodes.has(nodeId))
+    .sort((a, b) => {
+      if (!startNode) return 0;
+      const nodeA = args.graph.nodes.get(a)!;
+      const nodeB = args.graph.nodes.get(b)!;
+      return haversineKm(startNode, nodeA) - haversineKm(startNode, nodeB);
+    })
+    .slice(0, Math.max(12, Math.min(args.beamWidth * 2, 48)));
+  const seedCandidates: Array<{ path: NonNullable<ReturnType<typeof findShortestPath>>; state: BeamState }> = [];
+  const maxAccessDistanceKm = Math.min(args.maxDist * 0.55, Math.max(2.2, args.targetDistanceKm * 0.38));
+  const maxAccessPavedRatio = args.routeIntent.maxPavedRatio != null ? args.routeIntent.maxPavedRatio + 0.02 : undefined;
+  const maxSeeds = Math.max(1, Math.min(args.beamWidth, 24));
+
+  for (const entryNodeId of entryNodeIds) {
+    incrementDiagnostic(args.diagnostics, "targetEntryAccessPathsTried");
+    const accessPath = findShortestPath(args.graph, args.startNodeId, entryNodeId);
+    if (!accessPath || accessPath.edgeIds.length === 0) continue;
+    if (accessPath.distanceKm > maxAccessDistanceKm) continue;
+    const accessPavedDistanceKm = pavedDistanceForEdges(args.graph, accessPath.edgeIds);
+    if (maxAccessPavedRatio != null && accessPavedDistanceKm / Math.max(args.maxDist, 0.1) > maxAccessPavedRatio) continue;
+    const state = buildAccessSeedState(args.graph, accessPath, args.targetNodeIds);
+    if (!state) continue;
+    seedCandidates.push({ path: accessPath, state });
+  }
+
+  seedCandidates.sort((a, b) => {
+    const aPaved = pavedDistanceForEdges(args.graph, a.path.edgeIds);
+    const bPaved = pavedDistanceForEdges(args.graph, b.path.edgeIds);
+    return (a.path.distanceKm + aPaved * 0.5) - (b.path.distanceKm + bPaved * 0.5);
+  });
+
+  const seeds = seedCandidates.slice(0, maxSeeds).map((candidate) => candidate.state);
+  if (args.diagnostics && seeds.length > 0) {
+    args.diagnostics.targetEntryAccessSeeds = Math.max(args.diagnostics.targetEntryAccessSeeds ?? 0, seeds.length);
+  }
+  return seeds;
 }
 
 function cleanReturnPath(
@@ -302,6 +607,101 @@ function cleanReturnPath(
   );
 
   return findShortestPath(graph, fromNodeId, startNodeId, { forbiddenUndirectedEdgeKeys });
+}
+
+function projectedReturnRepeatRatio(
+  graph: EnrichedGraph,
+  edgeVisits: Map<string, number>,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number
+): number {
+  if (!returnPath) return 0;
+  let repeatedKm = 0;
+  for (const edgeId of returnPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (!edge) continue;
+    const key = undirectedEdgeKey(edge.from, edge.to, edge.osmWayId);
+    if ((edgeVisits.get(key) ?? 0) > 0) repeatedKm += edge.lengthKm;
+  }
+  return repeatedKm / Math.max(currentDistanceKm + returnPath.distanceKm, 0.1);
+}
+
+function projectedReturnPavedRatio(
+  graph: EnrichedGraph,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number
+): number {
+  if (!returnPath) return 0;
+  let returnPavedKm = 0;
+  for (const edgeId of returnPath.edgeIds) {
+    const edge = graph.edges.get(edgeId);
+    if (edge?.surface != null && PAVED_SURFACES.has(edge.surface)) returnPavedKm += edge.lengthKm;
+  }
+  return (currentPavedDistanceKm + returnPavedKm) / Math.max(currentDistanceKm + returnPath.distanceKm, 0.1);
+}
+
+function diagnoseReturnPathRejection(
+  graph: EnrichedGraph,
+  edgeVisits: Map<string, number>,
+  returnPath: ReturnType<typeof findShortestPath>,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number,
+  remainingBudgetKm: number,
+  maxRepeatRatio?: number,
+  maxPavedRatio?: number
+): "missing" | "budget" | "repeat" | "paved" | null {
+  if (!returnPath) return "missing";
+  if (returnPath.distanceKm > remainingBudgetKm) return "budget";
+  if (maxRepeatRatio != null && projectedReturnRepeatRatio(graph, edgeVisits, returnPath, currentDistanceKm) > maxRepeatRatio) return "repeat";
+  if (maxPavedRatio != null && projectedReturnPavedRatio(graph, returnPath, currentDistanceKm, currentPavedDistanceKm) > maxPavedRatio) return "paved";
+  return null;
+}
+
+function recordReturnRejection(
+  diagnostics: SolverEmptyDiagnostics | undefined,
+  reason: "missing" | "budget" | "repeat" | "paved" | null
+): void {
+  if (!diagnostics || reason == null) return;
+  if (reason === "missing") incrementDiagnostic(diagnostics, "returnPathMissing");
+  if (reason === "budget") incrementDiagnostic(diagnostics, "prunedReturnBudget");
+  if (reason === "repeat") incrementDiagnostic(diagnostics, "returnRepeatCap");
+  if (reason === "paved") incrementDiagnostic(diagnostics, "returnPavedCap");
+}
+
+function resolveReturnPath(
+  graph: EnrichedGraph,
+  fromNodeId: string,
+  startNodeId: string,
+  edgeVisits: Map<string, number>,
+  returnCache: ReturnDistanceCache,
+  mode: RouteIntent["cleanReturnMode"],
+  remainingBudgetKm: number,
+  currentDistanceKm: number,
+  currentPavedDistanceKm: number,
+  maxRepeatRatio?: number,
+  maxPavedRatio?: number,
+  diagnostics?: SolverEmptyDiagnostics
+): { path: ReturnType<typeof findShortestPath> | null; relaxationsUsed: string[] } {
+  const cleanPath = cleanReturnPath(graph, fromNodeId, startNodeId, edgeVisits);
+  const cleanRejection = diagnoseReturnPathRejection(graph, edgeVisits, cleanPath, currentDistanceKm, currentPavedDistanceKm, remainingBudgetKm, maxRepeatRatio, maxPavedRatio);
+  if (cleanRejection == null) {
+    return { path: cleanPath, relaxationsUsed: [] };
+  }
+
+  if (mode === "strict") {
+    recordReturnRejection(diagnostics, cleanRejection);
+    return { path: null, relaxationsUsed: [] };
+  }
+
+  const fallbackPath = returnCache.getPath(graph, fromNodeId, startNodeId);
+  const fallbackRejection = diagnoseReturnPathRejection(graph, edgeVisits, fallbackPath, currentDistanceKm, currentPavedDistanceKm, remainingBudgetKm, maxRepeatRatio, maxPavedRatio);
+  if (fallbackRejection == null) {
+    return { path: fallbackPath, relaxationsUsed: ["clean_return"] };
+  }
+
+  recordReturnRejection(diagnostics, fallbackRejection);
+  return { path: null, relaxationsUsed: [] };
 }
 
 function computeBearing(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
@@ -412,16 +812,38 @@ function solveWithConfig(
   targetDistanceKm: number,
   targetElevationM: number,
   nodeElevation: Map<string, number>,
-  config: SolverConfig
+  config: SolverConfig,
+  routeIntent?: RouteIntent,
+  deadlineMs?: number,
+  diagnostics?: SolverEmptyDiagnostics
 ): SolverPath[] {
-  const { beamWidth, seedBearing } = config;
+  const beamWidth = routeIntent?.beamBudget.beamWidth ?? config.beamWidth;
+  const maxIterations = routeIntent?.beamBudget.maxIterations ?? MAX_ITERATIONS;
+  const { seedBearing } = config;
+  const cleanReturnMode = routeIntent?.cleanReturnMode ?? "prefer";
+  const returnPavedRatioCap = routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop"
+    ? routeIntent.maxPavedRatio != null ? routeIntent.maxPavedRatio + 0.02 : undefined
+    : routeIntent?.type === "transition_to_woods" && routeIntent.maxPavedRatio != null
+      ? routeIntent.maxPavedRatio + 0.02
+      : routeIntent?.maxPavedRatio;
   const maxDist = targetDistanceKm * (1 + DISTANCE_TOLERANCE);
-  const minDist = targetDistanceKm * (1 - DISTANCE_TOLERANCE);
+  const strictTrailMinDist = routeIntent?.type === "transition_to_woods" && routeIntent.distancePolicy.mode === "strict"
+    ? targetDistanceKm * 0.9
+    : null;
+  const minDist = strictTrailMinDist ?? targetDistanceKm * (1 - DISTANCE_TOLERANCE);
   const startNode = graph.nodes.get(startNodeId);
   if (!startNode) return [];
 
   const startCoord = { lat: startNode.lat, lng: startNode.lng };
-  const naturalAnchors = buildNaturalAnchors(graph, targetDistanceKm);
+  const targetAnchors = buildTargetComponentAnchors(routeIntent);
+  if (diagnostics) {
+    diagnostics.targetEntryNodeCount = Math.max(
+      diagnostics.targetEntryNodeCount ?? 0,
+      targetAnchors.reduce((sum, anchor) => sum + (anchor.entryNodeIds?.size ?? 0), 0)
+    );
+  }
+  const naturalAnchors = mergeTargetAnchorsFirst(targetAnchors, buildNaturalAnchors(graph, targetDistanceKm));
+  const targetNodeIds = buildTargetNodeSet(routeIntent);
   const returnCache = new ReturnDistanceCache();
 
   let beam: BeamState[] = [
@@ -440,15 +862,46 @@ function solveWithConfig(
       longestNaturalStreakKm: 0,
       naturalSegmentCount: 0,
       wasOnNaturalCorridor: false,
+      pavedDistanceKm: 0,
+      targetComponentNaturalDistanceKm: 0,
+      enteredTargetComponent: false,
     },
   ];
 
+  const accessSeedStates = buildTargetEntryAccessSeedStates({
+    graph,
+    startNodeId,
+    targetAnchors,
+    targetNodeIds,
+    routeIntent,
+    targetDistanceKm,
+    maxDist,
+    beamWidth,
+    diagnostics,
+  });
+  if (accessSeedStates.length > 0) {
+    beam = [...accessSeedStates, ...beam].slice(0, beamWidth);
+  }
+
   const validPaths: SolverPath[] = [];
 
-  for (let iter = 0; iter < MAX_ITERATIONS && beam.length > 0; iter++) {
+  for (let iter = 0; iter < maxIterations && beam.length > 0; iter++) {
+    incrementDiagnostic(diagnostics, "iterations");
+    if (deadlineMs != null && performance.now() >= deadlineMs) {
+      if (diagnostics) diagnostics.deadlineReached = true;
+      break;
+    }
     const nextBeam: BeamState[] = [];
 
     for (const state of beam) {
+      incrementDiagnostic(diagnostics, "statesVisited");
+      if (diagnostics && targetAnchors.some((anchor) => anchor.entryNodeIds?.has(state.currentNodeId))) {
+        incrementDiagnostic(diagnostics, "targetEntryStatesReached");
+      }
+      if (deadlineMs != null && performance.now() >= deadlineMs) {
+        if (diagnostics) diagnostics.deadlineReached = true;
+        break;
+      }
       const currentNode = graph.nodes.get(state.currentNodeId);
       if (!currentNode) continue;
 
@@ -462,7 +915,10 @@ function solveWithConfig(
       // Find candidate edges (with visited-edge relaxation)
       const allEdges = currentNode.edges
         .map((eid) => graph.edges.get(eid)!)
-        .filter((e) => e != null);
+        .filter((e) => e != null && e.score > 0);
+      if (diagnostics) {
+        diagnostics.edgesConsidered = (diagnostics.edgesConsidered ?? 0) + allEdges.length;
+      }
 
       const unvisitedEdges = allEdges.filter((e) => {
         const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
@@ -470,14 +926,21 @@ function solveWithConfig(
       });
 
       // Dead-end escape: allow revisits if no unvisited edges
-      const candidateEdges = unvisitedEdges.length > 0
+      let candidateEdges = unvisitedEdges.length > 0
         ? unvisitedEdges
         : allEdges.filter((e) => {
             const key = undirectedEdgeKey(e.from, e.to, e.osmWayId);
             return (state.edgeVisits.get(key) ?? 0) < MAX_EDGE_REVISITS;
           });
 
-      if (candidateEdges.length === 0) continue;
+      if (state.lastFrom !== null && candidateEdges.some((edge) => edge.to !== state.lastFrom)) {
+        candidateEdges = candidateEdges.filter((edge) => edge.to !== state.lastFrom);
+      }
+
+      if (candidateEdges.length === 0) {
+        incrementDiagnostic(diagnostics, "noExpandableEdges");
+        continue;
+      }
 
       // Compute adjusted scores
       const currentCoord = { lat: currentNode.lat, lng: currentNode.lng };
@@ -531,6 +994,7 @@ function solveWithConfig(
         // reward access roads that reduce distance to large natural components.
         score += scoreNaturalAnchorPull(currentCoord, toCoord, state, targetDistanceKm, naturalAnchors);
         score += scoreNaturalAnchorEntry(state.currentNodeId, edge.to, state, targetDistanceKm, naturalAnchors);
+        score += scoreIntentEdge(edge, state, targetDistanceKm, targetNodeIds, routeIntent);
 
         // 4.1 Directional seeding: bias toward seed bearing in first 15%
         if (progress < 0.15) {
@@ -593,12 +1057,13 @@ function solveWithConfig(
 
         // Prune if exceeding max distance
         if (newDist > maxDist) {
+          incrementDiagnostic(diagnostics, "prunedDistanceBudget");
           const distToStart = haversineKm(
             { lat: currentNode.lat, lng: currentNode.lng },
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM && state.distanceKm >= minDist) {
-            validPaths.push(buildSolverPath(graph, state.nodeIds, state.edgeIds, state.distanceKm));
+            validPaths.push(buildSolverPath(graph, state.nodeIds, state.edgeIds, state.distanceKm, [], targetNodeIds));
           }
           continue;
         }
@@ -608,8 +1073,11 @@ function solveWithConfig(
         newEdgeVisits.set(edgeKey, (newEdgeVisits.get(edgeKey) ?? 0) + 1);
 
         const corridorState = advanceNaturalCorridorState(state, selectedEdge);
+        const selectedEdgeIsPaved = selectedEdge.surface != null && PAVED_SURFACES.has(selectedEdge.surface);
+        const selectedEdgeIsTargetNatural = isTargetNaturalEdge(selectedEdge, targetNodeIds);
+        const intentStepScore = scoreIntentEdge(selectedEdge, state, targetDistanceKm, targetNodeIds, routeIntent) * selectedEdge.lengthKm;
         const stepScore =
-          selectedEdge.score * selectedEdge.lengthKm + scoreNaturalCorridorStep(selectedEdge, state);
+          selectedEdge.score * selectedEdge.lengthKm + scoreNaturalCorridorStep(selectedEdge, state) + intentStepScore;
 
         const newState: BeamState = {
           nodeIds: [...state.nodeIds, selectedEdge.to],
@@ -622,9 +1090,13 @@ function solveWithConfig(
           cumulativeAscentM: newAscent,
           cumulativeDescentM: newDescent,
           ...corridorState,
+          pavedDistanceKm: state.pavedDistanceKm + (selectedEdgeIsPaved ? selectedEdge.lengthKm : 0),
+          targetComponentNaturalDistanceKm: state.targetComponentNaturalDistanceKm + (selectedEdgeIsTargetNatural ? selectedEdge.lengthKm : 0),
+          enteredTargetComponent: state.enteredTargetComponent || selectedEdgeIsTargetNatural,
         };
 
         const newProgress = newDist / targetDistanceKm;
+        incrementDiagnostic(diagnostics, "statesExpanded");
 
         // 3.2 Forced loop closure at 65%+
         if (newProgress >= 0.65) {
@@ -634,22 +1106,36 @@ function solveWithConfig(
             // Can we close?
             if (newDist + returnDist > maxDist) {
               // Can't close — prune dead state
+              incrementDiagnostic(diagnostics, "prunedReturnBudget");
               continue;
             }
 
             if (newDist + returnDist >= minDist && newDist + returnDist <= maxDist) {
               // Close loop via A* return path
               const closedDistance = newDist + returnDist;
-              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
-              const returnPath = cleanPath && newDist + cleanPath.distanceKm <= maxDist
-                ? cleanPath
-                : returnCache.getPath(graph, selectedEdge.to, startNodeId);
+              const resolvedReturn = resolveReturnPath(
+                graph,
+                selectedEdge.to,
+                startNodeId,
+                newState.edgeVisits,
+                returnCache,
+                cleanReturnMode,
+                maxDist - newDist,
+                newDist,
+                newState.pavedDistanceKm,
+                routeIntent?.maxRepeatEdgeRatio,
+                returnPavedRatioCap,
+                diagnostics
+              );
+              const returnPath = resolvedReturn.path;
               if (returnPath) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  newDist + returnPath.distanceKm
+                  newDist + returnPath.distanceKm,
+                  resolvedReturn.relaxationsUsed,
+                  targetNodeIds
                 ));
               }
               if (closedDistance >= targetDistanceKm * 0.98) {
@@ -659,19 +1145,39 @@ function solveWithConfig(
 
             // At 85%+, force closure for all reachable states
             if (newProgress >= 0.85) {
-              const cleanPath = cleanReturnPath(graph, selectedEdge.to, startNodeId, newState.edgeVisits);
-              const returnPath = cleanPath ?? returnCache.getPath(graph, selectedEdge.to, startNodeId);
-              if (returnPath && newDist + returnPath.distanceKm <= maxDist * 1.1) {
+              const resolvedReturn = resolveReturnPath(
+                graph,
+                selectedEdge.to,
+                startNodeId,
+                newState.edgeVisits,
+                returnCache,
+                cleanReturnMode,
+                maxDist * 1.1 - newDist,
+                newDist,
+                newState.pavedDistanceKm,
+                routeIntent?.maxRepeatEdgeRatio,
+                returnPavedRatioCap,
+                diagnostics
+              );
+              const returnPath = resolvedReturn.path;
+              const forcedClosedDistance = returnPath ? newDist + returnPath.distanceKm : null;
+              if (returnPath && forcedClosedDistance != null && forcedClosedDistance >= minDist && forcedClosedDistance <= maxDist * 1.1) {
                 validPaths.push(buildSolverPath(
                   graph,
                   [...newState.nodeIds, ...returnPath.nodeIds.slice(1)],
                   [...newState.edgeIds, ...returnPath.edgeIds],
-                  newDist + returnPath.distanceKm
+                  forcedClosedDistance,
+                  resolvedReturn.relaxationsUsed,
+                  targetNodeIds
                 ));
               }
-              continue;
+              if (forcedClosedDistance != null && forcedClosedDistance >= minDist) {
+                continue;
+              }
             }
           }
+        } else {
+          incrementDiagnostic(diagnostics, "returnPathMissing");
         }
 
         // Check for natural loop closure
@@ -682,7 +1188,7 @@ function solveWithConfig(
             startCoord
           );
           if (distToStart < CLOSE_ENOUGH_KM) {
-            validPaths.push(buildSolverPath(graph, newState.nodeIds, newState.edgeIds, newState.distanceKm));
+            validPaths.push(buildSolverPath(graph, newState.nodeIds, newState.edgeIds, newState.distanceKm, [], targetNodeIds));
           }
         }
 
@@ -695,6 +1201,15 @@ function solveWithConfig(
   }
 
   return validPaths;
+}
+
+function solverConfigsForIntent(routeIntent?: RouteIntent): SolverConfig[] {
+  if (routeIntent?.type === "park_loop") return [
+    { beamWidth: 16, temperature: 0.18, seedBearing: 0, expansionFactor: 2 },
+    { beamWidth: 16, temperature: 0.2, seedBearing: 180, expansionFactor: 2 },
+  ];
+  if (routeIntent?.type === "urban_nature_loop") return SOLVER_CONFIGS.slice(0, 2);
+  return SOLVER_CONFIGS;
 }
 
 // ── Geometric deduplication ──────────────────────────────────────────────────
@@ -737,17 +1252,74 @@ export async function solve(
   startNodeId: string,
   targetDistanceKm: number,
   targetElevationM: number = 0,
-  nodeElevation: Map<string, number> = new Map()
+  nodeElevation: Map<string, number> = new Map(),
+  routeIntent?: RouteIntent,
+  runtimeBudget: SolverRuntimeBudget = {}
 ): Promise<SolverPath[]> {
-  const results = SOLVER_CONFIGS.map((config) =>
-    solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config)
-  );
+  const configs = solverConfigsForIntent(routeIntent);
+  const deadlineMs = resolveSolverDeadline(routeIntent, runtimeBudget);
+  const diagnostics = runtimeBudget.emptyDiagnostics;
+  const allPaths: SolverPath[] = [];
+  for (const config of configs) {
+    incrementDiagnostic(diagnostics, "configsTried");
+    if (deadlineMs != null && performance.now() >= deadlineMs && allPaths.length > 0) {
+      if (diagnostics) diagnostics.deadlineReached = true;
+      break;
+    }
+    allPaths.push(...solveWithConfig(graph, startNodeId, targetDistanceKm, targetElevationM, nodeElevation, config, routeIntent, deadlineMs, diagnostics));
+    if (hasEnoughProgressivePaths(allPaths, routeIntent)) break;
+  }
 
-  const allPaths = results.flat();
 
   // Sort by totalScore descending
   allPaths.sort((a, b) => b.totalScore - a.totalScore);
 
   // 4.2 Geometric deduplication
-  return deduplicatePaths(allPaths);
+  const dedupedPaths = deduplicatePaths(allPaths);
+  if (diagnostics) diagnostics.validPaths = dedupedPaths.length;
+  return dedupedPaths;
+}
+
+export function resolveSolverDeadline(
+  routeIntent?: RouteIntent,
+  runtimeBudget: SolverRuntimeBudget = {},
+  nowMs: number = performance.now()
+): number | undefined {
+  if (runtimeBudget.deadlineMs != null) return runtimeBudget.deadlineMs;
+  if (!routeIntent) return undefined;
+
+  const targetComponents = routeIntent.terrainComponents.filter((component) => routeIntent.targetComponents.includes(component.id));
+  const targetComponentKm = Math.max(0, ...targetComponents.map((component) => component.totalKm));
+  const hugeTransitionToWoods = routeIntent.type === "transition_to_woods" && (
+    targetComponentKm >= 80 || routeIntent.beamBudget.maxIterations >= 600
+  );
+  const compactParkLoop = routeIntent.type === "park_loop" && routeIntent.distancePolicy.mode === "adjustable";
+  const multiplier = hugeTransitionToWoods
+    ? (routeIntent.targetDistanceKm >= 14 ? 14 : 12)
+    : compactParkLoop
+      ? 4
+      : 10;
+  const maxBudgetMs = hugeTransitionToWoods
+    ? (routeIntent.targetDistanceKm >= 14 ? 60_000 : 55_000)
+    : compactParkLoop
+      ? 20_000
+      : 45_000;
+  const minBudgetMs = compactParkLoop ? 12_000 : 15_000;
+  const softBudgetMs = Math.max(minBudgetMs, Math.min(maxBudgetMs, routeIntent.timeBudgetMs * multiplier));
+  return nowMs + softBudgetMs;
+}
+
+function hasEnoughProgressivePaths(paths: SolverPath[], routeIntent?: RouteIntent): boolean {
+  if (!routeIntent) return false;
+  if (routeIntent.type === "transition_to_woods" || routeIntent.type === "forest_loop") return false;
+  const shortlistSize = routeIntent.beamBudget.shortlistSize;
+  if (paths.length < Math.max(4, Math.min(shortlistSize, 8))) return false;
+  const minDistanceKm = routeIntent.targetDistanceKm * 0.9;
+  const targetNodeIds = buildTargetNodeSet(routeIntent);
+  const viableCount = paths.filter((path) => {
+    if (path.distanceKm < minDistanceKm) return false;
+    if (targetNodeIds.size === 0) return true;
+    return path.nodeIds.some((nodeId) => targetNodeIds.has(nodeId));
+  }).length;
+  return viableCount >= Math.max(4, Math.min(shortlistSize, 8));
 }

@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { downloadGPX } from "@/lib/gpx-export";
-import { exportFeedbacksAsJSON, loadFeedbacks } from "@/lib/feedback-store";
+import { exportFeedbacksAsJSON, loadFeedbacks, saveFeedback, type RouteFeedback } from "@/lib/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import WaitlistForm from "@/components/ui/WaitlistForm";
 import { translateQualityWarning } from "@/lib/route-quality-copy";
 import { buildWatchExportGuide } from "@/lib/watch-export";
 import { buildRouteExplanation } from "@/lib/route-explanations";
 import { buildFeedbackInsights } from "@/lib/feedback-insights";
+import { FEEDBACK_REASON_OPTIONS, type FeedbackReason } from "@/lib/feedback-reasons";
+import { PROFILES_BY_ID } from "@/lib/session-profiles";
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -19,9 +21,9 @@ function formatDuration(seconds: number): string {
 }
 
 function labelForScore(score: number) {
-  if (score >= 82) return { label: "Solide", color: "var(--accent-lime)" };
-  if (score >= 65) return { label: "À vérifier", color: "var(--accent-amber)" };
-  return { label: "Fragile", color: "var(--accent-danger)" };
+  if (score >= 82) return { label: "Boucle exploitable", color: "var(--accent-lime)" };
+  if (score >= 65) return { label: "Boucle à vérifier", color: "var(--accent-amber)" };
+  return { label: "Boucle fragile", color: "var(--accent-danger)" };
 }
 
 function terrainConfidenceCopy(confidence?: "low" | "medium" | "high") {
@@ -101,6 +103,136 @@ function MiniPanel({ children, label }: { children: React.ReactNode; label?: str
   );
 }
 
+function ResultCartouche({
+  distanceKm,
+  ascendM,
+  score,
+}: {
+  distanceKm: number;
+  ascendM: number;
+  score: number;
+}) {
+  return (
+    <div className="tf-result-cartouche" aria-label="Aperçu cartographique du résultat">
+      <div className="tf-result-cartouche-map" aria-hidden="true">
+        <svg viewBox="0 0 360 220" preserveAspectRatio="none">
+          <path className="cartouche-contour" d="M-12 58 C62 18 126 22 188 58 C248 92 304 86 374 46" />
+          <path className="cartouche-contour" d="M-18 116 C54 82 116 80 182 120 C244 158 304 152 378 106" />
+          <path className="cartouche-contour" d="M-8 176 C64 134 140 148 200 178 C260 208 316 198 374 156" />
+          <path className="cartouche-path-muted" d="M48 166 C96 118 136 132 178 86 C220 42 268 50 318 76" />
+          <path className="cartouche-path-muted cartouche-path-muted-b" d="M40 64 C104 88 136 112 184 118 C236 124 278 150 326 186" />
+          <path className="cartouche-route" d="M82 158 C42 112 72 56 144 50 C222 42 296 78 300 132 C304 184 188 202 116 178 C102 174 90 166 82 158 Z" />
+          <circle cx="82" cy="158" r="4.5" />
+        </svg>
+      </div>
+      <div className="tf-result-cartouche-body">
+        <p>Boucle terrain stabilisée</p>
+        <strong>{distanceKm.toFixed(1)} km · {ascendM.toFixed(0)} m D+</strong>
+        <span>indice beta {Math.round(score * 100)} · GPX exportable après vérification</span>
+      </div>
+    </div>
+  );
+}
+
+function RefusalFeedbackButtons({
+  generationId,
+  errorCode,
+  subCode,
+  targetDistanceKm,
+  targetElevationM,
+  selectedProfileId,
+  scenicMode,
+}: {
+  generationId?: string | null;
+  errorCode?: string | null;
+  subCode?: string | null;
+  targetDistanceKm: number;
+  targetElevationM: number;
+  selectedProfileId: string;
+  scenicMode: boolean;
+}) {
+  const [submitted, setSubmitted] = useState<"positive" | "negative" | null>(null);
+  const [selectedReasons, setSelectedReasons] = useState<FeedbackReason[]>([]);
+  const profile = PROFILES_BY_ID.get(selectedProfileId);
+  const refusalReasons = FEEDBACK_REASON_OPTIONS.filter((option) => option.appliesTo === "refusal");
+
+  const toggleReason = (reason: FeedbackReason) => {
+    setSelectedReasons((current) =>
+      current.includes(reason)
+        ? current.filter((item) => item !== reason)
+        : [...current, reason]
+    );
+  };
+
+  const handleFeedback = (rating: "positive" | "negative") => {
+    const feedback: RouteFeedback = {
+      id: crypto.randomUUID(),
+      generationId: generationId ?? undefined,
+      outcome: "refused",
+      errorCode: errorCode ?? undefined,
+      subCode: subCode ?? undefined,
+      timestamp: Date.now(),
+      rating,
+      reasons: selectedReasons,
+      sessionType: profile?.sessionType ?? "unknown",
+      sport: profile?.sport ?? "running",
+      mode: scenicMode ? "SCENIC" : "PERFORMANCE",
+      requestedDistanceKm: targetDistanceKm,
+      requestedElevationM: targetElevationM || null,
+      actualDistanceKm: null,
+      actualElevationM: null,
+      algorithmicScore: null,
+      distanceErrorPct: null,
+      elevationErrorPct: null,
+    };
+
+    saveFeedback(feedback);
+    setSubmitted(rating);
+  };
+
+  if (submitted) {
+    return (
+      <div style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: "var(--radius-control)", background: "var(--bg-surface)", textAlign: "center" }}>
+        <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}>
+          Merci, ce refus est relié à la génération beta.
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "14px" }}>
+      <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}>
+        Ce refus t&apos;aide à choisir quoi faire ?
+      </p>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button onClick={() => handleFeedback("positive")} style={{ flex: 1, padding: "8px 10px", background: "rgba(168,214,114,0.08)", border: "1px solid rgba(168,214,114,0.2)", borderRadius: "var(--radius-control)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px" }}>
+          Refus clair 👍
+        </button>
+        <button onClick={() => handleFeedback("negative")} style={{ flex: 1, padding: "8px 10px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: "var(--radius-control)", color: "var(--text-primary)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px" }}>
+          Pas clair 👎
+        </button>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }} aria-label="Raisons du feedback refusé">
+        {refusalReasons.map((option) => {
+          const active = selectedReasons.includes(option.code);
+          return (
+            <button
+              key={option.code}
+              type="button"
+              onClick={() => toggleReason(option.code)}
+              aria-pressed={active}
+              style={{ padding: "6px 8px", borderRadius: "999px", border: active ? "1px solid var(--accent-lime)" : "1px solid var(--border)", background: active ? "rgba(168,214,114,0.12)" : "var(--bg-surface)", color: active ? "var(--accent-lime)" : "var(--text-muted)", cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", letterSpacing: "0.04em" }}
+            >
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function RouteResult() {
   const {
     currentRoute,
@@ -108,10 +240,15 @@ export default function RouteResult() {
     setCandidateIndex,
     status,
     errorMessage,
+    generationId,
+    betaOutcome,
+    errorCode,
+    errorSubCode,
     clearRoute,
     targetDistanceKm,
     targetElevationM,
     scenicMode,
+    selectedProfileId,
   } = useAppStore();
 
   const feedbacks = loadFeedbacks();
@@ -145,14 +282,34 @@ export default function RouteResult() {
       <div className="px-4 md:px-6 py-6">
         <MiniPanel>
           <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 700, letterSpacing: "0.16em", color: "var(--accent-danger)", textTransform: "uppercase", marginBottom: "8px" }}>
-            Le terrain n&apos;a pas coopéré
+            Refus honnête beta
+          </p>
+          <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--accent-amber)", marginBottom: "8px" }}>
+            {errorCode ?? "UNKNOWN"}{errorSubCode ? ` / ${errorSubCode}` : ""}
           </p>
           <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>
             {errorMessage}
           </p>
+          <p style={{ marginTop: "10px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.45 }}>
+            La beta préfère refuser plutôt que vendre une trace mensongère. Essaie une distance plus courte, un départ plus proche des chemins, ou le mode nature urbaine.
+          </p>
+          {generationId && (
+            <p style={{ marginTop: "8px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--text-dim)" }}>
+              génération {generationId}
+            </p>
+          )}
           <button onClick={clearRoute} style={{ marginTop: "14px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)", background: "transparent", border: "1px solid var(--border)", borderRadius: "8px", padding: "10px 12px", cursor: "pointer" }}>
-            Modifier le brief
+            Paramètres
           </button>
+          <RefusalFeedbackButtons
+            generationId={generationId}
+            errorCode={errorCode}
+            subCode={errorSubCode}
+            targetDistanceKm={targetDistanceKm}
+            targetElevationM={targetElevationM}
+            selectedProfileId={selectedProfileId}
+            scenicMode={scenicMode}
+          />
         </MiniPanel>
       </div>
     );
@@ -177,6 +334,11 @@ export default function RouteResult() {
   const watchExportGuide = buildWatchExportGuide(currentRoute.profile);
   const routeExplanation = buildRouteExplanation(currentRoute, { targetDistanceKm, targetElevationM, scenicMode });
   const total = candidates.length;
+  const outcome = currentRoute.betaOutcome ?? betaOutcome ?? (currentRoute.distanceAdjustment ? "adjusted" : "generated");
+  const outcomeTitle = outcome === "adjusted" ? "Distance adaptée" : "Boucle générée";
+  const outcomeSubtitle = outcome === "adjusted" && currentRoute.distanceAdjustment
+    ? `Demandé ${currentRoute.distanceAdjustment.requestedDistanceKm.toFixed(1)} km · proposé ${currentRoute.distanceAdjustment.adjustedDistanceKm.toFixed(1)} km`
+    : "Promesse tenue sur ce terrain compatible";
 
   return (
     <div className="flex flex-col pb-6">
@@ -189,31 +351,44 @@ export default function RouteResult() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" width="12" height="12">
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 18l-6-6 6-6"/>
           </svg>
-          Modifier le brief
+          Paramètres
         </button>
 
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: "16px" }}>
-          <div>
-            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.22em", color: "var(--accent-sage)", textTransform: "uppercase", marginBottom: "8px" }}>
-              Boucle générée
-            </p>
-            <h2 style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "29px", color: "var(--text-primary)", letterSpacing: "-0.06em", lineHeight: 1 }}>
-              {best.distanceKm.toFixed(1)} km
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: scoreLabel.color }} />
+            <h2 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "22px", color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: 1.05 }}>
+              {outcomeTitle}
             </h2>
-            <p style={{ marginTop: "6px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-dim)" }}>
-              demandé {targetDistanceKm}km · {targetElevationM}m D+
-            </p>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", border: "1px solid var(--border)", borderRadius: "999px", background: "rgba(10,15,12,0.56)" }}>
-            <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: scoreLabel.color }} />
-            <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-primary)" }}>
-              {scoreLabel.label} · {matchPercent}%
-            </span>
-          </div>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: outcome === "adjusted" ? "var(--accent-amber)" : "var(--text-muted)", lineHeight: 1.5, marginBottom: "6px" }}>
+            {outcomeSubtitle}
+          </p>
+          <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.6 }}>
+            {best.distanceKm.toFixed(1)} km · {best.ascendM.toFixed(0)} m D+ · {formatDuration(best.durationSeconds)} estimée
+          </p>
+          <p style={{ marginTop: "4px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.6 }}>
+            Écart: {distanceErrorPct}% distance · {elevationErrorPct}% D+ · {Math.round(trailRatio * 100)}% sentiers · GPX prêt
+          </p>
         </div>
       </div>
 
       <div className="px-4 md:px-6" style={{ paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+        <ResultCartouche distanceKm={best.distanceKm} ascendM={best.ascendM} score={best.totalScore} />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <button
+            onClick={handleDownloadGPX}
+            style={{ width: "100%", height: "48px", background: "var(--accent-lime)", color: "var(--bg-deep)", border: "1px solid rgba(232,230,223,0.08)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}
+            aria-label="Télécharger le parcours au format GPX"
+          >
+            Télécharger GPX
+          </button>
+          <button onClick={clearRoute} style={{ width: "100%", height: "40px", background: "rgba(17,26,21,0.58)", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer" }}>
+            Générer une autre boucle
+          </button>
+        </div>
+
         <MiniPanel label="Pourquoi ce tracé">
           <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 700, color: "var(--text-primary)", letterSpacing: "0.04em", marginBottom: "6px" }}>
             {routeExplanation.headline}
@@ -234,10 +409,10 @@ export default function RouteResult() {
           <StatBlock label="Distance" value={`${best.distanceKm.toFixed(1)} km`} sub={`écart ${distanceErrorPct}%`} />
           <StatBlock label="Dénivelé" value={`${best.ascendM.toFixed(0)} m`} sub={`D− ${best.descendM.toFixed(0)} m`} />
           <StatBlock label="Temps" value={formatDuration(best.durationSeconds)} sub="estimation" />
-          <StatBlock label="Sentiers" value={`${Math.round(trailRatio * 100)}%`} sub="signal terrain" />
+          <StatBlock label="Sentiers" value={`${Math.round(trailRatio * 100)}%`} sub="Part de sentiers" />
         </div>
 
-        <MiniPanel label="Santé de la boucle">
+        <MiniPanel label="Fiabilité">
           <HealthRow label="Boucle fermée" value={loopGapKm != null ? `${loopGapKm.toFixed(2)}km` : `${Math.round(best.loopScore * 100)}%`} ok={loopGapKm != null ? loopGapKm <= 0.5 : best.loopScore >= 0.72} />
           <HealthRow label="Distance visée" value={`±${distanceErrorPct}%`} ok={distanceErrorPct <= 15} />
           <HealthRow label="D+ visé" value={`±${elevationErrorPct}%`} ok={elevationErrorPct <= 35} />
@@ -249,7 +424,7 @@ export default function RouteResult() {
         </MiniPanel>
 
         {qualityWarnings.length > 0 && (
-          <MiniPanel label="Compromis détectés">
+          <MiniPanel label="À vérifier avant de partir">
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {qualityWarnings.map((warning) => (
                 <div key={warning.label} style={{ paddingLeft: "10px", borderLeft: "2px solid var(--accent-amber)" }}>
@@ -292,38 +467,26 @@ export default function RouteResult() {
           </MiniPanel>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          <button
-            onClick={handleDownloadGPX}
-            style={{ width: "100%", height: "48px", background: "var(--accent-lime)", color: "var(--bg-deep)", border: "1px solid rgba(232,230,223,0.08)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", cursor: "pointer" }}
-            aria-label="Télécharger le parcours au format GPX"
-          >
-            Télécharger le GPX
-          </button>
-          <MiniPanel label={watchExportGuide.title}>
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "8px" }}>
-              {watchExportGuide.description}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-              {watchExportGuide.targets.map((target) => (
-                <details key={target.id} style={{ borderTop: "1px solid rgba(125,143,130,0.1)", paddingTop: "7px" }}>
-                  <summary style={{ cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
-                    {target.label}
-                  </summary>
-                  <p style={{ marginTop: "5px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.45 }}>
-                    {target.primaryAction}
-                  </p>
-                </details>
-              ))}
-            </div>
-          </MiniPanel>
-          <button onClick={clearRoute} style={{ width: "100%", height: "40px", background: "rgba(17,26,21,0.58)", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: "8px", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", cursor: "pointer" }}>
-            Générer une autre boucle
-          </button>
-        </div>
+        <MiniPanel label={watchExportGuide.title}>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5, marginBottom: "8px" }}>
+            {watchExportGuide.description}
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            {watchExportGuide.targets.map((target) => (
+              <details key={target.id} style={{ borderTop: "1px solid rgba(125,143,130,0.1)", paddingTop: "7px" }}>
+                <summary style={{ cursor: "pointer", fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", color: "var(--text-primary)" }}>
+                  {target.label}
+                </summary>
+                <p style={{ marginTop: "5px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                  {target.primaryAction}
+                </p>
+              </details>
+            ))}
+          </div>
+        </MiniPanel>
 
         <MiniPanel label="Retour terrain">
-          <FeedbackButtons route={currentRoute} sessionConfig={{ targetDistanceKm, targetElevationM }} />
+          <FeedbackButtons route={currentRoute} sessionConfig={{ targetDistanceKm, targetElevationM }} outcome={outcome} generationId={currentRoute.generationId ?? generationId ?? undefined} />
         </MiniPanel>
 
         {feedbackCount > 0 && (
@@ -342,7 +505,7 @@ export default function RouteResult() {
         {showWaitlistWidget && !waitlistDismissed && (
           <MiniPanel>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", color: "var(--text-muted)" }}>Suivre les prochaines boucles ?</span>
+              <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "12px", color: "var(--text-muted)" }}>Tu veux être prévenu quand la génération s’améliore dans ta zone ?</span>
               <button onClick={handleDismissWaitlist} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: "14px", padding: "2px 6px", opacity: 0.6 }} aria-label="Fermer">✕</button>
             </div>
             <WaitlistForm source="post-generation" compact />

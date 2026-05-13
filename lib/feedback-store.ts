@@ -28,6 +28,14 @@ export interface RouteFeedback {
   timestamp: number;
   /** User rating: thumbs up or thumbs down */
   rating: "positive" | "negative";
+  /** Stable id tying the feedback to a generated/adjusted/refused API attempt. */
+  generationId?: string;
+  /** Closed-beta product outcome judged by the tester. */
+  outcome?: "generated" | "adjusted" | "refused";
+  /** Present for refused outcomes. */
+  errorCode?: string;
+  /** Present for typed refused outcomes. */
+  subCode?: string;
   /** Whitelisted reason codes selected by the user; no free text / PII */
   reasons?: FeedbackReason[];
   /** Session type of the profile used (e.g. `"endurance"`, `"seuil_lactique"`) */
@@ -44,19 +52,19 @@ export interface RouteFeedback {
    */
   requestedElevationM: number | null;
   /** Actual distance of the generated route in km */
-  actualDistanceKm: number;
+  actualDistanceKm: number | null;
   /** Actual D+ of the generated route in metres */
-  actualElevationM: number;
+  actualElevationM: number | null;
   /**
    * Multi-criteria algorithmic score in [0, 1].
    * Useful to identify routes that score high algorithmically but rate poorly.
    */
-  algorithmicScore: number;
+  algorithmicScore: number | null;
   /**
    * `|actualDistance - requestedDistance| / requestedDistance × 100`.
    * Rounded to integer percent.
    */
-  distanceErrorPct: number;
+  distanceErrorPct: number | null;
   /**
    * `|actualElevation - requestedElevation| / requestedElevation × 100`.
    * `null` when `requestedElevationM` was null or 0.

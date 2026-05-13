@@ -12,10 +12,10 @@ import type {
 import AddressInput from "@/components/sidebar/AddressInput";
 
 const LOADING_STEPS = [
-  "Lecture des chemins proches",
-  "Recherche d'une boucle fermée",
-  "Contrôle distance / D+",
-  "Préparation du GPX",
+  "La carte lit les chemins autour du départ",
+  "Le relief et les lisières deviennent contraintes",
+  "La boucle cherche son retour propre",
+  "Le GPX se prépare sans maquiller le terrain",
 ];
 
 const PHASE1_PROFILE_IDS = ["running_trail_decouverte", "running_trail", "running_endurance"] as const;
@@ -28,16 +28,16 @@ const PHASE1_MAX_ELEVATION_M = 600;
 
 const INTENTION_COPY: Record<string, { label: string; caption: string }> = {
   running_trail_decouverte: {
-    label: "Facile",
-    caption: "Trail accessible, peu technique.",
+    label: "Lisières calmes",
+    caption: "Une sortie accessible, chemins lisibles.",
   },
   running_trail: {
-    label: "Modéré",
-    caption: "Sentiers variés, un vrai peu de D+.",
+    label: "Chemins sauvages",
+    caption: "Sentiers variés, terrain plus vivant.",
   },
   running_endurance: {
-    label: "Régulier",
-    caption: "Boucle stable, effort zone 2.",
+    label: "Sortie roulante",
+    caption: "Boucle régulière, effort doux et continu.",
   },
 };
 
@@ -175,7 +175,9 @@ export default function SessionForm() {
           setMapCenter({ lat: latitude, lng: longitude });
           return;
         }
-        fetch(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${token}`)
+        const geocodeUrl = new URL(`https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json`);
+        geocodeUrl.searchParams.set("access_token", token);
+        fetch(geocodeUrl.toString())
           .then((r) => r.json())
           .then((data) => {
             const placeName = data.features?.[0]?.place_name ?? `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`;
@@ -215,11 +217,26 @@ export default function SessionForm() {
       });
       const data: GenerateRouteResponse | GenerateRouteError = await res.json();
       if (data.success) setSuccess(data.route);
-      else setError(data.error);
+      else setError(data.error, data);
     } catch {
       setError("Erreur réseau. Réessaie dans quelques secondes.");
     }
   }, [address, canGenerate, scenicMode, selectedProfileId, setError, setLoading, setSidebarOpen, setSuccess, targetDistanceKm, targetElevationM]);
+
+  const reduceElevation = () => {
+    const lowerPreset = [...elevPresets].reverse().find((value) => value < targetElevationM);
+    setTargetElevation(Math.max(elevMin, lowerPreset ?? targetElevationM - 100));
+  };
+
+  const increaseDistance = () => {
+    const higherPreset = distPresets.find((value) => value > targetDistanceKm);
+    setTargetDistance(Math.min(distMax, higherPreset ?? targetDistanceKm + 1));
+  };
+
+  const focusDeparture = () => {
+    if (typeof document === "undefined") return;
+    document.getElementById("address")?.focus();
+  };
 
   const presetChip = (active: boolean): React.CSSProperties => ({
     padding: "7px 10px",
@@ -242,23 +259,23 @@ export default function SessionForm() {
       <div className="px-4 md:px-6 pt-5 pb-[18px] border-b border-[var(--border)]">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "12px" }}>
           <span style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.24em", color: "var(--accent-sage)", textTransform: "uppercase" }}>
-            Atelier trail · phase 1
+            Boucle trail courte
           </span>
           <span style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--text-dim)" }}>
             5–15km
           </span>
         </div>
         <h1 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "27px", lineHeight: 1.02, color: "var(--text-primary)", letterSpacing: "-0.04em", marginBottom: "10px" }}>
-          Une boucle trail testable, pas une promesse magique.
+          Nouvelle boucle trail
         </h1>
         <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.55 }}>
-          Donne un départ, une distance et du D+. TrailForge cherche une boucle courte, exportable GPX, avec les compromis visibles.
+            Laisse le terrain dessiner une boucle GPX autour de ton départ.
         </p>
       </div>
 
       <div className="px-4 md:px-6" style={{ paddingTop: "18px", display: "flex", flexDirection: "column", gap: "12px" }}>
         <PanelCard>
-          <SectionLabel>D&apos;où tu pars ?</SectionLabel>
+          <SectionLabel>Départ</SectionLabel>
           <AddressInput
             id="address"
             value={address}
@@ -344,12 +361,12 @@ export default function SessionForm() {
             ))}
           </div>
           <p style={{ marginTop: "10px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.45 }}>
-            Estimation. Le terrain décide, l&apos;interface ne te vend pas un D+ exact.
+            Estimation. TrailForge affichera l&apos;écart réel avant export GPX.
           </p>
         </PanelCard>
 
         <PanelCard>
-          <SectionLabel>Allure</SectionLabel>
+          <SectionLabel>Style de sortie</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px" }}>
             {PHASE1_PROFILES.map((profile) => {
               const active = selectedProfileId === profile.id;
@@ -389,7 +406,7 @@ export default function SessionForm() {
         </PanelCard>
 
         <PanelCard muted>
-          <SectionLabel>Terrain prioritaire</SectionLabel>
+          <SectionLabel>Préférence terrain</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
             <button
               type="button"
@@ -409,7 +426,7 @@ export default function SessionForm() {
                 textTransform: "uppercase",
               }}
             >
-              Chemins nets
+              Trace plus fiable
             </button>
             <button
               type="button"
@@ -429,7 +446,7 @@ export default function SessionForm() {
                 textTransform: "uppercase",
               }}
             >
-              Plus nature
+              Plus sauvage
             </button>
           </div>
           {routeIntention && (
@@ -442,12 +459,6 @@ export default function SessionForm() {
           )}
         </PanelCard>
 
-        <PanelCard muted>
-          <SectionLabel>Avant génération</SectionLabel>
-          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)", lineHeight: 1.5 }}>
-            TrailForge auditera la qualité OSM après génération : chemins disponibles, surfaces inconnues, bitume et continuité naturelle. Si la donnée terrain est faible, le résultat l&apos;affichera clairement au lieu de survendre le GPX.
-          </p>
-        </PanelCard>
       </div>
 
       <div
@@ -484,14 +495,36 @@ export default function SessionForm() {
             transition: "all 0.2s var(--ease-out-expo)",
           }}
         >
-          {isLoading ? "Ça explore le terrain…" : "Générer ma boucle"}
+        {isLoading ? "La carte dessine…" : "Dessiner la boucle"}
         </button>
+
+        {!isLoading && (
+          <p style={{ marginTop: "9px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.45, textAlign: "center" }}>
+            TrailForge cherche une boucle GPX courte autour de ton départ. La fiabilité sera affichée avant export.
+          </p>
+        )}
 
         {status === "error" && (
           <div role="alert" aria-live="assertive" style={{ marginTop: "10px", padding: "12px 14px", background: "rgba(184,90,78,0.08)", border: "1px solid rgba(184,90,78,0.24)", borderRadius: "8px" }}>
-            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "#d8897f", lineHeight: 1.5 }}>
-              {errorMessage}
+            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "11px", fontWeight: 700, letterSpacing: "0.12em", color: "#d8897f", textTransform: "uppercase", marginBottom: "6px" }}>
+              Pas de boucle fiable trouvée
             </p>
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.5 }}>
+              {errorMessage?.toLowerCase().includes("réseau")
+                ? "Erreur réseau. Garde tes paramètres et réessaie dans quelques secondes."
+                : "TrailForge n'a pas trouvé assez de chemins continus pour respecter ces paramètres autour de ce départ."}
+            </p>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+              <button type="button" onClick={reduceElevation} disabled={targetElevationM <= elevMin} style={presetChip(false)}>Réduire le D+</button>
+              <button type="button" onClick={increaseDistance} disabled={targetDistanceKm >= distMax} style={presetChip(false)}>Allonger un peu</button>
+              <button type="button" onClick={focusDeparture} style={presetChip(false)}>Changer le départ</button>
+              {scenicMode && <button type="button" onClick={() => setScenicMode(false)} style={presetChip(false)}>Prioriser trace fiable</button>}
+            </div>
+            {errorMessage && !errorMessage.toLowerCase().includes("réseau") && (
+              <p style={{ marginTop: "8px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "10px", color: "var(--text-dim)", lineHeight: 1.4 }}>
+                Détail technique : {errorMessage}
+              </p>
+            )}
           </div>
         )}
       </div>

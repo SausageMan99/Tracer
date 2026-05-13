@@ -40,4 +40,22 @@ describe("POST /api/feedback", () => {
     expect(response.status).toBe(400);
     expect(json.success).toBe(false);
   });
+
+  it("accepts closed-beta refused feedback without route metrics", async () => {
+    const response = await POST(makeRequest(validPayload({
+      generationId: "gen_refused_api",
+      outcome: "refused",
+      errorCode: "ROUTE_CANDIDATES_REJECTED",
+      subCode: "TRAIL_PROMISE_UNMET",
+      actualDistanceKm: null,
+      actualElevationM: null,
+      algorithmicScore: null,
+      distanceErrorPct: null,
+      elevationErrorPct: null,
+    })) as never);
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.success).toBe(true);
+  });
 });

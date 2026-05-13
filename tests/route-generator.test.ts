@@ -124,7 +124,11 @@ describe("generateGPX", () => {
       elevationErrorPct: 0.08,
       loopGapKm: 0.12,
       busyRoadRatio: 0.03,
-      trailRatio: 0.41,
+      trailRatio: 0.21,
+      naturalWayRatio: 0.41,
+      pavedRatio: 0.62,
+      scenicPavedRatio: 0.31,
+      uTurnRatio: 0,
       restrictedAccessRatio: 0,
       onewayViolationRatio: 0,
       repeatEdgeRatio: 0.01,
@@ -138,7 +142,10 @@ describe("generateGPX", () => {
     expect(gpx).toContain('creator="TrailForge"');
     expect(gpx).toContain("<keywords>TrailForge,GPX,running</keywords>");
     expect(gpx).toContain("<trailforge:productionScore>0.82</trailforge:productionScore>");
+    expect(gpx).toContain("<trailforge:trailRatio>0.21</trailforge:trailRatio>");
     expect(gpx).toContain("<trailforge:naturalWayRatio>0.41</trailforge:naturalWayRatio>");
+    expect(gpx).toContain("<trailforge:pavedRatio>0.62</trailforge:pavedRatio>");
+    expect(gpx).toContain("<trailforge:scenicPavedRatio>0.31</trailforge:scenicPavedRatio>");
     expect(gpx).toContain("<trailforge:warning>DISTANCE_OFF_TARGET</trailforge:warning>");
   });
 });

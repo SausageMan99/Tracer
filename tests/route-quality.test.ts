@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assessRouteQuality } from "@/lib/engine/route-quality";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
+import type { RouteIntent } from "@/lib/engine/terrain-planner";
 import type { EnrichedGraph, RouteCandidate, SolverPath } from "@/lib/types";
 
 function makeGraph(): EnrichedGraph {
@@ -87,6 +88,41 @@ describe("assessRouteQuality", () => {
     expect(quality.warnings).not.toContain("TOO_MUCH_BUSY_ROAD");
     expect(quality.warnings).not.toContain("DISTANCE_OFF_TARGET");
     expect(quality.productionScore).toBeGreaterThan(0.8);
+  });
+
+  it("scores low-D+ recovery routes with absolute elevation tolerance instead of relative percent", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 49.1979, lng: -0.3886 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 49.1979, lng: -0.3886, edges: ["ab"] }],
+        ["b", { id: "b", lat: 49.203, lng: -0.384, edges: ["ab"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 5.32, highway: "path", surface: "sand", scenic: true, osmWayId: 44, score: 0.9 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_recuperation")!;
+    const path: SolverPath = {
+      nodeIds: ["a", "b"],
+      edgeIds: ["ab"],
+      distanceKm: 5.32,
+      totalScore: 1,
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 5.32, ascendM: 93, loopScore: 0.95 }),
+      path,
+      graph,
+      profile,
+      targetDistanceKm: 6,
+      targetElevationM: 50,
+      scenicWayIds: new Set(["44"]),
+    });
+
+    expect(quality.elevationDiagnostics?.withinAbsoluteTolerance).toBe(true);
+    expect(quality.warnings).not.toContain("ELEVATION_OFF_TARGET");
+    expect(quality.productionScore).toBeGreaterThanOrEqual(0.68);
   });
 
   it("flags immediate U-turns and overlapping backtracking", () => {
@@ -265,10 +301,12 @@ describe("assessRouteQuality", () => {
     expect(quality.pavedRatio).toBe(1);
     expect(quality.scenicPavedRatio).toBe(1);
     expect(quality.forestOrParkRatio).toBe(1);
+    expect(quality.naturalWayRatio).toBe(1);
     expect(quality.trailRatio).toBe(0);
     expect(quality.longestNonPavedTrailStreakKm).toBe(0);
     expect(quality.warnings).toContain("TOO_MUCH_PAVEMENT");
     expect(quality.warnings).toContain("NOT_ENOUGH_TRAIL");
+    expect(quality.warnings).toContain("NATURAL_BUT_PAVED");
     expect(quality.productionScore).toBeLessThan(0.75);
   });
 
@@ -305,6 +343,7 @@ describe("assessRouteQuality", () => {
 
     expect(quality.pavedRatio).toBeCloseTo(1 / 3);
     expect(quality.scenicPavedRatio).toBeCloseTo(1 / 3);
+    expect(quality.naturalWayRatio).toBe(1);
     expect(quality.trailRatio).toBeCloseTo(2 / 3);
     expect(quality.naturalCorridorRatio).toBeCloseTo(2 / 3);
     expect(quality.longestTrailSegmentKm).toBe(2);
@@ -345,12 +384,212 @@ describe("assessRouteQuality", () => {
       targetElevationM: 80,
     });
 
-    expect(quality.warnings).toContain(
-      "Données terrain moyennes : beaucoup de chemins sans surface renseignée dans OSM."
-    );
+    expect(quality.warnings).toContain("OSM_SURFACE_DATA_WEAK");
     expect(quality.terrainDataConfidence).toBe("medium");
     expect(quality.trailPotential).toBe("high");
     expect(quality.terrainUnknownSurfaceRatio).toBeGreaterThan(0.45);
+  });
+
+  it("classifies a clean periurban forest route as high route trail quality while OSM trail potential stays medium", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.805, lng: 2.188 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.805, lng: 2.188, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.807, lng: 2.186, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.81, lng: 2.184, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.812, lng: 2.19, edges: ["cd"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 4, highway: "path", osmWayId: 401, score: 0.82 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 3.5, highway: "track", osmWayId: 402, score: 0.8 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 2.5, highway: "secondary", surface: "asphalt", osmWayId: 403, score: 0.25 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      targetComponents: ["tc-meudon"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 3.5,
+      minNonPavedTrailStreakKm: 2.5,
+      maxPavedRatio: 0.42,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 4_500,
+      beamBudget: { beamWidth: 24, maxIterations: 500, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [{
+        id: "tc-meudon",
+        kind: "trail_cluster",
+        center: { lat: 48.808, lng: 2.185 },
+        totalKm: 7.5,
+        nonPavedKm: 3.5,
+        pavedKm: 0,
+        unknownSurfaceKm: 4,
+        distanceFromStartKm: 0.6,
+        entryNodeIds: ["a"],
+        exitNodeIds: ["c"],
+        nodeIds: ["a", "b", "c"],
+        confidence: "medium",
+      }],
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 10, ascendM: 220, loopScore: 0.96 }),
+      path: { nodeIds: ["a", "b", "c", "d"], edgeIds: ["ab", "bc", "cd"], distanceKm: 10, totalScore: 1 },
+      graph,
+      profile,
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      routeIntent,
+    });
+
+    expect(quality.trailPotential).toBe("medium");
+    expect(quality.routeTrailQuality).toBe("high");
+    expect(quality.pavedRatio).toBeCloseTo(0.25);
+  });
+
+  it("does not downgrade a strong periurban forest route solely because the heuristic target component is missed", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.805, lng: 2.188 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.805, lng: 2.188, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.807, lng: 2.186, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.81, lng: 2.184, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 48.812, lng: 2.19, edges: ["cd"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 4, highway: "path", osmWayId: 401, score: 0.82 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 3.5, highway: "track", osmWayId: 402, score: 0.8 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 2.5, highway: "secondary", surface: "asphalt", osmWayId: 403, score: 0.25 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      targetComponents: ["tc-missed"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 3.5,
+      minNonPavedTrailStreakKm: 2.5,
+      maxPavedRatio: 0.42,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 4_500,
+      beamBudget: { beamWidth: 24, maxIterations: 500, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [{
+        id: "tc-missed",
+        kind: "trail_cluster",
+        center: { lat: 48.808, lng: 2.185 },
+        totalKm: 7.5,
+        nonPavedKm: 3.5,
+        pavedKm: 0,
+        unknownSurfaceKm: 4,
+        distanceFromStartKm: 0.6,
+        entryNodeIds: ["x"],
+        exitNodeIds: ["y"],
+        nodeIds: ["x", "y"],
+        confidence: "medium",
+      }],
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 10, ascendM: 220, loopScore: 0.96 }),
+      path: { nodeIds: ["a", "b", "c", "d"], edgeIds: ["ab", "bc", "cd"], distanceKm: 10, totalScore: 1 },
+      graph,
+      profile,
+      targetDistanceKm: 10,
+      targetElevationM: 220,
+      routeIntent,
+    });
+
+    expect(quality.routeIntentFailures).toEqual(["target_component_visit"]);
+    expect(quality.naturalZoneDwellKm).toBeGreaterThan(7);
+    expect(quality.longestNonPavedTrailStreakKm).toBeGreaterThan(7);
+    expect(quality.routeTrailQuality).toBe("high");
+  });
+
+  it("keeps a clean substantial forest route at medium quality when only heuristic target component is missed", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 49.14, lng: -0.5 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 49.14, lng: -0.5, edges: ["ab"] }],
+        ["b", { id: "b", lat: 49.145, lng: -0.5, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 49.15, lng: -0.495, edges: ["bc", "cd"] }],
+        ["d", { id: "d", lat: 49.145, lng: -0.49, edges: ["cd", "de"] }],
+        ["e", { id: "e", lat: 49.14, lng: -0.5, edges: ["de"] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 3, highway: "path", surface: "dirt", scenic: true, osmWayId: 501, score: 0.78 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 2.6, highway: "track", surface: "ground", scenic: true, osmWayId: 502, score: 0.76 }],
+        ["cd", { id: "cd", from: "c", to: "d", lengthKm: 2, highway: "residential", surface: "gravel", osmWayId: 503, score: 0.45 }],
+        ["de", { id: "de", from: "d", to: "e", lengthKm: 4.4, highway: "residential", surface: "asphalt", osmWayId: 504, score: 0.35 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      targetComponents: ["tc-missed"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 3.5,
+      minNonPavedTrailStreakKm: 2.5,
+      maxPavedRatio: 0.42,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 4_500,
+      beamBudget: { beamWidth: 24, maxIterations: 500, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [{
+        id: "tc-missed",
+        kind: "trail_cluster",
+        center: { lat: 49.16, lng: -0.48 },
+        totalKm: 4,
+        nonPavedKm: 4,
+        pavedKm: 0,
+        unknownSurfaceKm: 0,
+        distanceFromStartKm: 1,
+        entryNodeIds: ["x"],
+        exitNodeIds: ["y"],
+        nodeIds: ["x", "y"],
+        confidence: "medium",
+      }],
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 12, ascendM: 150, loopScore: 0.96 }),
+      path: { nodeIds: ["a", "b", "c", "d", "e"], edgeIds: ["ab", "bc", "cd", "de"], distanceKm: 12, totalScore: 1 },
+      graph,
+      profile,
+      targetDistanceKm: 12,
+      targetElevationM: 150,
+      routeIntent,
+    });
+
+    expect(quality.routeIntentFailures).toEqual(["target_component_visit"]);
+    expect(quality.naturalZoneDwellKm).toBeGreaterThanOrEqual(5.4);
+    expect(quality.longestNonPavedTrailStreakKm).toBeGreaterThanOrEqual(2.5);
+    expect(quality.routeTrailQuality).toBe("medium");
   });
 
   it("penalizes road-heavy loops for trail running", () => {
@@ -387,6 +626,74 @@ describe("assessRouteQuality", () => {
     });
 
     expect(quality.productionScore).toBeLessThan(0.6);
-    expect(quality.warnings).toContain("Boucle trop routière pour une sortie trail.");
+    expect(quality.warnings).toContain("TRAIL_TOO_ROAD_HEAVY");
   });
+
+
+  it("reports whether a planned target component was actually visited", () => {
+    const graph: EnrichedGraph = {
+      center: { lat: 48.8566, lng: 2.3522 },
+      radiusKm: 2,
+      nodes: new Map([
+        ["a", { id: "a", lat: 48.8566, lng: 2.3522, edges: ["ab"] }],
+        ["b", { id: "b", lat: 48.857, lng: 2.353, edges: ["ab", "bc"] }],
+        ["c", { id: "c", lat: 48.858, lng: 2.354, edges: ["bc"] }],
+        ["x", { id: "x", lat: 48.859, lng: 2.355, edges: [] }],
+      ]),
+      edges: new Map([
+        ["ab", { id: "ab", from: "a", to: "b", lengthKm: 0.6, highway: "path", surface: "dirt", osmWayId: 80, score: 0.9 }],
+        ["bc", { id: "bc", from: "b", to: "c", lengthKm: 0.7, highway: "track", surface: "ground", osmWayId: 81, score: 0.9 }],
+      ]),
+    };
+    const profile = PROFILES_BY_ID.get("running_trail")!;
+    const routeIntent: RouteIntent = {
+      type: "transition_to_woods",
+      strategy: "transition_to_woods",
+      targetDistanceKm: 2,
+      targetElevationM: 0,
+      targetComponents: ["tc-woods"],
+      distancePolicy: { mode: "strict" },
+      minNaturalZoneDwellKm: 1,
+      minNonPavedTrailStreakKm: 1,
+      maxPavedRatio: 0.45,
+      maxBusyRoadRatio: 0.08,
+      maxRepeatEdgeRatio: 0.04,
+      maxGeometryOverlapRatio: 0.18,
+      cleanReturnMode: "prefer",
+      timeBudgetMs: 30_000,
+      beamBudget: { beamWidth: 24, maxIterations: 900, shortlistSize: 12 },
+      relaxationOrder: [],
+      userWarningsIfRelaxed: [],
+      terrainComponents: [{
+        id: "tc-woods",
+        kind: "forest",
+        center: { lat: 48.857, lng: 2.353 },
+        totalKm: 1.3,
+        nonPavedKm: 1.3,
+        pavedKm: 0,
+        unknownSurfaceKm: 0,
+        distanceFromStartKm: 0.1,
+        entryNodeIds: ["a"],
+        exitNodeIds: ["c"],
+        nodeIds: ["a", "b", "c"],
+        confidence: "high",
+      }],
+    };
+
+    const quality = assessRouteQuality({
+      candidate: makeCandidate({ distanceKm: 1.3, ascendM: 0 }),
+      path: { nodeIds: ["a", "b", "c"], edgeIds: ["ab", "bc"], distanceKm: 1.3, totalScore: 1 },
+      graph,
+      profile,
+      targetDistanceKm: 1.3,
+      targetElevationM: 0,
+      routeIntent,
+    });
+
+    expect(quality.targetComponentDwellKm).toBeCloseTo(1.3);
+    expect(quality.visitedTargetComponents).toContain("tc-woods");
+    expect(quality.missedTargetComponents).toEqual([]);
+    expect(quality.routeIntentFailures).not.toContain("target_component_visit");
+  });
+
 });

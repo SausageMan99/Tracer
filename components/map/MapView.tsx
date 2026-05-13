@@ -4,16 +4,12 @@ import { useEffect, useRef, type RefObject } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppStore } from "@/lib/store";
-import type { GeneratedRoute, RouteCandidate } from "@/lib/types";
+import { buildSegmentCollection, EMPTY_COLLECTION } from "@/lib/map-route-geojson";
+import type { GeneratedRoute } from "@/lib/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-const EMPTY_COLLECTION: GeoJSON.FeatureCollection = {
-  type: "FeatureCollection",
-  features: [],
-};
 
 const EMPTY_LINESTRING: GeoJSON.Feature = {
   type: "Feature",
@@ -45,64 +41,15 @@ const SLOPE_COLOR_EXPR = [
   "interpolate",
   ["linear"],
   ["get", "slope"],
-  -8,  "#15803d",
-  -3,  "#22c55e",
-  -0.5,"#86efac",
-   0.5,"#cbd5e1",
-   4,  "#fde047",
-   7,  "#fb923c",
-  10,  "#ef4444",
-  14,  "#7f1d1d",
+  -8,  "#6D8A5F",
+  -3,  "#9FB48C",
+  -0.5,"#D7E8B0",
+   0.5,"#E8DFC8",
+   4,  "#C9A46F",
+   7,  "#A86F43",
+  10,  "#B85A4E",
+  14,  "#6E302B",
 ] as unknown as mapboxgl.Expression;
-
-// ── Haversine (meters) ────────────────────────────────────────────────────────
-
-function haversineM(lat1: number, lng1: number, lat2: number, lng2: number): number {
-  const R = 6_371_000;
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const dφ = ((lat2 - lat1) * Math.PI) / 180;
-  const dλ = ((lng2 - lng1) * Math.PI) / 180;
-  const a =
-    Math.sin(dφ / 2) ** 2 +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(dλ / 2) ** 2;
-  return R * 2 * Math.asin(Math.sqrt(a));
-}
-
-// ── Build slope-coloured segment FeatureCollection ───────────────────────────
-
-function buildSegmentCollection(candidate: RouteCandidate): GeoJSON.FeatureCollection {
-  const pts = candidate.points;
-  if (pts.length < 2) return EMPTY_COLLECTION;
-
-  const rawSlopes: number[] = pts.slice(0, -1).map((a, i) => {
-    const b = pts[i + 1];
-    const distM = haversineM(a.lat, a.lng, b.lat, b.lng);
-    const elevDiff = (b.elevation ?? 0) - (a.elevation ?? 0);
-    return distM > 0.5 ? (elevDiff / distM) * 100 : 0;
-  });
-
-  const slopes = rawSlopes.map((_, i) => {
-    const lo = Math.max(0, i - 1);
-    const hi = Math.min(rawSlopes.length - 1, i + 1);
-    const slice = rawSlopes.slice(lo, hi + 1);
-    return slice.reduce((s, v) => s + v, 0) / slice.length;
-  });
-
-  const features: GeoJSON.Feature[] = pts.slice(0, -1).map((a, i) => {
-    const b = pts[i + 1];
-    return {
-      type: "Feature",
-      geometry: {
-        type: "LineString",
-        coordinates: [[a.lng, a.lat], [b.lng, b.lat]],
-      },
-      properties: { slope: Math.max(-20, Math.min(20, slopes[i])) },
-    };
-  });
-
-  return { type: "FeatureCollection", features };
-}
 
 // ── Create an arrow image via canvas ─────────────────────────────────────────
 
@@ -144,7 +91,7 @@ function ensureLayers(map: mapboxgl.Map) {
     type: "line",
     source: "route-full",
     layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-    paint: { "line-color": "#0f172a", "line-width": 7, "line-opacity": 0.5 },
+    paint: { "line-color": "#07110D", "line-width": 8, "line-opacity": 0.64 },
   });
 
   map.addLayer({
@@ -152,7 +99,7 @@ function ensureLayers(map: mapboxgl.Map) {
     type: "line",
     source: "route-full",
     layout: { "line-join": "round", "line-cap": "round", visibility: "none" },
-    paint: { "line-color": "#94A3B8", "line-width": 4, "line-opacity": 0.4 },
+    paint: { "line-color": "#94A3B8", "line-width": 4, "line-opacity": 0 },
   });
 
   // ── Slope-coloured route segments ────────────────────────────────────────
@@ -308,13 +255,16 @@ function applyRoute(
     return;
   }
 
-  // ── Route colour: slope gradient always on top, base changes with mode ──
+  // ── Route colour: slope gradient is the only visible route body.
+  // Keep the full-route source for the dark casing/arrows, but do not render a
+  // second semi-transparent body line: it reads as a duplicate route on Mapbox.
   map.setPaintProperty("route-line", "line-color", SLOPE_COLOR_EXPR);
   map.setPaintProperty("route-full-base", "line-color", scenicMode ? "#A8D672" : "#94A3B8");
+  map.setPaintProperty("route-full-base", "line-opacity", 0);
 
   map.setLayoutProperty("route-line", "visibility", "visible");
   map.setLayoutProperty("route-line-casing", "visibility", "visible");
-  map.setLayoutProperty("route-full-base", "visibility", "visible");
+  map.setLayoutProperty("route-full-base", "visibility", "none");
   map.setLayoutProperty("route-arrows", "visibility", "visible");
 
   // ── Set full data immediately (ensures route is visible even if animation fails)
@@ -442,7 +392,7 @@ export default function MapView() {
     const storeState = useAppStore.getState();
     const map = new mapboxgl.Map({
       container: mapContainerRef.current,
-      style: "mapbox://styles/mapbox/dark-v11",
+      style: "mapbox://styles/mapbox/outdoors-v12",
       center: [storeState.mapCenter.lng, storeState.mapCenter.lat],
       zoom: storeState.mapZoom,
     });
@@ -584,7 +534,7 @@ export default function MapView() {
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(5,8,6,0.48)",
+              background: "radial-gradient(circle at 50% 45%, rgba(215,232,176,0.12), rgba(5,8,6,0.62) 58%, rgba(5,8,6,0.78))",
             }}
           />
           {/* Radar pulse rings */}
@@ -638,8 +588,37 @@ export default function MapView() {
               opacity: 0.9,
             }}
           >
-            Génération en cours
+            Lecture du terrain
           </p>
+        </div>
+      )}
+
+      {/* ── Slope legend (route line colours only, no surface claim) ───────── */}
+      {best && (
+        <div
+          className="absolute left-4 top-20 md:left-auto md:right-4 z-10 pointer-events-none"
+          aria-label="Légende des couleurs de pente"
+        >
+          <div
+            style={{
+              backdropFilter: "blur(16px)",
+              background: "rgba(5,8,6,0.82)",
+              border: "1px solid rgba(30,46,37,0.9)",
+              borderRadius: "var(--radius-card)",
+              padding: "10px 12px",
+              boxShadow: "0 18px 56px rgba(0,0,0,0.28)",
+              minWidth: "150px",
+            }}
+          >
+            <p style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "8px", letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700, marginBottom: "8px" }}>
+              Couleurs de pente
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#D7E8B0" }} />plat / roulant</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#C9A46F" }} />montée modérée</span>
+              <span style={{ display: "flex", alignItems: "center", gap: "7px", fontFamily: "var(--font-inter), sans-serif", fontSize: "11px", color: "var(--text-muted)" }}><span style={{ width: "18px", height: "3px", borderRadius: "999px", background: "#B85A4E" }} />montée raide</span>
+            </div>
+          </div>
         </div>
       )}
 

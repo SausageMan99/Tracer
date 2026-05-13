@@ -8,6 +8,8 @@ import { FEEDBACK_REASON_OPTIONS, type FeedbackReason } from "@/lib/feedback-rea
 
 interface FeedbackButtonsProps {
   route: GeneratedRoute;
+  outcome?: "generated" | "adjusted" | "refused";
+  generationId?: string;
   sessionConfig: {
     targetDistanceKm: number;
     targetElevationM: number;
@@ -16,6 +18,8 @@ interface FeedbackButtonsProps {
 
 export default function FeedbackButtons({
   route,
+  outcome,
+  generationId,
   sessionConfig,
 }: FeedbackButtonsProps) {
   const [submitted, setSubmitted] = useState<"positive" | "negative" | null>(null);
@@ -73,6 +77,8 @@ export default function FeedbackButtons({
 
     const feedback: RouteFeedback = {
       id: crypto.randomUUID(),
+      generationId: generationId ?? route.generationId,
+      outcome: outcome ?? route.betaOutcome ?? (route.distanceAdjustment ? "adjusted" : "generated"),
       timestamp: Date.now(),
       rating,
       reasons: selectedReasons,
@@ -103,7 +109,7 @@ export default function FeedbackButtons({
             color: "var(--text-muted)",
           }}
         >
-          Ce parcours te plaît ?
+          Tu partirais courir cette trace ?
         </span>
         <button
           onClick={() => handleFeedback("positive")}

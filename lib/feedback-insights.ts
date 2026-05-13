@@ -51,8 +51,8 @@ function buildBucket(feedbacks: RouteFeedback[]): FeedbackBucket {
     negative,
     positiveRate: feedbacks.length > 0 ? positive / feedbacks.length : 0,
     negativeRate: feedbacks.length > 0 ? negative / feedbacks.length : 0,
-    avgAlgorithmicScore: average(feedbacks.map((feedback) => feedback.algorithmicScore)),
-    avgDistanceErrorPct: average(feedbacks.map((feedback) => feedback.distanceErrorPct)),
+    avgAlgorithmicScore: average(feedbacks.map((feedback) => feedback.algorithmicScore).filter((value): value is number => typeof value === "number")),
+    avgDistanceErrorPct: average(feedbacks.map((feedback) => feedback.distanceErrorPct).filter((value): value is number => typeof value === "number")),
     avgElevationErrorPct: elevationErrors.length > 0 ? average(elevationErrors) : null,
   };
 }

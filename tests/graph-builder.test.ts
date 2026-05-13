@@ -121,6 +121,93 @@ describe("buildGraph Overpass query", () => {
     expect(graph.edges.size).toBe(2);
   });
 
+  it("ignores non-empty but unusably tiny running graph caches and refetches", async () => {
+    const cacheDir = path.join(process.cwd(), ".cache", "graphs");
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cacheDir, "48.870_2.325_1.6_scenic.json"),
+      JSON.stringify({
+        nodes: [
+          ["1", { id: "1", lat: 48.8701, lng: 2.3246, edges: ["1-2-10"] }],
+          ["2", { id: "2", lat: 48.8702, lng: 2.3247, edges: ["2-1-10"] }],
+        ],
+        edges: [
+          ["1-2-10", { id: "1-2-10", from: "1", to: "2", lengthKm: 0.05, highway: "path", surface: "dirt", osmWayId: 10, score: 0 }],
+          ["2-1-10", { id: "2-1-10", from: "2", to: "1", lengthKm: 0.05, highway: "path", surface: "dirt", osmWayId: 10, score: 0 }],
+        ],
+        center: { lat: 48.8701, lng: 2.3246 },
+        radiusKm: 1.6,
+        scenicWayIds: [],
+        cachedAt: Date.now(),
+      })
+    );
+    const fetchMock = vi.fn().mockResolvedValue(overpassResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(graph.edges.size).toBe(2);
+  });
+
+  it("uses but does not cache Overpass responses with remarks because they may be partial", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      remark: "runtime error: Query timed out in Overpass API.",
+      elements: [
+        { type: "node", id: 1, lat: 48.8701, lon: 2.3246 },
+        { type: "node", id: 2, lat: 48.8710, lon: 2.3260 },
+        { type: "way", id: 10, nodes: [1, 2], tags: { highway: "path", surface: "dirt" } },
+      ],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(graph.edges.size).toBe(2);
+    expect(fs.existsSync(path.join(process.cwd(), ".cache", "graphs", "48.870_2.325_1.2_roads.json"))).toBe(false);
+  });
+
+  it("retries retryable Overpass gateway failures before building the graph", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response("gateway timeout", { status: 504 }))
+      .mockResolvedValueOnce(overpassResponse());
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 }
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(graph.nodes.size).toBe(2);
+    expect(graph.edges.size).toBe(2);
+  });
+
+  it("maps remark-only empty Overpass responses to OVERPASS_TIMEOUT and does not cache them", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      remark: "runtime error: Query timed out in Overpass API.",
+      elements: [
+        { type: "node", id: 1, lat: 48.8701, lon: 2.3246 },
+        { type: "way", id: 99, nodes: [1], tags: { natural: "wood" } },
+      ],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 }
+    )).rejects.toMatchObject({ code: "NO_ROAD_NETWORK", subCode: "OVERPASS_TIMEOUT" });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(path.join(process.cwd(), ".cache", "graphs", "48.870_2.325_1.6_scenic.json"))).toBe(false);
+  });
+
   it("does not cache Overpass responses that contain no routable graph", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       elements: [

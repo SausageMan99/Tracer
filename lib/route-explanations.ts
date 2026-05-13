@@ -42,6 +42,9 @@ export function buildRouteExplanation(
   );
   const busyRoadRatio = qualityNumber(quality?.busyRoadRatio, 0);
   const trailRatio = qualityNumber(quality?.trailRatio, 0);
+  const naturalWayRatio = qualityNumber(quality?.naturalWayRatio, 0);
+  const pavedRatio = qualityNumber(quality?.pavedRatio, 0);
+  const scenicPavedRatio = qualityNumber(quality?.scenicPavedRatio, 0);
   const loopGapKm = qualityNumber(quality?.loopGapKm, Math.max(0, 1 - best.loopScore) * 5);
   const warnings = quality?.warnings ?? [];
 
@@ -50,10 +53,13 @@ export function buildRouteExplanation(
     compromises.push("Distance éloignée de la cible");
   }
   if (input.targetElevationM > 0 && (elevationError > 0.35 || warnings.includes("ELEVATION_OFF_TARGET"))) {
-    compromises.push("D+ imparfait par rapport à la demande");
+    compromises.push("D+ estimé au-dessus de la cible");
   }
   if (busyRoadRatio > 0.08 || warnings.includes("TOO_MUCH_BUSY_ROAD")) {
     compromises.push("Passage routier plus présent que souhaité");
+  }
+  if ((naturalWayRatio >= 0.5 && pavedRatio > 0.45) || warnings.includes("TOO_MUCH_PAVEMENT") || warnings.includes("NATURAL_BUT_PAVED")) {
+    compromises.push("Cadre naturel mais trop bitumé");
   }
   if (loopGapKm > 0.5 || warnings.includes("LOOP_NOT_CLOSED")) {
     compromises.push("Boucle moins bien refermée");
@@ -61,12 +67,27 @@ export function buildRouteExplanation(
   if (warnings.includes("TOO_MUCH_BACKTRACKING")) {
     compromises.push("Allers-retours détectés");
   }
+  if (warnings.includes("OSM_SURFACE_DATA_WEAK")) {
+    compromises.push("Données terrain incomplètes");
+  }
+  if (warnings.includes("ROUTE_INTENT_WEAK_MATCH")) {
+    compromises.push("Zone naturelle peu exploitée");
+  }
+  if (warnings.includes("LOOP_TOO_CONSTRAINED")) {
+    compromises.push("Réseau local très contraint");
+  }
+  if (warnings.includes("OUT_AND_BACK_SHAPE") || warnings.includes("LOOP_GEOMETRY_WEAK")) {
+    compromises.push("Géométrie de boucle fragile");
+  }
 
   const signals = [
     `Intention : ${intention.label}`,
     `Écart distance : ${pct(distanceError)}`,
     `Écart D+ : ${pct(elevationError)}`,
-    `Chemins/nature : ${pct(trailRatio)}`,
+    `Sentiers non bitumés : ${pct(trailRatio)}`,
+    `Cadre naturel/scénique : ${pct(naturalWayRatio)}`,
+    `Revêtement bitumé : ${pct(pavedRatio)}`,
+    `Bitumé scénique : ${pct(scenicPavedRatio)}`,
     `Grands axes : ${pct(busyRoadRatio)}`,
   ];
 

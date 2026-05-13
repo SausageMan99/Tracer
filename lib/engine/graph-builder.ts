@@ -35,6 +35,11 @@ interface OverpassGraphElement {
   tags?: Record<string, string>;
 }
 
+interface OverpassGraphResponse {
+  elements: OverpassGraphElement[];
+  remark?: string;
+}
+
 interface CachedGraph {
   nodes: [string, GraphNode][];
   edges: [string, EnrichedEdge][];
@@ -70,13 +75,85 @@ function getCacheKey(center: Coordinate, radiusKm: number, includeScenicAreas: b
   return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}_${scenicSuffix}.json`;
 }
 
-function tryLoadCache(cacheKey: string): CachedGraph | null {
+function findClosestNodeId(graph: Pick<EnrichedGraph, "nodes">, center: Coordinate): string | null {
+  let closestNodeId: string | null = null;
+  let closestDistanceKm = Infinity;
+  for (const node of Array.from(graph.nodes.values())) {
+    const distanceKm = haversineKm(center, { lat: node.lat, lng: node.lng });
+    if (distanceKm < closestDistanceKm) {
+      closestDistanceKm = distanceKm;
+      closestNodeId = node.id;
+    }
+  }
+  return closestNodeId;
+}
+
+function computeConnectedComponentUndirectedKm(graph: EnrichedGraph, startNodeId: string): number {
+  const visitedNodes = new Set<string>();
+  const seenUndirectedEdges = new Set<string>();
+  const queue = [startNodeId];
+  let totalKm = 0;
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    if (visitedNodes.has(nodeId)) continue;
+    visitedNodes.add(nodeId);
+    const node = graph.nodes.get(nodeId);
+    if (!node) continue;
+
+    for (const edgeId of node.edges) {
+      const edge = graph.edges.get(edgeId);
+      if (!edge) continue;
+      const edgeKey = [edge.from, edge.to].sort().join("-") + `-${edge.osmWayId}`;
+      if (!seenUndirectedEdges.has(edgeKey)) {
+        seenUndirectedEdges.add(edgeKey);
+        totalKm += edge.lengthKm;
+      }
+      if (!visitedNodes.has(edge.to)) queue.push(edge.to);
+    }
+  }
+
+  return totalKm;
+}
+
+function isRetryableOverpassStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function isGraphUsable(graph: EnrichedGraph, options: GraphBuildOptions): boolean {
+  if (graph.nodes.size === 0 || graph.edges.size === 0) return false;
+
+  const targetDistanceKm = options.targetDistanceKm ?? 5;
+  if (options.sport !== "running" || targetDistanceKm < 8) return true;
+
+  const closestNodeId = findClosestNodeId(graph, graph.center);
+  if (!closestNodeId) return false;
+
+  const componentKm = computeConnectedComponentUndirectedKm(graph, closestNodeId);
+  const minimumUsableKm = Math.max(1.5, targetDistanceKm * 0.25);
+  return componentKm >= minimumUsableKm;
+}
+
+function isCachedGraphUsable(cached: CachedGraph, options: GraphBuildOptions): boolean {
+  if (cached.nodes.length === 0 || cached.edges.length === 0) return false;
+  if (Date.now() - cached.cachedAt > CACHE_TTL_MS) return false;
+
+  const graph: EnrichedGraph = {
+    nodes: new Map(cached.nodes),
+    edges: new Map(cached.edges),
+    center: cached.center,
+    radiusKm: cached.radiusKm,
+  };
+  return isGraphUsable(graph, options);
+}
+
+function tryLoadCache(cacheKey: string, options: GraphBuildOptions = {}): CachedGraph | null {
   const filePath = path.join(CACHE_DIR, cacheKey);
   try {
     if (!fs.existsSync(filePath)) return null;
     const raw = fs.readFileSync(filePath, "utf-8");
     const cached: CachedGraph = JSON.parse(raw);
-    if (Date.now() - cached.cachedAt > CACHE_TTL_MS || cached.nodes.length === 0 || cached.edges.length === 0) {
+    if (!isCachedGraphUsable(cached, options)) {
       fs.unlinkSync(filePath);
       return null;
     }
@@ -171,7 +248,7 @@ export async function buildGraph(
   const includeScenicAreas = options.sport === "running" && radiusKm <= 2.5;
   const cacheKey = getCacheKey(center, radiusKm, includeScenicAreas);
 
-  const cached = tryLoadCache(cacheKey);
+  const cached = tryLoadCache(cacheKey, options);
   if (cached) {
     return {
       graph: {
@@ -211,7 +288,7 @@ out body qt;`;
         },
         signal: AbortSignal.timeout(30_000),
       });
-      if (res.status === 429 || res.status === 503) {
+      if (isRetryableOverpassStatus(res.status)) {
         if (attempt < 1) {
           await new Promise((r) => setTimeout(r, 2000));
           return overpassFetch(attempt + 1);
@@ -236,7 +313,8 @@ out body qt;`;
 
   const res = await overpassFetch(0);
 
-  const data: { elements: OverpassGraphElement[] } = await res.json();
+  const data: OverpassGraphResponse = await res.json();
+  const overpassHadRemark = Boolean(data.remark);
 
   // Step 1: Collect nodes
   const nodeCoords = new Map<number, { lat: number; lon: number }>();
@@ -383,15 +461,21 @@ out body qt;`;
 
   const graph: EnrichedGraph = { nodes, edges, center, radiusKm };
 
+  if (overpassHadRemark && !isGraphUsable(graph, options)) {
+    throw new RouteGenerationError("NO_ROAD_NETWORK", { subCode: "OVERPASS_TIMEOUT" });
+  }
+
   // Cache as serialized arrays
-  saveCache(cacheKey, {
-    nodes: Array.from(nodes.entries()),
-    edges: Array.from(edges.entries()),
-    center,
-    radiusKm,
-    scenicWayIds: Array.from(scenicWayIds),
-    cachedAt: Date.now(),
-  });
+  if (!overpassHadRemark) {
+    saveCache(cacheKey, {
+      nodes: Array.from(nodes.entries()),
+      edges: Array.from(edges.entries()),
+      center,
+      radiusKm,
+      scenicWayIds: Array.from(scenicWayIds),
+      cachedAt: Date.now(),
+    });
+  }
 
   return { graph, scenicWayIds };
 }

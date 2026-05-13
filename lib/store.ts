@@ -9,7 +9,7 @@
  * first session profile (running endurance) pre-selected.
  */
 import { create } from "zustand";
-import type { AppState, AppStatus, Coordinate, GeneratedRoute } from "./types";
+import type { AppState, AppStatus, Coordinate, GeneratedRoute, GenerateRouteError } from "./types";
 import { SESSION_PROFILES } from "./session-profiles";
 
 /**
@@ -34,7 +34,7 @@ interface AppStore extends AppState {
   /** Transition to success state and store the generated route */
   setSuccess: (route: GeneratedRoute) => void;
   /** Transition to error state with a display message */
-  setError: (message: string) => void;
+  setError: (message: string, meta?: Pick<GenerateRouteError, "generationId" | "betaOutcome" | "errorCode" | "subCode">) => void;
   /**
    * Switch the displayed candidate. Also updates `currentRoute.best` so
    * GPX export and all stats automatically reflect the selection.
@@ -74,6 +74,10 @@ const defaultProfile = SESSION_PROFILES.find((profile) => profile.id === "runnin
 const initialState: AppState = {
   status: "idle" as AppStatus,
   errorMessage: null,
+  generationId: null,
+  betaOutcome: null,
+  errorCode: null,
+  errorSubCode: null,
   currentRoute: null,
   candidateIndex: 0,
   mapCenter: { lat: 48.8566, lng: 2.3522 }, // Paris
@@ -103,10 +107,25 @@ export const useAppStore = create<AppStore>((set) => ({
   setMapCenter: (mapCenter) => set({ mapCenter }),
   setMapZoom: (mapZoom) => set({ mapZoom }),
   setLoading: () =>
-    set({ status: "loading", errorMessage: null, currentRoute: null, candidateIndex: 0 }),
+    set({ status: "loading", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, candidateIndex: 0 }),
   setSuccess: (currentRoute) =>
-    set({ status: "success", currentRoute, candidateIndex: 0 }),
-  setError: (errorMessage) => set({ status: "error", errorMessage }),
+    set({
+      status: "success",
+      currentRoute,
+      generationId: currentRoute.generationId ?? null,
+      betaOutcome: currentRoute.betaOutcome ?? "generated",
+      errorCode: null,
+      errorSubCode: null,
+      candidateIndex: 0,
+    }),
+  setError: (errorMessage, meta) => set({
+    status: "error",
+    errorMessage,
+    generationId: meta?.generationId ?? null,
+    betaOutcome: meta?.betaOutcome ?? "refused",
+    errorCode: meta?.errorCode ?? null,
+    errorSubCode: meta?.subCode ?? null,
+  }),
 
   /** Switch to a different candidate — also updates currentRoute.best so
    *  GPX export and all stats reflect the selected variant automatically. */
@@ -124,7 +143,7 @@ export const useAppStore = create<AppStore>((set) => ({
   reset: () => set({ ...initialState, scenicMode: false, hoveredRouteProgress: null }),
 
   clearRoute: () =>
-    set({ status: "idle", errorMessage: null, currentRoute: null, candidateIndex: 0, hoveredRouteProgress: null }),
+    set({ status: "idle", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, candidateIndex: 0, hoveredRouteProgress: null }),
 
   setScenicMode: (scenicMode) => set({ scenicMode }),
   setHoveredRouteProgress: (hoveredRouteProgress) => set({ hoveredRouteProgress }),

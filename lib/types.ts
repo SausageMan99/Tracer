@@ -138,6 +138,8 @@ export interface RouteRequest {
   endAddress?: string;
   /** When true, boost nature/quietness weights for scenic routing */
   scenicMode?: boolean;
+  /** Internal benchmark/debug contract: max absolute D+ error accepted by this route request. */
+  routeGateElevationToleranceM?: number;
 }
 
 /**
@@ -161,6 +163,14 @@ export interface Coordinate {
 export interface RoutePoint extends Coordinate {
   /** Elevation above sea level in metres (ASL). Undefined before enrichment. */
   elevation?: number;
+}
+
+export interface RouteDistanceAdjustment {
+  requestedDistanceKm: number;
+  adjustedDistanceKm: number;
+  reason: "PARK_RECOVERY_SIZE_LIMIT";
+  policy: "adjusted_distance";
+  messageCode: "PARK_RECOVERY_DISTANCE_ADJUSTED";
 }
 
 /**
@@ -200,6 +210,126 @@ export interface RouteCandidate {
   };
 }
 
+export interface RouteGenerationStageTiming {
+  /** Stable generation stage identifier */
+  stage: string;
+  /** Wall-clock duration for this stage in milliseconds */
+  durationMs: number;
+  /** True when the stage completed without throwing */
+  ok: boolean;
+  /** Machine-readable error code when a typed route error was captured */
+  errorCode?: string;
+}
+
+export interface RouteGenerationStageTimings {
+  /** Total measured route-generation time in milliseconds */
+  totalMs: number;
+  /** Per-stage timings in execution order */
+  stages: RouteGenerationStageTiming[];
+}
+
+export interface RouteGenerationDiagnostics {
+  /** Diagnostics schema version */
+  version: 1;
+  /** Generation strategy used by the engine */
+  strategy: "v2-local-graph";
+  profileId: string;
+  sport: Sport;
+  scenicMode: boolean;
+  targetDistanceKm: number;
+  targetElevationM: number;
+  graph: {
+    nodeCount: number;
+    edgeCount: number;
+    scenicWayCount: number;
+    selectedStartNodeId?: string | null;
+    selectedStartNodeDegree?: number | null;
+  };
+  closestNodeDistanceKm: number | null;
+  terrain: {
+    routeIntent: import("./engine/terrain-planner").RouteIntent | null;
+  };
+  solver: {
+    pathCount: number;
+    candidateCount: number;
+    bestTotalScore: number | null;
+    bestProductionScore: number | null;
+    warnings: string[];
+    emptyReason?: string;
+    emptyDiagnostics?: import("./engine/orienteering-solver").SolverEmptyDiagnostics;
+  };
+}
+
+export interface RouteCandidateGateDelta {
+  key: string;
+  actual: number | string | null;
+  limit: number | string | null;
+  /** Positive means margin still available; negative means amount needed to pass. */
+  deltaToPass: number | null;
+}
+
+export interface RejectedRouteCandidateDebugSummary {
+  candidateIndex: number;
+  distanceKm: number | null;
+  ascendM: number | null;
+  productionScore: number | null;
+  pavedRatio: number | null;
+  trailRatio: number | null;
+  naturalWayRatio: number | null;
+  trailBeautyScore: number | null;
+  longestTrailSegmentKm: number | null;
+  repeatEdgeRatio: number | null;
+  uTurnRatio: number | null;
+  warnings: string[];
+  gate: import("./engine/route-gate-selector").RouteGateReport;
+  criticalStabilityRisk: number;
+  thresholds: Record<string, number | string | null>;
+  deltas: RouteCandidateGateDelta[];
+}
+
+export interface RejectedRouteCandidatesDiagnostics {
+  subCode?: string;
+  candidateCount: number;
+  selectedCandidateIndex: number | null;
+  topCandidateIndex: number | null;
+  rejectionReasonsHistogram: Record<string, number>;
+  routeTrailQualityHistogram?: Record<"low" | "medium" | "high" | "unknown", number>;
+  topCandidates: RejectedRouteCandidateDebugSummary[];
+}
+
+export type TerrainContextSource = 'ign_poc_fixture' | 'ign_cache' | 'none';
+export type TerrainContextLandcoverClass = 'forest' | 'park' | 'grassland' | 'water_corridor' | 'urban' | 'agriculture' | 'unknown';
+export type TerrainContextConfidence = 'low' | 'medium' | 'high';
+
+export interface TerrainContextSignals {
+  source: TerrainContextSource;
+  landcoverClass?: TerrainContextLandcoverClass;
+  naturalContextScore: number;
+  artificializationScore: number;
+  forestProximityM?: number;
+  parkProximityM?: number;
+  waterProximityM?: number;
+  slopeMeanPct?: number;
+  slopeMaxPct?: number;
+  ignPathProximityM?: number;
+  confidence: TerrainContextConfidence;
+  warnings: string[];
+}
+
+export interface TerrainContextFeature {
+  type: 'Feature';
+  properties: Partial<TerrainContextSignals>;
+  geometry: {
+    type: 'Polygon';
+    coordinates: [number, number][][];
+  };
+}
+
+export interface TerrainContextFeatureCollection {
+  type: 'FeatureCollection';
+  features: TerrainContextFeature[];
+}
+
 export interface RouteEdgeDiagnostic {
   /** Position in the candidate path edge list */
   index: number;
@@ -225,6 +355,7 @@ export interface RouteEdgeDiagnostic {
   ref: string | null;
   componentId: string | null;
   scoreReason: string | null;
+  terrainContext?: TerrainContextSignals;
   flags: {
     trail: boolean;
     paved: boolean;
@@ -276,6 +407,10 @@ export interface SmartRouteStats {
  * `candidates` are sorted descending by `totalScore`.
  */
 export interface GeneratedRoute {
+  /** Stable id tying API output to tester feedback. */
+  generationId?: string;
+  /** Closed-beta product outcome shown to testers. */
+  betaOutcome?: "generated" | "adjusted";
   /** Highest-scoring route candidate — displayed first on the map */
   best: RouteCandidate;
   /** All candidates sorted descending by score (best first) */
@@ -289,11 +424,17 @@ export interface GeneratedRoute {
    * P0 keeps this diagnostic-only; later phases may feed it into solver budgets/ranking.
    */
   routeIntent?: import("./engine/terrain-planner").RouteIntent;
+  /** Explicit public contract when a recovery park route returns a clean shorter loop instead of silently pretending the requested distance was met. */
+  distanceAdjustment?: RouteDistanceAdjustment;
   /**
    * SmartRoute post-processing statistics.
    * Present only when SmartRoute was successfully applied server-side.
    */
   smartRouteStats?: SmartRouteStats;
+  /** Optional lightweight generation timings for benchmarks/debug tooling */
+  stageTimings?: RouteGenerationStageTimings;
+  /** Optional lightweight generation diagnostics for benchmarks/debug tooling */
+  diagnostics?: RouteGenerationDiagnostics;
 }
 
 // ---- API contract ----
@@ -318,8 +459,12 @@ export interface GenerateRouteRequest {
   endAddress?: string;
   /** When true, boost nature/quietness weights for scenic routing */
   scenicMode?: boolean;
+  /** Internal benchmark/debug contract: max absolute D+ error accepted by this route request. */
+  routeGateElevationToleranceM?: number;
   /** Internal benchmark/debug flag: include heavy edge-level diagnostics in API response */
   includeEdgeDiagnostics?: boolean;
+  /** Internal benchmark/debug flag: include lightweight generation timings and diagnostics */
+  includeGenerationDiagnostics?: boolean;
 }
 
 /**
@@ -328,6 +473,8 @@ export interface GenerateRouteRequest {
  */
 export interface GenerateRouteResponse {
   success: true;
+  /** Stable id tying input, output, GPX export, and feedback. */
+  generationId: string;
   /** The generated route with candidates and scoring metadata */
   route: GeneratedRoute;
 }
@@ -340,10 +487,15 @@ export interface GenerateRouteResponse {
  * - `NO_ROAD_NETWORK` → GraphHopper/ORS found no routable path
  * - `IMPOSSIBLE_ELEVATION` → requested D+ exceeds terrain maximum
  * - `GEOCODING_FAILED` → Mapbox could not resolve the address
+ * - `ROUTE_CANDIDATES_REJECTED` → V2 found candidates but all violate beta safety gates
  * - `UNKNOWN` → unexpected server error
  */
 export interface GenerateRouteError {
   success: false;
+  /** Stable id tying the failed generation to feedback. */
+  generationId?: string;
+  /** Closed-beta product outcome shown to testers. */
+  betaOutcome?: "refused";
   /** Human-readable French error message for display */
   error: string;
   /** Machine-readable error code for client-side handling */
@@ -351,7 +503,16 @@ export interface GenerateRouteError {
     | "NO_ROAD_NETWORK"
     | "IMPOSSIBLE_ELEVATION"
     | "GEOCODING_FAILED"
+    | "ROUTE_CANDIDATES_REJECTED"
     | "UNKNOWN";
+  /** Optional typed generation sub-code for clean beta refusals. */
+  subCode?: string;
+  /** Benchmark/debug-only candidate gate report when ROUTE_CANDIDATES_REJECTED is requested with generation diagnostics. */
+  rejectedCandidatesDiagnostics?: RejectedRouteCandidatesDiagnostics;
+  /** Benchmark/debug-only lightweight generation timings when requested with generation diagnostics. */
+  stageTimings?: RouteGenerationStageTimings;
+  /** Benchmark/debug-only generation report when NO_ROAD_NETWORK/SOLVER_EMPTY is requested with generation diagnostics. */
+  generationDiagnostics?: RouteGenerationDiagnostics;
   /**
    * Only present when `errorCode === "IMPOSSIBLE_ELEVATION"`.
    * The maximum achievable D+ estimated from candidate routes, in metres.
@@ -379,6 +540,14 @@ export interface AppState {
   status: AppStatus;
   /** Human-readable error message; non-null only when `status === "error"` */
   errorMessage: string | null;
+  /** Stable id for the last API attempt, including refused generations. */
+  generationId: string | null;
+  /** Closed-beta outcome for the current route/error. */
+  betaOutcome: "generated" | "adjusted" | "refused" | null;
+  /** Machine-readable error code for refused outcomes. */
+  errorCode: GenerateRouteError["errorCode"] | null;
+  /** Optional typed error sub-code for refused outcomes. */
+  errorSubCode: string | null;
   /** The most recently generated route; null when status is not "success" */
   currentRoute: GeneratedRoute | null;
   /**
@@ -526,6 +695,11 @@ export interface EnrichedEdge {
   scoreReason?: string;
   osmWayId: number;
   score: number;
+  /** Optional original edge endpoints for offline fixture/context enrichment. */
+  fromCoordinate?: Coordinate;
+  toCoordinate?: Coordinate;
+  /** Diagnostic-only terrain context from offline/open fixtures. Never rewrites OSM surface semantics. */
+  terrainContext?: TerrainContextSignals;
 }
 
 export interface EnrichedGraph {
@@ -547,6 +721,7 @@ export interface SolverPath {
   edgeIds: string[];
   totalScore: number;
   distanceKm: number;
+  relaxationsUsed?: string[];
 }
 
 export interface SolverOptions {

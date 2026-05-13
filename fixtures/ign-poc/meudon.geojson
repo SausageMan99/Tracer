@@ -1,0 +1,44 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "forest",
+        "naturalContextScore": 0.92,
+        "artificializationScore": 0.08,
+        "forestProximityM": 0,
+        "confidence": "medium"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [2.18, 48.78],
+          [2.29, 48.78],
+          [2.29, 48.84],
+          [2.18, 48.84],
+          [2.18, 48.78]
+        ]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "landcoverClass": "urban",
+        "naturalContextScore": 0.2,
+        "artificializationScore": 0.8,
+        "confidence": "low"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[
+          [2.14, 48.76],
+          [2.34, 48.76],
+          [2.34, 48.87],
+          [2.14, 48.87],
+          [2.14, 48.76]
+        ]]
+      }
+    }
+  ]
+}

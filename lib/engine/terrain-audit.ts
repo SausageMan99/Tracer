@@ -1,4 +1,5 @@
 import type { EnrichedEdge } from '../types';
+import { hasExplicitPavedInNaturalContext } from './terrain-context';
 
 export type TerrainAuditConfidence = 'low' | 'medium' | 'high';
 export type TrailPotential = 'low' | 'medium' | 'high';
@@ -13,6 +14,10 @@ export interface TerrainAuditMetrics {
   naturalAreaSignal: number;
   naturalZoneDwellKm: number;
   naturalZoneDwellRatio: number;
+  terrainContextCoverageRatio: number;
+  highNaturalContextRatio: number;
+  explicitPavedInNaturalContextRatio: number;
+  artificializedContextRatio: number;
   fragmentationScore: number;
 }
 
@@ -57,6 +62,10 @@ export function createEmptyTerrainAuditReport(): TerrainAuditReport {
       naturalAreaSignal: 0,
       naturalZoneDwellKm: 0,
       naturalZoneDwellRatio: 0,
+      terrainContextCoverageRatio: 0,
+      highNaturalContextRatio: 0,
+      explicitPavedInNaturalContextRatio: 0,
+      artificializedContextRatio: 0,
       fragmentationScore: 1,
     },
     warnings: ['Aucune donnée routable analysée.'],
@@ -200,6 +209,10 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
   const unknownSurfaces = edges.filter((edge) => !edge.surface).length;
   const asphaltSurfaces = edges.filter((edge) => ASPHALT_SURFACES.has(edge.surface ?? '')).length;
   const scenicEdges = edges.filter((edge) => edge.scenic === true).length;
+  const terrainContextEdges = edges.filter((edge) => edge.terrainContext?.source && edge.terrainContext.source !== 'none').length;
+  const highNaturalContextEdges = edges.filter((edge) => (edge.terrainContext?.naturalContextScore ?? 0) >= 0.7).length;
+  const explicitPavedInNaturalContextEdges = edges.filter(hasExplicitPavedInNaturalContext).length;
+  const artificializedContextEdges = edges.filter((edge) => (edge.terrainContext?.artificializationScore ?? 0) >= 0.7).length;
   const naturalZoneDwell = calculateNaturalZoneDwell(edges);
   const metrics: TerrainAuditMetrics = {
     totalEdges,
@@ -210,6 +223,10 @@ export function auditTerrainData(edges: EnrichedEdge[]): TerrainAuditReport {
     asphaltRatio: ratio(asphaltSurfaces, totalEdges),
     naturalAreaSignal: ratio(scenicEdges + naturalSurfaces, totalEdges),
     ...naturalZoneDwell,
+    terrainContextCoverageRatio: ratio(terrainContextEdges, totalEdges),
+    highNaturalContextRatio: ratio(highNaturalContextEdges, totalEdges),
+    explicitPavedInNaturalContextRatio: ratio(explicitPavedInNaturalContextEdges, totalEdges),
+    artificializedContextRatio: ratio(artificializedContextEdges, totalEdges),
     fragmentationScore: calculateFragmentationScore(edges),
   };
   const trailPotential = classifyTrailPotential(metrics);
