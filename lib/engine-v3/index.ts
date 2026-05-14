@@ -4,7 +4,9 @@ export { buildCorridorMissionV3 } from './corridor-anchor-builder';
 export { assembleRouteV3 } from './route-assembler';
 export { decideOutcomeV3 } from './outcome-decider';
 export { generateRouteV3 } from './route-generator';
+export { ENGINE_V3_SMOKE_CASES, runEngineV3SmokePanel } from './smoke-harness';
 export type { GeneratedRouteV3 } from './route-generator';
+export type { EngineV3SmokeCase, EngineV3SmokeDiagnostic, EngineV3SmokeReport, RunEngineV3SmokePanelOptions } from './smoke-harness';
 export type {
   AssembledRouteV3,
   ConfidenceV3,

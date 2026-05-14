@@ -18,7 +18,8 @@
     "audit:osm": "node scripts/audit-osm-terrain.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "smoke:engine-v3": "vitest run tests/engine-v3-smoke-harness.test.ts"
   },
   "dependencies": {
     "@flags-sdk/growthbook": "^0.2.0",
