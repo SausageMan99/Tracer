@@ -93,6 +93,7 @@ export interface RouteAnchorV3 {
   componentId: string;
   kind: TerrainComponentKindV3;
   distanceFromStartKm: number;
+  totalLengthKm: number;
   naturalCapacityKm: number;
   pavedRatio: number;
   nonPavedRatio: number;
@@ -140,4 +141,19 @@ export interface AssembledRouteV3 {
   segments: RouteSegmentV3[];
   metrics: RouteMetricsV3;
   warnings: string[];
+}
+
+export type TerrainSnapshotSourceV3 = 'injected_snapshot' | 'graph_adapter';
+
+export interface RouteOutcomeEvidenceV3 {
+  reasonsOrCompromises: string[];
+}
+
+export interface RouteGenerationDiagnosticsV3 {
+  snapshotSource: TerrainSnapshotSourceV3;
+  assemblyStatus: 'segment_level_not_gps_geometry';
+  limitations: string[];
+  warnings: string[];
+  metrics: RouteMetricsV3;
+  outcomeEvidence: RouteOutcomeEvidenceV3;
 }

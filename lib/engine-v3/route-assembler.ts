@@ -62,7 +62,7 @@ function assembleTransitionToWoods(mission: CorridorMissionV3): RouteSegmentV3[]
 function assembleParkLoop(mission: CorridorMissionV3): RouteSegmentV3[] {
   const connectorKm = round(mission.anchor!.distanceFromStartKm);
   const naturalKm = Math.min(mission.anchor!.naturalCapacityKm, mission.requestedNaturalDwellKm, mission.targetDistanceKm - connectorKm * 2);
-  const pavedParkCapacityKm = Math.max(0, mission.anchor!.naturalCapacityKm * (mission.anchor!.pavedRatio / Math.max(0.01, mission.anchor!.nonPavedRatio)));
+  const pavedParkCapacityKm = Math.max(0, mission.anchor!.totalLengthKm - mission.anchor!.naturalCapacityKm);
   const fillKm = Math.min(pavedParkCapacityKm, Math.max(0, mission.targetDistanceKm - connectorKm * 2 - naturalKm));
   return compact([
     segment('access', connectorKm, 'paved'),
@@ -79,7 +79,7 @@ function assembleUrbanNatureLoop(intent: RouteIntentV3, mission: CorridorMission
   const naturalKm = Math.min(naturalCapacityKm, requestedNaturalKm);
   const pavedFillCapacityKm = intent.request?.mode === 'trail'
     ? mission.targetDistanceKm
-    : Math.max(0, mission.anchor!.naturalCapacityKm * mission.anchor!.pavedRatio * 3);
+    : Math.max(0, mission.anchor!.totalLengthKm - mission.anchor!.naturalCapacityKm);
   const fillKm = Math.min(pavedFillCapacityKm, Math.max(0, mission.targetDistanceKm - connectorKm * 2 - naturalKm));
   return compact([
     segment('access', connectorKm, 'paved'),

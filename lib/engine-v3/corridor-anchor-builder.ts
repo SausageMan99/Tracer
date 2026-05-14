@@ -48,6 +48,7 @@ function toAnchor(component: TerrainComponentV3): RouteAnchorV3 {
     componentId: component.id,
     kind: component.kind,
     distanceFromStartKm: component.distanceFromStartKm,
+    totalLengthKm: round(component.totalLengthKm),
     naturalCapacityKm: round(component.totalLengthKm * component.nonPavedRatio),
     pavedRatio: component.pavedRatio,
     nonPavedRatio: component.nonPavedRatio,
