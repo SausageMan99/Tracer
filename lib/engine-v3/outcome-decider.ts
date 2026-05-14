@@ -18,6 +18,14 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
     };
   }
 
+  if (intent.outcome.type === 'adjusted') {
+    return {
+      type: 'adjusted',
+      summary: intent.outcome.summary,
+      compromises: unique([...intent.outcome.compromises, ...details]),
+    };
+  }
+
   if (distanceRatio < 0.9 || overPaved || insufficientDwell || route.metrics.distanceProducedKm < intent.constraints.targetDistanceKm) {
     return {
       type: 'adjusted',
@@ -68,4 +76,8 @@ function ratio(value: number, total: number): number {
 
 function round(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+function unique(values: string[]): string[] {
+  return Array.from(new Set(values));
 }

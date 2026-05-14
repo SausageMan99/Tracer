@@ -56,7 +56,13 @@ describe('engine V3 wave 2 clean-room corridor, assembly and outcome', () => {
     expect(route.segments.some((segment) => segment.kind === 'natural_dwell' && segment.componentId === 'tourville-woods')).toBe(true);
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(4.8);
     expect(route.metrics.pavedRatio).toBeLessThanOrEqual(intent.constraints.maxPavedRatio);
-    expect(outcome.type).toMatch(/generated|adjusted/);
+    expect(route.metrics.repeatRatio).toBeCloseTo(2.2 / route.metrics.distanceProducedKm, 3);
+    expect(route.metrics.overlapRatio).toBeCloseTo(2.2 / route.metrics.distanceProducedKm, 3);
+    expect(outcome.type).toBe('adjusted');
+    if (outcome.type === 'adjusted') {
+      expect(outcome.compromises).toContain('paved connectors may be required before non-paved terrain');
+      expect(outcome.compromises).toContain('minor assembly compromises');
+    }
   });
 
   it('keeps asphalt scenic paved as paved and never reports generated for an over-paved trail route', () => {

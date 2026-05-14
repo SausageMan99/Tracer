@@ -107,8 +107,10 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
     pavedRatio: ratio(pavedKm, distanceProducedKm),
     nonPavedKm,
     naturalDwellKm,
-    repeatRatio: undefined,
-    overlapRatio: undefined,
+    // Segment-level estimate only: transition_to_woods uses mirrored access/return
+    // connectors, so count the repeated connector traversal without fabricating geometry.
+    repeatRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
+    overlapRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
   };
 }
 
@@ -116,6 +118,14 @@ function nonPavedDistance(segment: RouteSegmentV3): number {
   if (segment.surface === 'natural') return segment.distanceKm;
   if (segment.surface === 'mixed') return segment.distanceKm * 0.5;
   return 0;
+}
+
+function knownRepeatedConnectorKm(intent: RouteIntentV3, segments: RouteSegmentV3[]): number {
+  if (intent.strategy !== 'transition_to_woods') return 0;
+  const accessKm = segments.find((segment) => segment.kind === 'access')?.distanceKm ?? 0;
+  const returnKm = segments.find((segment) => segment.kind === 'return')?.distanceKm ?? 0;
+  if (accessKm <= 0 || returnKm <= 0) return 0;
+  return round(Math.min(accessKm, returnKm) * 2);
 }
 
 function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: string): AssembledRouteV3 {
@@ -132,8 +142,8 @@ function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: 
       pavedRatio: 1,
       nonPavedKm: 0,
       naturalDwellKm: 0,
-      repeatRatio: undefined,
-      overlapRatio: undefined,
+      repeatRatio: 0,
+      overlapRatio: 0,
     },
     warnings: [...mission.warnings, warning],
   };
