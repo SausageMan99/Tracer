@@ -88,3 +88,56 @@ export interface RouteIntentV3 {
   outcome: RouteOutcomeV3;
   warnings: string[];
 }
+
+export interface RouteAnchorV3 {
+  componentId: string;
+  kind: TerrainComponentKindV3;
+  distanceFromStartKm: number;
+  naturalCapacityKm: number;
+  pavedRatio: number;
+  nonPavedRatio: number;
+}
+
+export interface CorridorMissionV3 {
+  engine: 'v3-clean-room';
+  strategy: RouteStrategyV3;
+  targetDistanceKm: number;
+  targetComponents: TerrainComponentKindV3[];
+  anchor: RouteAnchorV3 | null;
+  budgetPavedKm: number;
+  requestedNaturalDwellKm: number;
+  cleanReturn: RouteConstraintsV3['cleanReturn'];
+  returnMode: 'clean_loop' | 'out_and_back_connector' | 'relaxed_loop';
+  warnings: string[];
+}
+
+export type RouteSegmentKindV3 = 'access' | 'natural_dwell' | 'loop_fill' | 'return';
+export type RouteSurfaceV3 = 'paved' | 'natural' | 'mixed';
+
+export interface RouteSegmentV3 {
+  kind: RouteSegmentKindV3;
+  surface: RouteSurfaceV3;
+  distanceKm: number;
+  componentId?: string;
+}
+
+export interface RouteMetricsV3 {
+  targetDistanceKm: number;
+  distanceProducedKm: number;
+  trailRatio: number;
+  naturalWayRatio: number;
+  pavedRatio: number;
+  nonPavedKm: number;
+  naturalDwellKm: number;
+  repeatRatio?: number;
+  overlapRatio?: number;
+}
+
+export interface AssembledRouteV3 {
+  engine: 'v3-clean-room';
+  strategy: RouteStrategyV3;
+  mission: CorridorMissionV3;
+  segments: RouteSegmentV3[];
+  metrics: RouteMetricsV3;
+  warnings: string[];
+}
