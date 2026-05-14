@@ -50,7 +50,7 @@ export function planRouteIntentV3(request: UserRouteRequestV3, snapshot: Terrain
       strategy: 'forest_loop',
       request: accepted,
       snapshot,
-      constraints: constraints(accepted, ['forest'], 0.35, 'strict', 0.65),
+      constraints: constraints(accepted, [nearForest.kind], 0.35, 'strict', 0.65),
       outcome: { type: 'generated', summary: 'Forest loop can be generated from high natural surface evidence.' },
       warnings: snapshot.audit.warnings,
     });

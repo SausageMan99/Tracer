@@ -3,6 +3,7 @@ import {
   assembleRouteV3,
   buildCorridorMissionV3,
   decideOutcomeV3,
+  generateRouteV3,
   planRouteIntentV3,
   type TerrainSnapshotV3,
   type UserRouteRequestV3,
@@ -122,5 +123,41 @@ describe('engine V3 wave 2 clean-room corridor, assembly and outcome', () => {
     expect(route.metrics.targetDistanceKm).toBe(14);
     expect(route.metrics.distanceProducedKm).toBeLessThan(12.6);
     expect(outcome.type).not.toBe('generated');
+  });
+
+  it('exposes one pipeline that preserves planner, mission, route and outcome evidence', () => {
+    const generated = generateRouteV3(
+      request({ targetDistanceKm: 12, mode: 'trail' }),
+      snapshot({
+        audit: { confidence: 'medium', edgeCount: 210, totalLengthKm: 39, pavedRatio: 0.42, nonPavedRatio: 0.58, warnings: [] },
+        components: [
+          { id: 'tourville-woods', kind: 'forest', distanceFromStartKm: 1.1, edgeCount: 95, totalLengthKm: 18, pavedRatio: 0.18, nonPavedRatio: 0.82, confidence: 'medium' },
+        ],
+      }),
+    );
+
+    expect(generated.engine).toBe('v3-clean-room');
+    expect(generated.intent.strategy).toBe('transition_to_woods');
+    expect(generated.mission.anchor?.componentId).toBe('tourville-woods');
+    expect(generated.route.metrics.targetDistanceKm).toBe(12);
+    expect(generated.route.metrics.distanceProducedKm).toBeGreaterThan(0);
+    expect(generated.outcome.type).toBe('adjusted');
+  });
+
+  it('targets nearby field paths as field paths instead of forcing a missing forest target', () => {
+    const generated = generateRouteV3(
+      request({ targetDistanceKm: 8, mode: 'trail' }),
+      snapshot({
+        audit: { confidence: 'high', edgeCount: 180, totalLengthKm: 28, pavedRatio: 0.2, nonPavedRatio: 0.8, warnings: [] },
+        components: [
+          { id: 'field-paths-network', kind: 'field_paths', distanceFromStartKm: 0.2, edgeCount: 120, totalLengthKm: 16, pavedRatio: 0.1, nonPavedRatio: 0.9, confidence: 'high' },
+        ],
+      }),
+    );
+
+    expect(generated.intent.strategy).toBe('forest_loop');
+    expect(generated.intent.constraints.targetComponents).toEqual(['field_paths']);
+    expect(generated.mission.anchor?.componentId).toBe('field-paths-network');
+    expect(generated.route.segments.some((segment) => segment.componentId === 'field-paths-network')).toBe(true);
   });
 });

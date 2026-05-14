@@ -3,6 +3,8 @@ export { planRouteIntentV3 } from './route-intent-planner';
 export { buildCorridorMissionV3 } from './corridor-anchor-builder';
 export { assembleRouteV3 } from './route-assembler';
 export { decideOutcomeV3 } from './outcome-decider';
+export { generateRouteV3 } from './route-generator';
+export type { GeneratedRouteV3 } from './route-generator';
 export type {
   AssembledRouteV3,
   ConfidenceV3,
