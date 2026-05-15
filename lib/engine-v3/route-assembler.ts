@@ -121,6 +121,9 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
     // connectors, so count the repeated connector traversal without fabricating geometry.
     repeatRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
     overlapRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
+    busyRoadRatio: 0,
+    loopClosureKm: 0,
+    longestTrailSegmentKm: longestNaturalSegmentKm(segments),
   };
 }
 
@@ -128,6 +131,20 @@ function nonPavedDistance(segment: RouteSegmentV3): number {
   if (segment.surface === 'natural') return segment.distanceKm;
   if (segment.surface === 'mixed') return segment.distanceKm * 0.5;
   return 0;
+}
+
+function longestNaturalSegmentKm(segments: RouteSegmentV3[]): number {
+  let best = 0;
+  let current = 0;
+  for (const segment of segments) {
+    if (segment.surface === 'natural') {
+      current += segment.distanceKm;
+      best = Math.max(best, current);
+    } else {
+      current = 0;
+    }
+  }
+  return round(best);
 }
 
 function knownRepeatedConnectorKm(intent: RouteIntentV3, segments: RouteSegmentV3[]): number {
@@ -161,6 +178,9 @@ function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: 
       visitedComponents: [],
       repeatRatio: 0,
       overlapRatio: 0,
+      busyRoadRatio: 0,
+      loopClosureKm: 0,
+      longestTrailSegmentKm: 0,
     },
     warnings: [...mission.warnings, warning],
   };

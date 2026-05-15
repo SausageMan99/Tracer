@@ -3,6 +3,7 @@ export { planRouteIntentV3 } from './route-intent-planner';
 export { buildCorridorMissionV3 } from './corridor-anchor-builder';
 export { assembleRouteV3 } from './route-assembler';
 export { assembleGraphRouteV3 } from './graph-route-assembler';
+export { computeRouteMetricsV3, createEmptyRouteMetricsV3 } from './route-metrics';
 export { decideOutcomeV3 } from './outcome-decider';
 export { generateRouteV3, generateRouteV3FromGraph } from './route-generator';
 export { buildTerrainSnapshotV3FromGraph } from './terrain-snapshot-builder';

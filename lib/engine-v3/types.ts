@@ -133,8 +133,11 @@ export interface RouteMetricsV3 {
   naturalDwellKm: number;
   repeatEdgeKm: number;
   visitedComponents: TerrainComponentKindV3[];
-  repeatRatio?: number;
-  overlapRatio?: number;
+  repeatRatio: number;
+  overlapRatio: number;
+  busyRoadRatio: number;
+  loopClosureKm: number;
+  longestTrailSegmentKm: number;
 }
 
 export interface RouteEdgeV3 {

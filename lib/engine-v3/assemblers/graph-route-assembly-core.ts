@@ -1,12 +1,6 @@
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from '../../types';
-import type {
-  AssembledRouteV3,
-  CorridorMissionV3,
-  RouteEdgeV3,
-  RouteIntentV3,
-  RouteSurfaceV3,
-  TerrainComponentKindV3,
-} from '../types';
+import { computeRouteMetricsV3, createEmptyRouteMetricsV3 } from '../route-metrics';
+import type { AssembledRouteV3, CorridorMissionV3, RouteEdgeV3, RouteIntentV3, RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
 
 const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
 const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
@@ -19,14 +13,6 @@ export interface TraversalEdgeV3 {
   to: string;
   kind: TerrainComponentKindV3;
   surface: RouteSurfaceV3;
-}
-
-interface AssemblyCounters {
-  pavedKm: number;
-  nonPavedKm: number;
-  naturalDwellKm: number;
-  repeatEdgeKm: number;
-  visitedComponents: TerrainComponentKindV3[];
 }
 
 export interface GraphAssemblyOptionsV3 {
@@ -52,13 +38,18 @@ export function assembleGraphRouteWithStrategyV3(
 
   const nodeIds = nodesFromTraversal(startNodeId, traversal);
   const edges = traversal.map(toRouteEdge);
-  const counters = computeCounters(edges, intent.constraints.targetComponents);
-  const distanceProducedKm = round(edges.reduce((sum, edge) => sum + edge.lengthKm, 0));
   const geometry = toGeometry(graph, nodeIds);
+  const metrics = computeRouteMetricsV3({
+    targetDistanceKm: intent.constraints.targetDistanceKm,
+    edges,
+    geometry,
+    targetComponents: intent.constraints.targetComponents,
+  });
+  const distanceProducedKm = metrics.distanceProducedKm;
   const warnings = [...mission.warnings];
   if (options.warning) warnings.push(options.warning);
   if (distanceProducedKm < intent.constraints.targetDistanceKm * 0.7) warnings.push('graph assembly produced insufficient route distance');
-  if (options.requireNaturalDwell && counters.naturalDwellKm < mission.requestedNaturalDwellKm) {
+  if (options.requireNaturalDwell && metrics.naturalDwellKm < mission.requestedNaturalDwellKm) {
     warnings.push('transition_to_woods did not meet requested woods dwell; route remains adjusted, not pure trail');
   }
 
@@ -71,24 +62,11 @@ export function assembleGraphRouteWithStrategyV3(
     nodeIds,
     geometry,
     surfaces: {
-      pavedKm: round(counters.pavedKm),
-      nonPavedKm: round(counters.nonPavedKm),
-      naturalDwellKm: round(counters.naturalDwellKm),
+      pavedKm: metrics.pavedKm,
+      nonPavedKm: metrics.nonPavedKm,
+      naturalDwellKm: metrics.naturalDwellKm,
     },
-    metrics: {
-      targetDistanceKm: intent.constraints.targetDistanceKm,
-      distanceProducedKm,
-      trailRatio: ratio(counters.nonPavedKm, distanceProducedKm),
-      naturalWayRatio: ratio(counters.nonPavedKm, distanceProducedKm),
-      pavedRatio: ratio(counters.pavedKm, distanceProducedKm),
-      pavedKm: round(counters.pavedKm),
-      nonPavedKm: round(counters.nonPavedKm),
-      naturalDwellKm: round(counters.naturalDwellKm),
-      repeatEdgeKm: round(counters.repeatEdgeKm),
-      visitedComponents: counters.visitedComponents,
-      repeatRatio: ratio(counters.repeatEdgeKm, distanceProducedKm),
-      overlapRatio: ratio(counters.repeatEdgeKm, distanceProducedKm),
-    },
+    metrics,
     warnings,
   };
 }
@@ -232,33 +210,6 @@ function toRouteEdge(edge: TraversalEdgeV3): RouteEdgeV3 {
   };
 }
 
-function computeCounters(edges: RouteEdgeV3[], targetComponents: TerrainComponentKindV3[]): AssemblyCounters {
-  const visitedComponents: TerrainComponentKindV3[] = [];
-  const traversalsByEdge = new Map<string, number>();
-  let pavedKm = 0;
-  let nonPavedKm = 0;
-  let naturalDwellKm = 0;
-  let repeatEdgeKm = 0;
-
-  for (const edge of edges) {
-    if (!visitedComponents.includes(edge.componentKind)) visitedComponents.push(edge.componentKind);
-    const previousTraversals = traversalsByEdge.get(edge.id) ?? 0;
-    if (previousTraversals > 0) repeatEdgeKm += edge.lengthKm;
-    traversalsByEdge.set(edge.id, previousTraversals + 1);
-
-    if (edge.surface === 'paved') pavedKm += edge.lengthKm;
-    else if (edge.surface === 'natural') nonPavedKm += edge.lengthKm;
-    else {
-      pavedKm += edge.lengthKm * 0.5;
-      nonPavedKm += edge.lengthKm * 0.5;
-    }
-
-    if (targetComponents.includes(edge.componentKind) && edge.surface !== 'paved') naturalDwellKm += edge.surface === 'mixed' ? edge.lengthKm * 0.5 : edge.lengthKm;
-  }
-
-  return { pavedKm, nonPavedKm, naturalDwellKm, repeatEdgeKm, visitedComponents };
-}
-
 function toGeometry(graph: EnrichedGraph, nodeIds: string[]): AssembledRouteV3['geometry'] {
   return {
     type: 'LineString',
@@ -311,20 +262,7 @@ function emptyGraphRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warn
     nodeIds: [],
     geometry: { type: 'LineString', coordinates: [] },
     surfaces: { pavedKm: 0, nonPavedKm: 0, naturalDwellKm: 0 },
-    metrics: {
-      targetDistanceKm: intent.constraints.targetDistanceKm,
-      distanceProducedKm: 0,
-      trailRatio: 0,
-      naturalWayRatio: 0,
-      pavedRatio: 1,
-      pavedKm: 0,
-      nonPavedKm: 0,
-      naturalDwellKm: 0,
-      repeatEdgeKm: 0,
-      visitedComponents: [],
-      repeatRatio: 0,
-      overlapRatio: 0,
-    },
+    metrics: createEmptyRouteMetricsV3(intent.constraints.targetDistanceKm),
     warnings: [...mission.warnings, warning],
   };
 }
@@ -336,11 +274,6 @@ function cloneMission(mission: CorridorMissionV3): CorridorMissionV3 {
     anchor: mission.anchor ? { ...mission.anchor } : null,
     warnings: [...mission.warnings],
   };
-}
-
-function ratio(value: number, total: number): number {
-  if (total <= 0) return 0;
-  return round(value / total);
 }
 
 function round(value: number): number {
