@@ -17,6 +17,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { generateRouteV2 } from "@/lib/engine";
+import { generateRouteV3Api } from "@/lib/engine-v3/api-adapter";
 import { generateRoute } from "@/lib/route-generator-legacy";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import { createRateLimiter } from "@/lib/rate-limiter";
@@ -186,6 +187,15 @@ export async function POST(req: NextRequest) {
   };
 
   try {
+    if (body.engineVersion === "v3_experimental") {
+      const v3Route = await generateRouteV3Api(routeRequest);
+      return NextResponse.json({
+        success: true,
+        generationId,
+        ...v3Route,
+      });
+    }
+
     let route;
 
     // V2 is optimized for running loops. Waypoints/end-address and cycling long

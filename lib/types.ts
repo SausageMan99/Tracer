@@ -474,6 +474,8 @@ export interface GenerateRouteRequest {
   routeGateElevationToleranceM?: number;
   /** Internal benchmark/debug flag: include heavy edge-level diagnostics in API response */
   includeEdgeDiagnostics?: boolean;
+  /** Internal experimental flag: opt into the clean-room V3 engine without changing the default V2.5 path. */
+  engineVersion?: "v3_experimental";
   /** Internal benchmark/debug flag: include lightweight generation timings and diagnostics */
   includeGenerationDiagnostics?: boolean;
 }
