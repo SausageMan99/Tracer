@@ -33,8 +33,9 @@ export function assembleGraphRouteWithStrategyV3(
   if (!startNodeId) return emptyGraphRoute(intent, mission, 'graph contains no nodes for assembly');
 
   const adjacency = buildAdjacency(graph);
-  const traversal = walkGraph(startNodeId, intent, adjacency, options);
-  if (traversal.length === 0) return emptyGraphRoute(intent, mission, 'graph assembly could not traverse routeable edges');
+  const candidates = assembleGraphCandidates(startNodeId, intent, mission, adjacency, options);
+  const traversal = selectBestCandidate(candidates, startNodeId, intent, mission, options);
+  if (!traversal || traversal.length === 0) return emptyGraphRoute(intent, mission, 'graph assembly could not traverse routeable edges');
 
   const nodeIds = nodesFromTraversal(startNodeId, traversal);
   const edges = traversal.map(toRouteEdge);
@@ -71,109 +72,214 @@ export function assembleGraphRouteWithStrategyV3(
   };
 }
 
-function walkGraph(
+interface GraphCandidateStateV3 {
+  current: string;
+  traversal: TraversalEdgeV3[];
+  usedEdgeCounts: Map<string, number>;
+  distanceKm: number;
+  naturalDwellKm: number;
+  enteredTarget: boolean;
+}
+
+function assembleGraphCandidates(
   startNodeId: string,
   intent: RouteIntentV3,
+  mission: CorridorMissionV3,
   adjacency: Map<string, TraversalEdgeV3[]>,
   options: GraphAssemblyOptionsV3,
-): TraversalEdgeV3[] {
+): GraphCandidateStateV3[] {
   const targetDistanceKm = intent.constraints.targetDistanceKm;
-  const used = new Set<string>();
-  const traversed: TraversalEdgeV3[] = [];
-  let current = startNodeId;
-  let distanceKm = 0;
-  let enteredTarget = false;
+  const maxDistanceKm = targetDistanceKm * 1.15;
+  const beamWidth = 64;
+  const maxSteps = 128;
+  let frontier: GraphCandidateStateV3[] = [
+    { current: startNodeId, traversal: [], usedEdgeCounts: new Map(), distanceKm: 0, naturalDwellKm: 0, enteredTarget: false },
+  ];
+  const candidates: GraphCandidateStateV3[] = [];
 
-  for (let step = 0; step < 256; step += 1) {
-    const rawCandidates = (adjacency.get(current) ?? []).filter((candidate) => !used.has(candidate.edge.id));
-    const candidates = filterCandidatesForStrategy(rawCandidates, options, enteredTarget);
-    if (candidates.length === 0) break;
-    if (distanceKm >= targetDistanceKm * 0.9 && !hasUsefulClosingCandidate(candidates, startNodeId, distanceKm, targetDistanceKm)) break;
+  for (let step = 0; step < maxSteps && frontier.length > 0; step += 1) {
+    const expanded: GraphCandidateStateV3[] = [];
 
-    const next = chooseNextEdge(candidates, intent, startNodeId, distanceKm, targetDistanceKm, options, enteredTarget);
-    traversed.push(next);
-    used.add(next.edge.id);
-    distanceKm += Math.max(0, next.edge.lengthKm);
-    current = next.to;
-    if (intent.constraints.targetComponents.includes(next.kind)) enteredTarget = true;
+    for (const state of frontier) {
+      if (state.traversal.length > 0 && state.current === startNodeId && state.enteredTarget) candidates.push(state);
+      if (state.distanceKm >= maxDistanceKm) continue;
 
-    if (current === startNodeId && distanceKm >= targetDistanceKm * 0.7) break;
-    if (distanceKm >= targetDistanceKm * 1.15) break;
-    if (distanceKm >= targetDistanceKm * 0.98 && !hasClosingCandidate(adjacency.get(current) ?? [], startNodeId, used)) break;
+      for (const next of orderExpansionCandidates(adjacency.get(state.current) ?? [], state, startNodeId, intent, mission, options)) {
+        const nextDistanceKm = state.distanceKm + Math.max(0, next.edge.lengthKm);
+        if (nextDistanceKm > maxDistanceKm + 0.001) continue;
+        if (!canTraverse(next, state, startNodeId, intent, mission)) continue;
+        expanded.push(advanceState(state, next, intent));
+      }
+    }
+
+    frontier = [...expanded]
+      .sort((a, b) => scorePartialCandidate(b, startNodeId, intent, mission, options) - scorePartialCandidate(a, startNodeId, intent, mission, options))
+      .slice(0, beamWidth);
   }
 
-  return traversed;
+  for (const state of frontier) {
+    if (state.traversal.length > 0 && state.current === startNodeId && state.enteredTarget) candidates.push(state);
+  }
+
+  return candidates.length > 0 ? candidates : frontier;
 }
 
-function filterCandidatesForStrategy(candidates: TraversalEdgeV3[], options: GraphAssemblyOptionsV3, enteredTarget: boolean): TraversalEdgeV3[] {
-  if (options.mode !== 'forest_loop') return candidates;
-
-  const naturalTargets = candidates.filter((candidate) => candidate.surface === 'natural' && candidate.kind === 'forest');
-  if (naturalTargets.length > 0) return naturalTargets;
-
-  const natural = candidates.filter((candidate) => candidate.surface === 'natural');
-  if (natural.length > 0) return natural;
-
-  if (!enteredTarget) return candidates;
-  const nonPaved = candidates.filter((candidate) => candidate.surface !== 'paved');
-  return nonPaved.length > 0 ? nonPaved : candidates;
-}
-
-function chooseNextEdge(
-  candidates: TraversalEdgeV3[],
-  intent: RouteIntentV3,
+function selectBestCandidate(
+  candidates: GraphCandidateStateV3[],
   startNodeId: string,
-  distanceKm: number,
-  targetDistanceKm: number,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
   options: GraphAssemblyOptionsV3,
-  enteredTarget: boolean,
-): TraversalEdgeV3 {
-  return [...candidates].sort((a, b) => {
-    const aClosing = a.to === startNodeId && distanceKm + a.edge.lengthKm >= targetDistanceKm * 0.65 ? 1 : 0;
-    const bClosing = b.to === startNodeId && distanceKm + b.edge.lengthKm >= targetDistanceKm * 0.65 ? 1 : 0;
-    if (aClosing !== bClosing) return bClosing - aClosing;
-
-    if (options.mode === 'transition_to_woods' && !enteredTarget) {
-      const aTarget = intent.constraints.targetComponents.includes(a.kind) ? 1 : 0;
-      const bTarget = intent.constraints.targetComponents.includes(b.kind) ? 1 : 0;
-      if (aTarget !== bTarget) return bTarget - aTarget;
-
-      const aConnector = a.surface === 'paved' && a.kind === 'residential' ? 1 : 0;
-      const bConnector = b.surface === 'paved' && b.kind === 'residential' ? 1 : 0;
-      if (aConnector !== bConnector) return bConnector - aConnector;
-
-      return a.edge.lengthKm - b.edge.lengthKm || (b.edge.score ?? 0) - (a.edge.score ?? 0);
-    }
-
-    const aTarget = intent.constraints.targetComponents.includes(a.kind) ? 1 : 0;
-    const bTarget = intent.constraints.targetComponents.includes(b.kind) ? 1 : 0;
-    if (aTarget !== bTarget) return bTarget - aTarget;
-
-    if (options.mode === 'park_loop') {
-      const aPark = a.kind === 'park' ? 1 : 0;
-      const bPark = b.kind === 'park' ? 1 : 0;
-      if (aPark !== bPark) return bPark - aPark;
-      return a.edge.lengthKm - b.edge.lengthKm || (b.edge.score ?? 0) - (a.edge.score ?? 0);
-    }
-
-    const aNatural = a.surface === 'natural' ? 1 : 0;
-    const bNatural = b.surface === 'natural' ? 1 : 0;
-    if (aNatural !== bNatural) return bNatural - aNatural;
-
-    const aOvershoot = Math.max(0, distanceKm + a.edge.lengthKm - targetDistanceKm);
-    const bOvershoot = Math.max(0, distanceKm + b.edge.lengthKm - targetDistanceKm);
-    if (aOvershoot !== bOvershoot) return aOvershoot - bOvershoot;
-
-    return (b.edge.score ?? 0) - (a.edge.score ?? 0) || b.edge.lengthKm - a.edge.lengthKm;
-  })[0]!;
+): TraversalEdgeV3[] | null {
+  const selected = [...candidates].sort(
+    (a, b) => scoreCompleteCandidate(b, startNodeId, intent, mission, options) - scoreCompleteCandidate(a, startNodeId, intent, mission, options),
+  )[0];
+  return selected?.traversal ?? null;
 }
 
-function hasUsefulClosingCandidate(candidates: TraversalEdgeV3[], startNodeId: string, distanceKm: number, targetDistanceKm: number): boolean {
-  return candidates.some((candidate) => candidate.to === startNodeId && distanceKm + candidate.edge.lengthKm <= targetDistanceKm * 1.2);
+function orderExpansionCandidates(
+  candidates: TraversalEdgeV3[],
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): TraversalEdgeV3[] {
+  return [...candidates].sort(
+    (a, b) => scoreNextEdge(b, state, startNodeId, intent, mission, options) - scoreNextEdge(a, state, startNodeId, intent, mission, options),
+  );
 }
 
-function hasClosingCandidate(candidates: TraversalEdgeV3[], startNodeId: string, used: Set<string>): boolean {
-  return candidates.some((candidate) => candidate.to === startNodeId && !used.has(candidate.edge.id));
+function canTraverse(
+  edge: TraversalEdgeV3,
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+): boolean {
+  const usedCount = state.usedEdgeCounts.get(edge.edge.id) ?? 0;
+  if (usedCount >= 2) return false;
+  if (usedCount > 0 && !shouldAllowRepeat(edge, state, startNodeId, intent, mission)) return false;
+  if (state.traversal.length === 0 && edge.to === startNodeId) return false;
+  return true;
+}
+
+function shouldAllowRepeat(
+  edge: TraversalEdgeV3,
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+): boolean {
+  if (!state.enteredTarget) return false;
+  if (edge.to === startNodeId) return true;
+  const targetDistanceKm = intent.constraints.targetDistanceKm;
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  return state.distanceKm >= targetDistanceKm * 0.55 && state.naturalDwellKm >= requestedDwellKm * 0.75;
+}
+
+function advanceState(state: GraphCandidateStateV3, edge: TraversalEdgeV3, intent: RouteIntentV3): GraphCandidateStateV3 {
+  const usedEdgeCounts = new Map(state.usedEdgeCounts);
+  usedEdgeCounts.set(edge.edge.id, (usedEdgeCounts.get(edge.edge.id) ?? 0) + 1);
+  const edgeLengthKm = Math.max(0, edge.edge.lengthKm);
+  const isTarget = intent.constraints.targetComponents.includes(edge.kind);
+  const naturalDwellKm = state.naturalDwellKm + (isTarget && edge.surface !== 'paved' ? (edge.surface === 'mixed' ? edgeLengthKm * 0.5 : edgeLengthKm) : 0);
+  return {
+    current: edge.to,
+    traversal: [...state.traversal, edge],
+    usedEdgeCounts,
+    distanceKm: state.distanceKm + edgeLengthKm,
+    naturalDwellKm,
+    enteredTarget: state.enteredTarget || isTarget,
+  };
+}
+
+function scoreNextEdge(
+  edge: TraversalEdgeV3,
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): number {
+  const targetDistanceKm = intent.constraints.targetDistanceKm;
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const nextDistanceKm = state.distanceKm + Math.max(0, edge.edge.lengthKm);
+  const isTarget = intent.constraints.targetComponents.includes(edge.kind);
+  const usedCount = state.usedEdgeCounts.get(edge.edge.id) ?? 0;
+  let score = edge.edge.score ?? 0;
+
+  if (edge.to === startNodeId && state.enteredTarget && nextDistanceKm >= targetDistanceKm * 0.7) score += 10;
+  if (!state.enteredTarget && isTarget) score += 6;
+  if (state.enteredTarget && state.naturalDwellKm < requestedDwellKm && isTarget && edge.surface !== 'paved') score += 5;
+  if (state.enteredTarget && state.naturalDwellKm >= requestedDwellKm && edge.to === startNodeId) score += 4;
+  if (edge.surface === 'natural') score += 2;
+  if (edge.surface === 'paved') score -= 1.5;
+  if (usedCount > 0) score -= 3 + usedCount * 2;
+  if (options.mode === 'forest_loop' && edge.kind === 'forest' && edge.surface === 'natural') score += 3;
+  if (options.mode === 'park_loop' && edge.kind === 'park') score += 3;
+  if (options.mode === 'transition_to_woods' && !state.enteredTarget && edge.surface === 'paved' && edge.kind === 'residential') score += 1;
+
+  const distanceAfterEdgeError = Math.abs(targetDistanceKm - nextDistanceKm) / targetDistanceKm;
+  score -= distanceAfterEdgeError;
+  if (nextDistanceKm > targetDistanceKm && edge.to !== startNodeId) score -= 2;
+  return score;
+}
+
+function scorePartialCandidate(
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): number {
+  const targetDistanceKm = intent.constraints.targetDistanceKm;
+  const distanceScore = 1 - Math.abs(targetDistanceKm - state.distanceKm) / targetDistanceKm;
+  let score = distanceScore;
+  if (state.enteredTarget) score += 4;
+  score += Math.min(1, state.naturalDwellKm / Math.max(0.001, requestedNaturalDwellKm(intent, mission))) * 3;
+  if (state.current === startNodeId && state.traversal.length > 0) score += 3;
+  if (options.mode === 'transition_to_woods' && state.enteredTarget) score += 1;
+  score -= repeatKm(state) / Math.max(0.001, state.distanceKm) * 3;
+  return score;
+}
+
+function scoreCompleteCandidate(
+  state: GraphCandidateStateV3,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): number {
+  const targetDistanceKm = intent.constraints.targetDistanceKm;
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const inDistanceBand = state.distanceKm >= targetDistanceKm * 0.7 && state.distanceKm <= targetDistanceKm * 1.15;
+  const returned = state.current === startNodeId && state.traversal.length > 0;
+  const dwellSatisfied = state.naturalDwellKm + 0.001 >= requestedDwellKm;
+  let score = scorePartialCandidate(state, startNodeId, intent, mission, options);
+  if (returned) score += 20;
+  if (inDistanceBand) score += 15;
+  if (dwellSatisfied) score += 10;
+  if (!state.enteredTarget) score -= 50;
+  if (!returned) score -= 30;
+  if (state.distanceKm < targetDistanceKm * 0.7) score -= 20;
+  if (state.distanceKm < targetDistanceKm) score -= (targetDistanceKm - state.distanceKm) / targetDistanceKm;
+  score -= repeatKm(state) / Math.max(0.001, state.distanceKm) * 5;
+  return score;
+}
+
+function repeatKm(state: GraphCandidateStateV3): number {
+  const firstLengths = new Map<string, number>();
+  let repeatedKm = 0;
+  for (const edge of state.traversal) {
+    if (firstLengths.has(edge.edge.id)) repeatedKm += Math.max(0, edge.edge.lengthKm);
+    firstLengths.set(edge.edge.id, Math.max(0, edge.edge.lengthKm));
+  }
+  return repeatedKm;
+}
+
+function requestedNaturalDwellKm(intent: RouteIntentV3, mission: CorridorMissionV3): number {
+  return Math.max(mission.requestedNaturalDwellKm, intent.constraints.targetDistanceKm * intent.constraints.minNaturalDwellRatio);
 }
 
 function buildAdjacency(graph: EnrichedGraph): Map<string, TraversalEdgeV3[]> {
