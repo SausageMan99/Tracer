@@ -2,6 +2,7 @@ export { normalizeRequestV3 } from './request-normalizer';
 export { planRouteIntentV3 } from './route-intent-planner';
 export { buildCorridorMissionV3 } from './corridor-anchor-builder';
 export { assembleRouteV3 } from './route-assembler';
+export { assembleGraphRouteV3 } from './graph-route-assembler';
 export { decideOutcomeV3 } from './outcome-decider';
 export { generateRouteV3, generateRouteV3FromGraph } from './route-generator';
 export { buildTerrainSnapshotV3FromGraph } from './terrain-snapshot-builder';
@@ -16,6 +17,8 @@ export type {
   NormalizedRouteRequestV3,
   RouteAnchorV3,
   RouteConstraintsV3,
+  RouteEdgeV3,
+  RouteGeometryV3,
   RouteIntentV3,
   RouteMetricsV3,
   RouteModeV3,

@@ -1,4 +1,5 @@
 import { assembleRouteV3 } from './route-assembler';
+import { assembleGraphRouteV3 } from './graph-route-assembler';
 import { buildCorridorMissionV3 } from './corridor-anchor-builder';
 import { decideOutcomeV3 } from './outcome-decider';
 import { planRouteIntentV3 } from './route-intent-planner';
@@ -29,7 +30,20 @@ export function generateRouteV3(request: UserRouteRequestV3, snapshot: TerrainSn
 }
 
 export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: EnrichedGraph): GeneratedRouteV3 {
-  return generateRouteV3WithSnapshotSource(request, buildTerrainSnapshotV3FromGraph(graph), 'graph_adapter');
+  const snapshot = buildTerrainSnapshotV3FromGraph(graph);
+  const intent = planRouteIntentV3(request, snapshot);
+  const mission = buildCorridorMissionV3(intent);
+  const route = assembleGraphRouteV3(intent, mission, graph);
+  const outcome = decideOutcomeV3(intent, route);
+
+  return {
+    engine: 'v3-clean-room',
+    intent,
+    mission,
+    route,
+    outcome,
+    diagnostics: buildDiagnostics('graph_adapter', intent, mission, route, outcome),
+  };
 }
 
 function generateRouteV3WithSnapshotSource(
@@ -61,16 +75,30 @@ function buildDiagnostics(
 ): RouteGenerationDiagnosticsV3 {
   return {
     snapshotSource,
-    assemblyStatus: 'segment_level_not_gps_geometry',
-    limitations: [
-      'V3 integration slice is not production-ready: route assembly is segment-level, not GPS geometry.',
-      'Graph adapter summarizes available edge evidence; it does not run a graph solver yet.',
-      'Paved/asphalt evidence remains paved and is not reclassified as trail.',
-    ],
+    assemblyStatus: assemblyStatus(snapshotSource, route),
+    limitations: limitations(snapshotSource, route),
     warnings: unique([...intent.warnings, ...mission.warnings, ...route.warnings]),
     metrics: { ...route.metrics },
     outcomeEvidence: { reasonsOrCompromises: reasonsOrCompromises(outcome) },
   };
+}
+
+function assemblyStatus(snapshotSource: TerrainSnapshotSourceV3, route: AssembledRouteV3): RouteGenerationDiagnosticsV3['assemblyStatus'] {
+  if (snapshotSource === 'graph_adapter') return route.edges.length > 0 ? 'graph_route_assembled' : 'graph_route_unassembled';
+  return 'segment_level_not_gps_geometry';
+}
+
+function limitations(snapshotSource: TerrainSnapshotSourceV3, route: AssembledRouteV3): string[] {
+  if (snapshotSource === 'graph_adapter') {
+    const base = ['Paved/asphalt evidence remains paved and is not reclassified as trail.'];
+    if (route.edges.length === 0) return ['Graph route assembly refused to fabricate GPS geometry from insufficient graph evidence.', ...base];
+    return ['V3 graph adapter assembled ordered graph edges into GPS geometry; API wiring remains intentionally disabled.', ...base];
+  }
+  return [
+    'V3 injected-snapshot path is not production-ready: route assembly is segment-level, not GPS geometry.',
+    'Use generateRouteV3FromGraph for real graph edge/node assembly.',
+    'Paved/asphalt evidence remains paved and is not reclassified as trail.',
+  ];
 }
 
 function reasonsOrCompromises(outcome: RouteOutcomeV3): string[] {

@@ -11,6 +11,10 @@ export function assembleRouteV3(intent: RouteIntentV3, mission: CorridorMissionV
     strategy: intent.strategy,
     mission: cloneMission(mission),
     segments,
+    edges: [],
+    nodeIds: [],
+    geometry: { type: 'LineString', coordinates: [] },
+    surfaces: { pavedKm: round(metrics.distanceProducedKm - metrics.nonPavedKm), nonPavedKm: metrics.nonPavedKm, naturalDwellKm: metrics.naturalDwellKm },
     metrics,
     warnings: [...mission.warnings],
   };
@@ -105,8 +109,14 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
     trailRatio: naturalWayRatio,
     naturalWayRatio,
     pavedRatio: ratio(pavedKm, distanceProducedKm),
+    pavedKm: round(pavedKm),
     nonPavedKm,
     naturalDwellKm,
+    repeatEdgeKm: knownRepeatedConnectorKm(intent, segments),
+    visitedComponents: Array.from(new Set(segments.map((segment) => segment.componentId).filter((componentId): componentId is NonNullable<typeof componentId> => Boolean(componentId)))).map((componentId) => {
+      const component = intent.snapshot.components.find((candidate) => candidate.id === componentId);
+      return component?.kind;
+    }).filter((kind): kind is NonNullable<typeof kind> => Boolean(kind)),
     // Segment-level estimate only: transition_to_woods uses mirrored access/return
     // connectors, so count the repeated connector traversal without fabricating geometry.
     repeatRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
@@ -134,14 +144,21 @@ function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: 
     strategy: intent.strategy,
     mission: cloneMission(mission),
     segments: [],
+    edges: [],
+    nodeIds: [],
+    geometry: { type: 'LineString', coordinates: [] },
+    surfaces: { pavedKm: 0, nonPavedKm: 0, naturalDwellKm: 0 },
     metrics: {
       targetDistanceKm: intent.constraints.targetDistanceKm,
       distanceProducedKm: 0,
       trailRatio: 0,
       naturalWayRatio: 0,
       pavedRatio: 1,
+      pavedKm: 0,
       nonPavedKm: 0,
       naturalDwellKm: 0,
+      repeatEdgeKm: 0,
+      visitedComponents: [],
       repeatRatio: 0,
       overlapRatio: 0,
     },

@@ -10,7 +10,7 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
   const insufficientDwell = route.metrics.naturalDwellKm + 0.001 < intent.constraints.targetDistanceKm * intent.constraints.minNaturalDwellRatio;
   const severeDistanceGap = distanceRatio < 0.7;
 
-  if (route.segments.length === 0 || severeDistanceGap) {
+  if ((route.segments.length === 0 && route.edges.length === 0) || severeDistanceGap) {
     return {
       type: 'refused',
       reason: 'assembled route does not meet minimal distance evidence',

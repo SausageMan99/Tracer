@@ -117,7 +117,7 @@ describe('engine V3 integration slice over real graph-shaped evidence', () => {
     expect(snapshot.components.find((component) => component.kind === 'forest')).toMatchObject({ totalLengthKm: 8, nonPavedRatio: 1 });
   });
 
-  it('runs Tourville transition-to-woods through the graph adapter and exposes segment-level limitations', () => {
+  it('runs Tourville transition-to-woods through the graph adapter and exposes real graph assembly', () => {
     const generated = generateRouteV3FromGraph(
       request({ start: { lat: 49.18, lng: -0.52 }, targetDistanceKm: 12, mode: 'trail' }),
       graph([
@@ -132,8 +132,10 @@ describe('engine V3 integration slice over real graph-shaped evidence', () => {
     expect(generated.route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
     expect(generated.outcome.type).toBe('adjusted');
     expect(generated.diagnostics.snapshotSource).toBe('graph_adapter');
-    expect(generated.diagnostics.assemblyStatus).toBe('segment_level_not_gps_geometry');
-    expect(generated.diagnostics.limitations.join(' ')).toContain('not production-ready');
+    expect(generated.diagnostics.assemblyStatus).toBe('graph_route_assembled');
+    expect(generated.route.edges.length).toBeGreaterThan(0);
+    expect(generated.route.geometry.coordinates.length).toBeGreaterThan(1);
+    expect(generated.diagnostics.limitations.join(' ')).toContain('API wiring remains intentionally disabled');
   });
 
   it('covers Fontainebleau forest, Caen park, Paris urban nature, and poor rural/unroutable graph paths', () => {
@@ -143,6 +145,9 @@ describe('engine V3 integration slice over real graph-shaped evidence', () => {
     );
     expect(fontainebleau.intent.strategy).toBe('forest_loop');
     expect(fontainebleau.outcome.type).toBe('generated');
+    expect(fontainebleau.diagnostics.assemblyStatus).toBe('graph_route_assembled');
+    expect(fontainebleau.route.geometry.coordinates.length).toBeGreaterThan(1);
+    expect(fontainebleau.route.metrics.distanceProducedKm).toBeGreaterThan(0);
 
     const caen = generateRouteV3FromGraph(
       request({ start: { lat: 49.2, lng: -0.37 }, targetDistanceKm: 6, mode: 'nature_urbaine' }),
@@ -150,6 +155,9 @@ describe('engine V3 integration slice over real graph-shaped evidence', () => {
     );
     expect(caen.intent.strategy).toBe('park_loop');
     expect(caen.mission.anchor?.kind).toBe('park');
+    expect(caen.diagnostics.assemblyStatus).toBe('graph_route_assembled');
+    expect(caen.route.geometry.coordinates.length).toBeGreaterThan(1);
+    expect(caen.route.metrics.distanceProducedKm).toBeGreaterThan(0);
 
     const paris = generateRouteV3FromGraph(
       request({ start: { lat: 48.879, lng: 2.381 }, targetDistanceKm: 7, mode: 'nature_urbaine' }),
@@ -165,6 +173,7 @@ describe('engine V3 integration slice over real graph-shaped evidence', () => {
     );
     expect(rural.intent.strategy).toBe('unroutable');
     expect(rural.outcome.type).toBe('refused');
+    expect(rural.route.geometry.coordinates).toEqual([]);
   });
 
   it('generateRouteV3 exposes outcome diagnostics even when called with an injected synthetic snapshot', () => {

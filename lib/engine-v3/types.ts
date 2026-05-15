@@ -128,10 +128,29 @@ export interface RouteMetricsV3 {
   trailRatio: number;
   naturalWayRatio: number;
   pavedRatio: number;
+  pavedKm: number;
   nonPavedKm: number;
   naturalDwellKm: number;
+  repeatEdgeKm: number;
+  visitedComponents: TerrainComponentKindV3[];
   repeatRatio?: number;
   overlapRatio?: number;
+}
+
+export interface RouteEdgeV3 {
+  id: string;
+  from: string;
+  to: string;
+  lengthKm: number;
+  surface: RouteSurfaceV3;
+  componentKind: TerrainComponentKindV3;
+  highway: string;
+  osmWayId: number;
+}
+
+export interface RouteGeometryV3 {
+  type: 'LineString';
+  coordinates: number[][];
 }
 
 export interface AssembledRouteV3 {
@@ -139,6 +158,14 @@ export interface AssembledRouteV3 {
   strategy: RouteStrategyV3;
   mission: CorridorMissionV3;
   segments: RouteSegmentV3[];
+  edges: RouteEdgeV3[];
+  nodeIds: string[];
+  geometry: RouteGeometryV3;
+  surfaces: {
+    pavedKm: number;
+    nonPavedKm: number;
+    naturalDwellKm: number;
+  };
   metrics: RouteMetricsV3;
   warnings: string[];
 }
@@ -151,7 +178,7 @@ export interface RouteOutcomeEvidenceV3 {
 
 export interface RouteGenerationDiagnosticsV3 {
   snapshotSource: TerrainSnapshotSourceV3;
-  assemblyStatus: 'segment_level_not_gps_geometry';
+  assemblyStatus: 'segment_level_not_gps_geometry' | 'graph_route_assembled' | 'graph_route_unassembled';
   limitations: string[];
   warnings: string[];
   metrics: RouteMetricsV3;
