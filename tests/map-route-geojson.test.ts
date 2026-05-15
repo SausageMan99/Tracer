@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildSegmentCollection } from "@/lib/map-route-geojson";
-import type { RouteCandidate } from "@/lib/types";
+import { buildRouteLineFeature, buildSegmentCollection } from "@/lib/map-route-geojson";
+import type { RouteCandidate, RoutePoint } from "@/lib/types";
 
 function candidateWithDifferentDisplayGeometry(): RouteCandidate {
   return {
@@ -57,6 +57,34 @@ describe("buildSegmentCollection", () => {
         candidate.geometry.coordinates.at(-2),
         candidate.geometry.coordinates.at(-1),
       ],
+    });
+  });
+});
+
+describe("buildRouteLineFeature", () => {
+  it("builds the map route GeoJSON from the provided polyline without reordering coordinates", () => {
+    const polyline: RoutePoint[] = [
+      { lat: 49.1771, lng: -0.6021, elevation: 42 },
+      { lat: 49.1782, lng: -0.6044, elevation: 47 },
+      { lat: 49.1801, lng: -0.6079, elevation: 55 },
+      { lat: 49.1826, lng: -0.6102, elevation: 61 },
+    ];
+
+    const feature = buildRouteLineFeature(polyline, {
+      id: "v3-display-source",
+      name: "V3 display source",
+      distanceKm: 1.2,
+    });
+
+    expect(feature.geometry).toEqual({
+      type: "LineString",
+      coordinates: polyline.map((point) => [point.lng, point.lat]),
+    });
+    expect(feature.properties).toMatchObject({
+      id: "v3-display-source",
+      name: "V3 display source",
+      distanceKm: 1.2,
+      pointCount: polyline.length,
     });
   });
 });

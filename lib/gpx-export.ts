@@ -1,4 +1,65 @@
-import type { GeneratedRoute } from "./types";
+import type { GeneratedRoute, RoutePoint, Sport } from "./types";
+
+export interface GpxPolylineMetadata {
+  name: string;
+  sport: Sport | string;
+  distanceKm: number;
+  durationSeconds?: number;
+  description?: string;
+}
+
+/**
+ * Generates a GPX 1.1 XML string directly from a route polyline.
+ * This is the V3-safe export path: callers pass the exact display polyline,
+ * so the GPX cannot drift from the map geometry through candidate/point resampling.
+ */
+export function generateGPXFromPolyline(
+  polyline: readonly RoutePoint[],
+  metadata: GpxPolylineMetadata,
+): string {
+  const now = new Date();
+  const durationSeconds = metadata.durationSeconds ?? 0;
+  const msPerPoint = polyline.length > 1 ? (durationSeconds * 1000) / (polyline.length - 1) : 0;
+
+  const trkpts = polyline
+    .map((point, i) => {
+      const time = new Date(now.getTime() + i * msPerPoint);
+      const eleTag = Number.isFinite(point.elevation)
+        ? `        <ele>${point.elevation!.toFixed(1)}</ele>\n`
+        : "";
+
+      return (
+        `      <trkpt lat="${point.lat.toFixed(7)}" lon="${point.lng.toFixed(7)}">\n` +
+        eleTag +
+        `        <time>${time.toISOString()}</time>\n` +
+        `      </trkpt>`
+      );
+    })
+    .join("\n");
+
+  const description = metadata.description ?? `Généré par TrailForge. Sport: ${metadata.sport}.`;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1"
+  creator="TrailForge"
+  xmlns="http://www.topografix.com/GPX/1/1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${escapeXml(metadata.name)} - ${metadata.distanceKm.toFixed(1)}km</name>
+    <desc>${escapeXml(description)}</desc>
+    <keywords>TrailForge,GPX,${escapeXml(metadata.sport)}</keywords>
+    <time>${now.toISOString()}</time>
+  </metadata>
+  <trk>
+    <name>${escapeXml(metadata.name)}</name>
+    <type>${escapeXml(metadata.sport)}</type>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
 
 /**
  * Generates a GPX 1.1 XML string from a generated route.

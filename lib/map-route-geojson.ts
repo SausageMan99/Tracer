@@ -1,9 +1,33 @@
-import type { RouteCandidate } from "./types";
+import type { RouteCandidate, RoutePoint } from "./types";
 
 export const EMPTY_COLLECTION: GeoJSON.FeatureCollection = {
   type: "FeatureCollection",
   features: [],
 };
+
+export interface RouteLineFeatureMetadata {
+  id?: string;
+  name?: string;
+  distanceKm?: number;
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+export function buildRouteLineFeature(
+  polyline: readonly RoutePoint[],
+  metadata: RouteLineFeatureMetadata = {},
+): GeoJSON.Feature<GeoJSON.LineString> {
+  return {
+    type: "Feature",
+    geometry: {
+      type: "LineString",
+      coordinates: polyline.map((point) => [point.lng, point.lat]),
+    },
+    properties: {
+      ...metadata,
+      pointCount: polyline.length,
+    },
+  };
+}
 
 // ── Haversine (meters) ────────────────────────────────────────────────────────
 
