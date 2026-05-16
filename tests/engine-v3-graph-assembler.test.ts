@@ -168,4 +168,28 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeLessThan(targetKm * 0.7);
     expect(outcome.type).toBe('refused');
   });
+
+  it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {
+    const targetKm = 5.5;
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      mission(targetKm),
+      graph([
+        edge('access-out', 's', 'a', 1, 'asphalt', 'residential', 'urban'),
+        edge('forest-1', 'a', 'b', 1, 'ground', 'path'),
+        edge('forest-2', 'b', 'c', 1, 'ground', 'path'),
+        edge('forest-3', 'c', 'd', 1, 'ground', 'path'),
+        edge('forest-4', 'd', 'a', 1, 'ground', 'path'),
+      ]),
+    );
+
+    const outcome = decideOutcomeV3(intent(targetKm), {
+      ...route,
+      geometry: { type: 'LineString', coordinates: [] },
+    });
+
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm);
+    expect(outcome.type).toBe('refused');
+    expect(outcome).toMatchObject({ reason: expect.stringContaining('GPS geometry') });
+  });
 });

@@ -57,6 +57,10 @@ function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, dist
     reasons.push('poor graph evidence: no assembled route can support the requested trail promise');
   }
 
+  if (!hasUsableGpsGeometry(route)) {
+    reasons.push('route refused: GPS geometry evidence is missing or unusable');
+  }
+
   if (distanceRatio < STRICT_OUTCOME_RULES.refusedDistanceRatio) {
     reasons.push('assembled route is too short for the requested distance');
   }
@@ -130,6 +134,9 @@ function diagnostics(intent: RouteIntentV3, route: AssembledRouteV3): string[] {
   if (route.segments.length === 0 && route.edges.length === 0) {
     details.push('no assembled route evidence');
   }
+  if (!hasUsableGpsGeometry(route)) {
+    details.push(`GPS geometry has ${route.geometry.coordinates.length} coordinate point(s); at least 2 are required`);
+  }
   if (route.metrics.distanceProducedKm < targetDistanceKm) {
     details.push(`distanceProduced ${route.metrics.distanceProducedKm}km below target ${targetDistanceKm}km`);
   }
@@ -168,6 +175,10 @@ function poorGraph(intent: RouteIntentV3): boolean {
 
 function isTrailRequest(intent: RouteIntentV3): boolean {
   return intent.request?.mode === 'trail';
+}
+
+function hasUsableGpsGeometry(route: AssembledRouteV3): boolean {
+  return route.geometry.coordinates.length >= 2;
 }
 
 function missesRequestedTerrain(intent: RouteIntentV3, route: AssembledRouteV3): boolean {
