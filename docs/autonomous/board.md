@@ -18,19 +18,23 @@ Amener le moteur V3 à un état bêta interne honnête: génération/refus expli
 
 ## Verdict CTO actuel
 
-Mise à jour: 2026-05-16T19:53:33Z.
+Mise à jour: 2026-05-16T20:05:49Z.
 
-`narrowed-go`, pas bêta. Le dernier Dev Loop a ajouté un diagnostic et des tests autour de la progression naturelle, mais le résultat réel Fontainebleau ne bouge pas: le benchmark frais `NODE_OPTIONS=--max-old-space-size=1536 npm run benchmark:engine-v3 -- --case fontainebleau-trail-12k` refuse encore avec `distanceProduced 0.842km`, `pavedRatio 0.837`, `naturalDwell 0.137km`, `longestTrailSegment 0km`. L’artifact frais `/root/work/Tracer/artifacts/engine-v3-benchmarks/latest-routes/fontainebleau-trail-12k.json` ajoute une preuve utile: `assemblyDiagnostics.distanceToFirstNonPavedTargetKm=0.068`, `reachableNonPavedTargetEdgeCount=7044`, `reachableNonPavedTargetKm=220.527`. Donc le graphe contient beaucoup de cible non pavée reachable, mais l’assembleur n’arrive toujours pas à l’exploiter en corridor runner.
+`stop-broadening`, pas bêta. La preuve QA disponible dans `/tmp/trailforge-v3-p1-qa/fontainebleau.json` est nette: Fontainebleau 12k sort encore en `refused` avec une micro-route de `0.842km`, `pavedRatio 0.837`, `naturalDwell 0.137km`, `trailRatio 0`, `longestTrailSegment 0km`. Ce n’est pas un panel rouge “normal”; c’est le cas cœur du moteur qui échoue: forêt censée être facile, mais l’assembleur retourne une boucle quasi urbaine/pavée et trop courte.
 
-État repo observé: `main...origin/main [ahead 13]`, dirty state code préexistant sur `lib/engine-v3/assemblers/graph-route-assembly-core.ts`, `lib/engine-v3/route-generator.ts`, `lib/engine-v3/types.ts`, `tests/engine-v3-graph-assembler.test.ts`. Le test ciblé passe (`6 tests`). Décision CTO: ne pas committer ce code comme progrès produit tant que Fontainebleau reste identique; au mieux c’est une tranche diagnostic partielle. Le vrai blocker est maintenant clair: l’assembleur sélectionne une micro-route pavée malgré une capacité naturelle reachable massive.
+Le repo est observé en dirty state code préexistant sur `lib/engine-v3/assemblers/graph-route-assembly-core.ts`, `lib/engine-v3/route-generator.ts`, `lib/engine-v3/types.ts`, `tests/engine-v3-graph-assembler.test.ts`, avec `main...origin/main [ahead 14]`. Ces diffs ne doivent pas être traités comme produit validé tant que Fontainebleau reste à ~0.842km / 0.137km naturel. La donnée importante reste identique: le graphe contient de la capacité naturelle, mais la sélection/expansion/candidate pool de l’assembleur ne l’exploite pas.
+
+Décision CTO: arrêt total de l’élargissement. Pas de panel élargi, pas de comparaison V2.5/V3, pas de release check, pas de cherry-pick d’outils périphériques. Le seul chantier autorisé est l’assembleur Fontainebleau.
 
 ## Prochaine mission unique autorisée
 
-Dev Loop doit faire une seule mission: RCA ciblée de l’assembleur Fontainebleau à partir de l’artifact frais. Objectif: expliquer pourquoi, malgré `reachableNonPavedTargetKm=220.527`, la route choisie reste à `naturalDwell=0.137km`. Ajouter un test synthétique qui reproduit exactement ce cas: cible naturelle reachable proche et abondante, mais sélection finale qui préfère une micro-route pavée/refusée. Ensuite corriger uniquement la sélection/expansion/candidate pool pour produire plusieurs kilomètres naturels quand ils sont réellement connectés. Validation minimale: test RED/GREEN, `npm run test:run -- tests/engine-v3-graph-assembler.test.ts`, puis benchmark Fontainebleau 12k frais. Si le benchmark reste à ~0.842 km / 0.137 km naturel, le run doit marquer `non mergeable` sauf si le changement est explicitement limité à l’observabilité.
+Dev Loop doit faire une seule mission: corriger l’assembleur Fontainebleau. Point de départ obligatoire: artifact `/tmp/trailforge-v3-p1-qa/routes/fontainebleau-trail-12k.json` et/ou artifact frais équivalent. Objectif: expliquer puis corriger pourquoi une cible naturelle proche/abondante est ignorée et pourquoi la route finale plafonne à `0.842km` avec `naturalDwell=0.137km`.
+
+Validation minimale: test synthétique RED/GREEN qui reproduit “capacité naturelle reachable mais sélection micro-route pavée”, `npm run test:run -- tests/engine-v3-graph-assembler.test.ts`, puis benchmark Fontainebleau 12k frais. Critère de réussite: produire une route/refus honnête qui explore réellement plusieurs kilomètres de naturel connecté, ou diagnostiquer explicitement l’impossibilité graphe. Si le benchmark reste à ~0.842km / 0.137km naturel, le run est `non mergeable` hors observabilité pure.
 
 ## Critères de stop immédiat
 
-Stop si le run invente une route sans géométrie GPS, si un `generated` sort sous la distance cible, si les artifacts n’incluent pas request/snapshot/intent/mission/edges/metrics/outcome, si RAM disponible passe sous 1,2 Go, ou si le correctif nécessite une refonte d’assembleur au lieu d’un câblage de harness.
+Stop si le run invente une route sans géométrie GPS, si un `generated` sort sous la distance cible, si Fontainebleau reste micro-route pavée/refusée, si les artifacts n’incluent pas request/snapshot/intent/mission/edges/metrics/outcome, si RAM disponible passe sous 1,2 Go, ou si le correctif dérive vers panel/comparison/release au lieu de l’assembleur.
 
 ## Missions interdites sans décision CTO explicite
 
