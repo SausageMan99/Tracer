@@ -16,9 +16,21 @@ Amener le moteur V3 à un état bêta interne honnête: génération/refus expli
 - Ne pas lancer build/benchmarks si RAM disponible < 1,2 Go, charge > 1,5, lock actif, ou process Node/benchmark déjà en cours.
 - Libérer `/tmp/trailforge-autonomous.lock` avant la fin de chaque run si le garde l’a acquis.
 
-## Prochaine mission autorisée par défaut
+## Verdict CTO actuel
 
-Choisir le plus petit bloc P0/P1 qui augmente la readiness V3 avec preuve: test ciblé, benchmark ciblé, diagnostic mesurable ou correction isolée.
+Mise à jour: 2026-05-16T07:50:52Z.
+
+`narrowed-go`: V3 avance, mais reste non bêta/non prod. Le dernier commit refuse correctement une route sans géométrie GPS utilisable et le test ciblé `tests/engine-v3-graph-assembler.test.ts` passe. Le vrai blocage n’est plus ce garde synthétique: c’est l’absence de preuve live V3 real OSM/Overpass et de comparaison V3 vs V2.5 sur artifacts exploitables.
+
+État repo observé: `main` propre, `main...origin/main [ahead 8]`, HEAD `8e9ef74 fix(engine-v3): refuse routes without gps geometry`.
+
+## Prochaine mission unique autorisée
+
+Dev Loop doit exécuter une seule mission: rendre lançable et documenté un harness V3 real OSM minimal, sans toucher aux seuils moteur. Scope strict: prendre le runner existant `lib/engine-v3/benchmark-runner.ts`, ajouter/brancher seulement le plus petit script nécessaire si aucun script CLI n’existe, puis produire un artifact sur un panel RAM-safe de 2 cas maximum: `tourville-trail-8k` et `fontainebleau-trail-12k`. Validation minimale: `npm run test:run -- tests/engine-v3-graph-assembler.test.ts`, puis un run avec `NODE_OPTIONS=--max-old-space-size=1536` qui écrit JSON + GeoJSON + GPX ou classe honnêtement `errored/refused`.
+
+## Critères de stop immédiat
+
+Stop si le run invente une route sans géométrie GPS, si un `generated` sort sous la distance cible, si les artifacts n’incluent pas request/snapshot/intent/mission/edges/metrics/outcome, si RAM disponible passe sous 1,2 Go, ou si le correctif nécessite une refonte d’assembleur au lieu d’un câblage de harness.
 
 ## Missions interdites sans décision CTO explicite
 
