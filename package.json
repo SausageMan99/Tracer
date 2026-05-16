@@ -13,6 +13,7 @@
     "benchmark:routes:beta-behavior": "node scripts/run-route-benchmarks.mjs --case tourville-pommiers-trail-8k --case caen-colline-aux-oiseaux-6k-soft --case fontainebleau-trail-15k --case clecy-suisse-normande-trail-12k --case caen-prairie-8k-mixed --case lille-10k-citadel-loop --case paris-buttes-chaumont-5k-constrained --case meudon-forest-trail-10k --save-artifacts --output artifacts/route-benchmark-results/beta-behavior-latest.json --artifact-dir artifacts/route-benchmark-results/beta-behavior-routes --beta-scope-report closed_beta_honest_outcomes",
     "benchmark:routes:readiness-unstable": "node scripts/run-route-benchmarks.mjs --case tourville-pommiers-trail-12k --save-artifacts --output artifacts/route-benchmark-results/readiness-unstable-latest.json --artifact-dir artifacts/route-benchmark-results/readiness-unstable-routes",
     "benchmark:routes:compare": "node scripts/compare-route-benchmarks.mjs",
+    "benchmark:engine-v3": "node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts",
     "ign:poc": "node scripts/run-ign-terrain-poc.mjs",
     "release:evidence-check": "node scripts/release-evidence-check.mjs",
     "audit:osm": "node scripts/audit-osm-terrain.mjs",

@@ -18,15 +18,15 @@ Amener le moteur V3 à un état bêta interne honnête: génération/refus expli
 
 ## Verdict CTO actuel
 
-Mise à jour: 2026-05-16T07:50:52Z.
+Mise à jour: 2026-05-16T10:13:32Z.
 
-`narrowed-go`: V3 avance, mais reste non bêta/non prod. Le dernier commit refuse correctement une route sans géométrie GPS utilisable et le test ciblé `tests/engine-v3-graph-assembler.test.ts` passe. Le vrai blocage n’est plus ce garde synthétique: c’est l’absence de preuve live V3 real OSM/Overpass et de comparaison V3 vs V2.5 sur artifacts exploitables.
+`narrowed-go`: V3 avance, mais reste non bêta/non prod. Le harness V3 real OSM minimal est maintenant lançable via `npm run benchmark:engine-v3` et a produit des artifacts JSON + GeoJSON + GPX sur `tourville-trail-8k` et `fontainebleau-trail-12k`. Les deux cas sont refusés honnêtement, sans `generated` sous-distance: Tourville refuse faute de route assemblée/GPS utilisable; Fontainebleau assemble seulement 0,228 km et refuse distance/surface/dwell. Le blocage principal se déplace vers l’assembleur réel: il ne sait pas encore construire une boucle exploitable depuis le graphe OSM même en forêt dense.
 
-État repo observé: `main` propre, `main...origin/main [ahead 8]`, HEAD `8e9ef74 fix(engine-v3): refuse routes without gps geometry`.
+État repo observé avant commit du run: `main` propre, `main...origin/main [ahead 9]`, HEAD `3427190 docs: update autonomous V3 board decision`.
 
 ## Prochaine mission unique autorisée
 
-Dev Loop doit exécuter une seule mission: rendre lançable et documenté un harness V3 real OSM minimal, sans toucher aux seuils moteur. Scope strict: prendre le runner existant `lib/engine-v3/benchmark-runner.ts`, ajouter/brancher seulement le plus petit script nécessaire si aucun script CLI n’existe, puis produire un artifact sur un panel RAM-safe de 2 cas maximum: `tourville-trail-8k` et `fontainebleau-trail-12k`. Validation minimale: `npm run test:run -- tests/engine-v3-graph-assembler.test.ts`, puis un run avec `NODE_OPTIONS=--max-old-space-size=1536` qui écrit JSON + GeoJSON + GPX ou classe honnêtement `errored/refused`.
+Dev Loop doit exécuter une seule mission: corriger le plus petit bloc d’assemblage V3 réel qui explique Fontainebleau à 0,228 km. Scope strict: utiliser l’artifact `/tmp/trailforge-v3-benchmark/routes/fontainebleau-trail-12k.json` ou régénérer le même panel, écrire d’abord un test synthétique ciblé sur le parcours de plusieurs edges non pavés dans un composant forestier réel/similaire, puis ajuster uniquement l’assembleur ou la sélection d’edges nécessaire. Validation minimale: test ciblé RED/GREEN, `npm run test:run -- tests/engine-v3-graph-assembler.test.ts`, puis `npm run benchmark:engine-v3 -- --case fontainebleau-trail-12k` avec artifacts. Ne pas toucher aux seuils d’outcome.
 
 ## Critères de stop immédiat
 
