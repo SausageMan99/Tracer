@@ -18,11 +18,13 @@ Amener le moteur V3 à un état bêta interne honnête: génération/refus expli
 
 ## Verdict CTO actuel
 
-Mise à jour: 2026-05-16T19:20:47Z.
+Mise à jour: 2026-05-16T19:36:15Z.
 
-`narrowed-go`: V3 avance, mais reste non bêta/non prod. Le dernier artifact inspecté (`/tmp/trailforge-v3-p1-qa/fontainebleau.json`, généré à 19:05Z) montre un progrès technique réel sur `fontainebleau-trail-12k`: la route n’est plus une micro-boucle 100% pavée de 0,228/0,4 km, elle atteint `distanceProducedKm=0.842`, `naturalWayRatio=0.163`, `nonPavedKm=0.137`. Mais le verdict produit reste rouge: 842 m pour une demande 12 km, `pavedRatio=0.837`, `naturalDwellKm=0.137` vs 5.4 km demandés, `longestTrailSegmentKm=0`. Conclusion: le blocage n’est plus seulement “atteindre la première arête non pavée”; c’est “soutenir un corridor naturel significatif”. Une amélioration de métrique locale ne suffit pas à une promesse runner.
+`narrowed-go`, pas bêta: la direction technique est meilleure qu’une micro-route pavée, mais elle ne sert pas encore un runner. Les artifacts P1 inspectés (`/tmp/trailforge-v3-p1-qa/fontainebleau.json` et `routes/fontainebleau-trail-12k.json`, générés à 19:05Z) confirment le même état que P0: `fontainebleau-trail-12k` atteint seulement `distanceProducedKm=0.842`, `naturalWayRatio=0.163`, `nonPavedKm=0.137`, `naturalDwellKm=0.137`, `pavedRatio=0.837`, `longestTrailSegmentKm=0`. Le JSON de route montre surtout des petites arêtes pavées autour du départ, puis un aller-retour très court sur quelques footways `mixed`; ce n’est pas un corridor forestier exploitable. Conclusion produit: le problème n’est plus “entrer dans du non-pavé”, c’est “rester et progresser sur du non-pavé utile pendant des kilomètres”.
 
-État repo observé pendant le run Product Vision: `main...origin/main [ahead 11]`, dirty state préexistant sur board + assembleur + route-generator/types + test. Pas de commit code côté Product Vision; board mis à jour uniquement pour éviter que Dev Loop continue à optimiser l’ancien symptôme.
+Aucun panel réduit Tourville/Fontainebleau/Caen frais n’a été trouvé sous `/tmp/trailforge-v3-p1-qa/`; les seuls artifacts P1 disponibles couvrent Fontainebleau. Les anciens artifacts `/tmp/trailforge-v3-benchmark/latest.json` restent rouges sur Tourville et Fontainebleau, donc ne pas extrapoler une cohérence multi-zone. Les refus sont honnêtes côté métriques, mais encore trop internes côté produit: “assembled route is too short” devrait devenir une explication utilisateur du type “je n’ai pas trouvé assez de chemins naturels continus depuis ce départ pour promettre 12 km trail”.
+
+État repo observé pendant le run Product Vision: `main...origin/main [ahead 12]`, dirty state code préexistant sur assembleur + route-generator/types + test. Pas de commit code côté Product Vision; board mis à jour uniquement pour bloquer l’optimisation de métrique locale et recentrer sur l’expérience runner.
 
 ## Prochaine mission unique autorisée
 
