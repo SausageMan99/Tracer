@@ -166,6 +166,24 @@ describe("route benchmark scripts", () => {
               routeTrailQuality: "high",
               warnings: [],
             },
+            routeIntent: {
+              type: "forest_loop",
+              strategy: "forest_loop",
+              targetDistanceKm: 15,
+              targetElevationM: 250,
+              targetComponents: ["fontainebleau-forest"],
+              distancePolicy: { mode: "strict" },
+              terrainComponents: [{
+                id: "fontainebleau-forest",
+                kind: "forest",
+                totalKm: 7.5,
+                nonPavedKm: 6.2,
+                pavedKm: 0.8,
+                unknownSurfaceKm: 0.5,
+                distanceFromStartKm: 0.1,
+                confidence: "high",
+              }],
+            },
           },
         }));
       });
@@ -213,6 +231,81 @@ describe("route benchmark scripts", () => {
       thresholdsChanged: false,
       surfaceReclassification: false,
       typedRefusalMasked: false,
+    });
+  });
+
+  it("fails a terrain-aware successful route when opportunity capture is missing", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-benchmark-missing-opportunity-capture-"));
+    const output = join(dir, "report.json");
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          route: {
+            distanceKm: 8,
+            ascendM: 60,
+            quality: {
+              productionScore: 0.9,
+              loopClosureKm: 0.1,
+              busyRoadRatio: 0.02,
+              naturalWayRatio: 0.35,
+              pavedRatio: 0.45,
+              repeatEdgeRatio: 0,
+              uTurnRatio: 0,
+              terrainDataConfidence: "high",
+              trailPotential: "medium",
+              warnings: [],
+            },
+          },
+        }));
+      });
+    });
+
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("Expected local test server port");
+
+    try {
+      await expect(execFileAsync(
+        nodeBin,
+        [
+          "scripts/run-route-benchmarks.mjs",
+          "--case",
+          "caen-prairie-8k-mixed",
+          "--output",
+          output,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ROUTE_BENCHMARK_BASE_URL: `http://127.0.0.1:${address.port}`,
+          },
+        }
+      )).rejects.toMatchObject({ code: 1 });
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => error ? rejectClose(error) : resolveClose());
+      });
+    }
+
+    const report = JSON.parse(readFileSync(output, "utf8"));
+    expect(report).toMatchObject({ failed: 1, passed: 0 });
+    expect(report.results[0]).toMatchObject({
+      id: "caen-prairie-8k-mixed",
+      passed: false,
+      failures: ["missing_opportunity_capture"],
+      benchmarkWarnings: ["MISSING_OPPORTUNITY_CAPTURE_ON_SUCCESS"],
+      metrics: {
+        opportunityCaptureStatus: {
+          required: true,
+          present: false,
+          severity: "failure",
+          panelId: "urban_nature",
+        },
+      },
     });
   });
 

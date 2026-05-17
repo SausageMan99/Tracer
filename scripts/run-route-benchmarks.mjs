@@ -130,6 +130,22 @@ function requiresExternalRouting(benchmark) {
   return benchmark.profileId.startsWith("cycling_");
 }
 
+function missingOpportunityCaptureFailure(benchmark, opportunityCapture) {
+  const panel = resolveBenchmarkPanel(benchmark);
+  if (panel == null || opportunityCapture != null) return null;
+  return {
+    key: "missing_opportunity_capture",
+    warning: "MISSING_OPPORTUNITY_CAPTURE_ON_SUCCESS",
+    status: {
+      required: true,
+      present: false,
+      severity: "failure",
+      reason: "Terrain-aware benchmark generated a route without opportunityCapture metrics; this hides whether the route captured the available terrain opportunity.",
+      panelId: panel.id,
+    },
+  };
+}
+
 async function saveRouteArtifacts(benchmark, payload) {
   if (!shouldSaveArtifacts || payload?.route == null) return null;
   const absoluteArtifactDir = resolve(repoRoot, artifactDir);
@@ -283,13 +299,22 @@ async function runBenchmark(benchmark) {
     const best = payload.route?.best;
     const summary = summarizeBenchmarkResult(benchmark, payload.route ?? best ?? {}, durationMs);
     const opportunityCapture = routeToOpportunityCaptureMetrics(benchmark, payload.route ?? best ?? {});
+    const opportunityCaptureFailure = missingOpportunityCaptureFailure(benchmark, opportunityCapture);
     const routeArtifacts = await saveRouteArtifacts(benchmark, payload);
+    const failures = opportunityCaptureFailure == null
+      ? summary.failures
+      : [...summary.failures, opportunityCaptureFailure.key];
+    const benchmarkWarnings = opportunityCaptureFailure == null ? [] : [opportunityCaptureFailure.warning];
 
     return {
       ...summary,
+      passed: failures.length === 0,
+      failures,
       panel: resolveBenchmarkPanel(benchmark),
+      benchmarkWarnings,
       metrics: {
         ...summary.metrics,
+        opportunityCaptureStatus: opportunityCaptureFailure?.status ?? { required: resolveBenchmarkPanel(benchmark) != null, present: opportunityCapture != null },
         ...(opportunityCapture == null ? {} : { opportunityCapture }),
       },
       status: response.status,
