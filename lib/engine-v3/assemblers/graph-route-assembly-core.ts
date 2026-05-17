@@ -286,6 +286,7 @@ function shortestTraversalToFirstNonPavedTarget(
     { nodeId: startNodeId, distanceKm: 0, traversal: [] },
   ];
   const seen = new Set<string>();
+  let fallbackMixedTarget: TraversalEdgeV3[] = [];
 
   while (pending.length > 0) {
     const current = pending.sort((a, b) => a.distanceKm - b.distanceKm).shift();
@@ -297,13 +298,16 @@ function shortestTraversalToFirstNonPavedTarget(
       const nextDistanceKm = current.distanceKm + Math.max(0, edge.edge.lengthKm);
       if (nextDistanceKm + 0.000001 >= (bestDistances.get(edge.to) ?? Number.POSITIVE_INFINITY)) continue;
       const traversal = [...current.traversal, edge];
-      if (intent.constraints.targetComponents.includes(edge.kind) && edge.surface !== 'paved') return traversal;
+      if (intent.constraints.targetComponents.includes(edge.kind) && edge.surface !== 'paved') {
+        if (edge.surface === 'natural') return traversal;
+        if (fallbackMixedTarget.length === 0) fallbackMixedTarget = traversal;
+      }
       bestDistances.set(edge.to, nextDistanceKm);
       pending.push({ nodeId: edge.to, distanceKm: nextDistanceKm, traversal });
     }
   }
 
-  return [];
+  return fallbackMixedTarget;
 }
 
 function scoreNextEdge(

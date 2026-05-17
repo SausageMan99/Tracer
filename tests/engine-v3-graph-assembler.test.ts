@@ -15,7 +15,7 @@ function edge(
   lengthKm: number,
   surface: string,
   highway: string,
-  landcoverClass: 'forest' | 'urban' = surface === 'asphalt' ? 'urban' : 'forest',
+  landcoverClass: 'forest' | 'urban' | null = surface === 'asphalt' ? 'urban' : 'forest',
 ): EnrichedEdge {
   return {
     id,
@@ -27,14 +27,16 @@ function edge(
     scenic: landcoverClass === 'forest',
     osmWayId: Math.abs([...id].reduce((sum, char) => sum + char.charCodeAt(0), 0)),
     score: surface === 'asphalt' ? 0.2 : 0.9,
-    terrainContext: {
-      source: 'ign_poc_fixture',
-      landcoverClass,
-      naturalContextScore: landcoverClass === 'forest' ? 0.9 : 0.1,
-      artificializationScore: landcoverClass === 'urban' ? 0.9 : 0.1,
-      confidence: 'high',
-      warnings: [],
-    },
+    terrainContext: landcoverClass
+      ? {
+          source: 'ign_poc_fixture',
+          landcoverClass,
+          naturalContextScore: landcoverClass === 'forest' ? 0.9 : 0.1,
+          artificializationScore: landcoverClass === 'urban' ? 0.9 : 0.1,
+          confidence: 'high',
+          warnings: [],
+        }
+      : undefined,
   };
 }
 
@@ -241,6 +243,31 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.edges.map((candidate) => candidate.id)).toContain('natural-branch-5');
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
     expect(route.metrics.pavedRatio).toBeLessThan(0.5);
+  });
+
+  it('reproduces Fontainebleau: does not lose a real dirt field-path corridor behind a nearer mixed footway spur', () => {
+    const targetKm = 12;
+    const mixedFootwaySpurs = Array.from({ length: 90 }, (_, index) => [
+      edge(`fontainebleau-mixed-spur-${index + 1}-out`, 's', `m${index + 1}`, 0.012, '', 'footway', null),
+      edge(`fontainebleau-mixed-spur-${index + 1}-back`, `m${index + 1}`, 's', 0.012, '', 'footway', null),
+    ]).flat();
+    const realDirtCorridor = Array.from({ length: 80 }, (_, index) =>
+      edge(`fontainebleau-dirt-track-${index + 1}`, `n${index}`, `n${index + 1}`, 0.08, 'dirt', 'track', null),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        ...mixedFootwaySpurs,
+        edge('fontainebleau-paved-access', 's', 'n0', 0.168, 'asphalt', 'residential', 'urban'),
+        ...realDirtCorridor,
+      ]),
+    );
+
+    expect(route.edges.map((candidate) => candidate.id)).toContain('fontainebleau-dirt-track-80');
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
   });
 
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
