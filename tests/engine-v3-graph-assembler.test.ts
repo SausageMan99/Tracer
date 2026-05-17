@@ -304,6 +304,27 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(6);
   });
 
+  it('does not repeat target-field edges when a clean connector can preserve natural access', () => {
+    const targetKm = 6;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('connector-out', 's', 'a', 0.25, 'asphalt', 'residential', 'urban'),
+        edge('field-1', 'a', 'b', 1.2, 'ground', 'path', null),
+        edge('field-2', 'b', 'c', 1.2, 'ground', 'track', null),
+        edge('field-3', 'c', 'd', 1.2, 'ground', 'path', null),
+        edge('field-clean-return', 'd', 'a', 1.2, 'ground', 'track', null),
+        edge('connector-back', 'a', 's', 0.25, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    const targetEdgeTraversals = route.edges.filter((candidate) => candidate.componentKind === 'field_paths').map((candidate) => candidate.id);
+    expect(new Set(targetEdgeTraversals).size).toBe(targetEdgeTraversals.length);
+    expect(route.metrics.repeatRatio).toBeLessThanOrEqual(0.1);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+  });
+
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
     const targetKm = 8;
     const route = assembleGraphRouteV3(

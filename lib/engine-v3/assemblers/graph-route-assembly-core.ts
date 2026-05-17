@@ -244,11 +244,40 @@ function selectBestCandidate(
     (candidate) => candidate.naturalDwellKm + 0.001 >= requestedDwellKm,
   );
   const pool = viableReturnedWithDwell.length > 0 ? viableReturnedWithDwell : candidates;
+  const repeatAwarePool = preferLowRepeatCandidates(pool, viableReturnedWithDwell.length > 0, intent, mission);
   const scorer = viableReturnedWithDwell.length > 0 ? scoreCompleteCandidate : scoreProgressCandidate;
-  const selected = [...pool].sort(
+  const selected = [...repeatAwarePool].sort(
     (a, b) => scorer(b, startNodeId, intent, mission, options) - scorer(a, startNodeId, intent, mission, options),
   )[0];
   return selected?.traversal ?? null;
+}
+
+function preferLowRepeatCandidates(
+  candidates: GraphCandidateStateV3[],
+  requireGeneratedQuality: boolean,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+): GraphCandidateStateV3[] {
+  if (!requireGeneratedQuality || candidates.length <= 1) return candidates;
+
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const bestNaturalDwellKm = Math.max(...candidates.map((candidate) => candidate.naturalDwellKm));
+  const minProtectedNaturalDwellKm = Math.max(requestedDwellKm, bestNaturalDwellKm * 0.85);
+  const maxPavedRatio = Math.min(0.5, intent.constraints.maxPavedRatio + 0.05);
+  const terrainSafeCandidates = candidates.filter(
+    (candidate) =>
+      candidate.naturalDwellKm + 0.001 >= minProtectedNaturalDwellKm &&
+      candidate.distanceKm >= intent.constraints.targetDistanceKm * 0.7 &&
+      pavedKm(candidate) / Math.max(0.001, candidate.distanceKm) <= maxPavedRatio,
+  );
+  if (terrainSafeCandidates.length === 0) return candidates;
+
+  const generatedQuality = terrainSafeCandidates.filter((candidate) => repeatRatio(candidate) <= 0.2 + 0.001);
+  if (generatedQuality.length > 0) return generatedQuality;
+
+  const sortedByRepeat = [...terrainSafeCandidates].sort((a, b) => repeatRatio(a) - repeatRatio(b));
+  const bestRepeatRatio = repeatRatio(sortedByRepeat[0]);
+  return sortedByRepeat.filter((candidate) => repeatRatio(candidate) <= bestRepeatRatio + 0.03);
 }
 
 function orderExpansionCandidates(
@@ -307,6 +336,7 @@ function shouldAllowRepeat(
 ): boolean {
   if (!state.enteredTarget) return false;
   if (edge.to === startNodeId) return true;
+  if (intent.constraints.targetComponents.includes(edge.kind)) return false;
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
   return state.distanceKm >= targetDistanceKm * 0.55 && state.naturalDwellKm >= requestedDwellKm * 0.75;
@@ -426,7 +456,7 @@ function scoreNextEdge(
   if (state.enteredTarget && state.naturalDwellKm >= requestedDwellKm && edge.to === startNodeId) score += 4;
   if (edge.surface === 'natural') score += 2;
   if (edge.surface === 'paved') score -= 1.5;
-  if (usedCount > 0) score -= 3 + usedCount * 2;
+  if (usedCount > 0) score -= 8 + usedCount * 4;
   if (options.mode === 'forest_loop' && edge.kind === 'forest' && edge.surface === 'natural') score += 3;
   if (options.mode === 'park_loop' && edge.kind === 'park') score += 3;
   if (options.mode === 'transition_to_woods' && !state.enteredTarget && edge.surface === 'paved' && edge.kind === 'residential') score += 1;
@@ -451,7 +481,7 @@ function scorePartialCandidate(
   score += Math.min(1, state.naturalDwellKm / Math.max(0.001, requestedNaturalDwellKm(intent, mission))) * 3;
   if (state.current === startNodeId && state.traversal.length > 0) score += 3;
   if (options.mode === 'transition_to_woods' && state.enteredTarget) score += 1;
-  score -= repeatKm(state) / Math.max(0.001, state.distanceKm) * 3;
+  score -= repeatRatio(state) * 10;
   return score;
 }
 
@@ -475,7 +505,7 @@ function scoreCompleteCandidate(
   if (!returned) score -= 30;
   if (state.distanceKm < targetDistanceKm * 0.7) score -= 20;
   if (state.distanceKm < targetDistanceKm) score -= (targetDistanceKm - state.distanceKm) / targetDistanceKm;
-  score -= repeatKm(state) / Math.max(0.001, state.distanceKm) * 5;
+  score -= repeatRatio(state) * 18;
   return score;
 }
 
@@ -498,12 +528,16 @@ function scoreProgressCandidate(
     score -= state.naturalDwellKm < requestedDwellKm ? 30 : 8;
   }
   score -= pavedKm(state) / Math.max(0.001, state.distanceKm) * 20;
-  score -= repeatKm(state) / Math.max(0.001, state.distanceKm) * 5;
+  score -= repeatRatio(state) * 12;
   return score;
 }
 
 function pavedKm(state: GraphCandidateStateV3): number {
   return state.traversal.reduce((total, edge) => total + (edge.surface === 'paved' ? Math.max(0, edge.edge.lengthKm) : 0), 0);
+}
+
+function repeatRatio(state: GraphCandidateStateV3): number {
+  return repeatKm(state) / Math.max(0.001, state.distanceKm);
 }
 
 function repeatKm(state: GraphCandidateStateV3): number {
