@@ -23,6 +23,8 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
   let trailKm = 0;
   let naturalDwellKm = 0;
   let repeatEdgeKm = 0;
+  let targetRepeatKm = 0;
+  let connectorRepeatKm = 0;
   let busyRoadKm = 0;
   let longestTrailSegmentKm = 0;
   let currentTrailSegmentKm = 0;
@@ -32,7 +34,14 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
     if (!visitedComponents.includes(edge.componentKind)) visitedComponents.push(edge.componentKind);
 
     const previousTraversals = traversalsByEdge.get(edge.id) ?? 0;
-    if (previousTraversals > 0) repeatEdgeKm += lengthKm;
+    if (previousTraversals > 0) {
+      repeatEdgeKm += lengthKm;
+      if (targetComponents.has(edge.componentKind)) {
+        targetRepeatKm += lengthKm;
+      } else {
+        connectorRepeatKm += lengthKm;
+      }
+    }
     traversalsByEdge.set(edge.id, previousTraversals + 1);
 
     if (edge.surface === 'paved') {
@@ -71,9 +80,11 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
     nonPavedKm: round(nonPavedKm),
     naturalDwellKm: round(naturalDwellKm),
     repeatEdgeKm: round(repeatEdgeKm),
+    targetRepeatKm: round(targetRepeatKm),
+    connectorRepeatKm: round(connectorRepeatKm),
     visitedComponents,
-    repeatRatio: ratio(repeatEdgeKm, totalKm),
-    overlapRatio: ratio(repeatEdgeKm, totalKm),
+    repeatRatio: ratio(targetRepeatKm, totalKm),
+    overlapRatio: ratio(targetRepeatKm, totalKm),
     busyRoadRatio: ratio(busyRoadKm, totalKm),
     loopClosureKm,
     longestTrailSegmentKm: round(longestTrailSegmentKm),
@@ -91,6 +102,8 @@ export function createEmptyRouteMetricsV3(targetDistanceKm: number, geometry: Ro
     nonPavedKm: 0,
     naturalDwellKm: 0,
     repeatEdgeKm: 0,
+    targetRepeatKm: 0,
+    connectorRepeatKm: 0,
     visitedComponents: [],
     repeatRatio: 0,
     overlapRatio: 0,

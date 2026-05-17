@@ -103,6 +103,7 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
   const nonPavedKm = round(segments.reduce((sum, segment) => sum + nonPavedDistance(segment), 0));
   const pavedKm = Math.max(0, distanceProducedKm - nonPavedKm);
   const naturalWayRatio = ratio(nonPavedKm, distanceProducedKm);
+  const repeatedConnectorKm = knownRepeatedConnectorKm(intent, segments);
   return {
     targetDistanceKm: intent.constraints.targetDistanceKm,
     distanceProducedKm,
@@ -112,15 +113,17 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
     pavedKm: round(pavedKm),
     nonPavedKm,
     naturalDwellKm,
-    repeatEdgeKm: knownRepeatedConnectorKm(intent, segments),
+    repeatEdgeKm: repeatedConnectorKm,
+    targetRepeatKm: 0,
+    connectorRepeatKm: repeatedConnectorKm,
     visitedComponents: Array.from(new Set(segments.map((segment) => segment.componentId).filter((componentId): componentId is NonNullable<typeof componentId> => Boolean(componentId)))).map((componentId) => {
       const component = intent.snapshot.components.find((candidate) => candidate.id === componentId);
       return component?.kind;
     }).filter((kind): kind is NonNullable<typeof kind> => Boolean(kind)),
     // Segment-level estimate only: transition_to_woods uses mirrored access/return
-    // connectors, so count the repeated connector traversal without fabricating geometry.
-    repeatRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
-    overlapRatio: ratio(knownRepeatedConnectorKm(intent, segments), distanceProducedKm),
+    // connectors, so expose the connector repeat without treating it as target overlap.
+    repeatRatio: 0,
+    overlapRatio: 0,
     busyRoadRatio: 0,
     loopClosureKm: 0,
     longestTrailSegmentKm: longestNaturalSegmentKm(segments),
@@ -175,6 +178,8 @@ function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: 
       nonPavedKm: 0,
       naturalDwellKm: 0,
       repeatEdgeKm: 0,
+      targetRepeatKm: 0,
+      connectorRepeatKm: 0,
       visitedComponents: [],
       repeatRatio: 0,
       overlapRatio: 0,

@@ -272,12 +272,12 @@ function preferLowRepeatCandidates(
   );
   if (terrainSafeCandidates.length === 0) return candidates;
 
-  const generatedQuality = terrainSafeCandidates.filter((candidate) => repeatRatio(candidate) <= 0.2 + 0.001);
+  const generatedQuality = terrainSafeCandidates.filter((candidate) => damagingRepeatRatio(candidate, intent) <= 0.2 + 0.001);
   if (generatedQuality.length > 0) return generatedQuality;
 
-  const sortedByRepeat = [...terrainSafeCandidates].sort((a, b) => repeatRatio(a) - repeatRatio(b));
-  const bestRepeatRatio = repeatRatio(sortedByRepeat[0]);
-  return sortedByRepeat.filter((candidate) => repeatRatio(candidate) <= bestRepeatRatio + 0.03);
+  const sortedByRepeat = [...terrainSafeCandidates].sort((a, b) => damagingRepeatRatio(a, intent) - damagingRepeatRatio(b, intent));
+  const bestRepeatRatio = damagingRepeatRatio(sortedByRepeat[0], intent);
+  return sortedByRepeat.filter((candidate) => damagingRepeatRatio(candidate, intent) <= bestRepeatRatio + 0.03);
 }
 
 function orderExpansionCandidates(
@@ -481,7 +481,8 @@ function scorePartialCandidate(
   score += Math.min(1, state.naturalDwellKm / Math.max(0.001, requestedNaturalDwellKm(intent, mission))) * 3;
   if (state.current === startNodeId && state.traversal.length > 0) score += 3;
   if (options.mode === 'transition_to_woods' && state.enteredTarget) score += 1;
-  score -= repeatRatio(state) * 10;
+  score -= repeatRatio(state) * 2;
+  score -= damagingRepeatRatio(state, intent) * 12;
   return score;
 }
 
@@ -505,7 +506,8 @@ function scoreCompleteCandidate(
   if (!returned) score -= 30;
   if (state.distanceKm < targetDistanceKm * 0.7) score -= 20;
   if (state.distanceKm < targetDistanceKm) score -= (targetDistanceKm - state.distanceKm) / targetDistanceKm;
-  score -= repeatRatio(state) * 18;
+  score -= repeatRatio(state) * 3;
+  score -= damagingRepeatRatio(state, intent) * 20;
   return score;
 }
 
@@ -528,7 +530,8 @@ function scoreProgressCandidate(
     score -= state.naturalDwellKm < requestedDwellKm ? 30 : 8;
   }
   score -= pavedKm(state) / Math.max(0.001, state.distanceKm) * 20;
-  score -= repeatRatio(state) * 12;
+  score -= repeatRatio(state) * 2;
+  score -= damagingRepeatRatio(state, intent) * 15;
   return score;
 }
 
@@ -538,6 +541,21 @@ function pavedKm(state: GraphCandidateStateV3): number {
 
 function repeatRatio(state: GraphCandidateStateV3): number {
   return repeatKm(state) / Math.max(0.001, state.distanceKm);
+}
+
+function damagingRepeatRatio(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
+  return damagingRepeatKm(state, intent) / Math.max(0.001, state.distanceKm);
+}
+
+function damagingRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
+  const targetComponents = new Set(intent.constraints.targetComponents);
+  const firstLengths = new Map<string, number>();
+  let repeatedKm = 0;
+  for (const edge of state.traversal) {
+    if (targetComponents.has(edge.kind) && firstLengths.has(edge.edge.id)) repeatedKm += Math.max(0, edge.edge.lengthKm);
+    firstLengths.set(edge.edge.id, Math.max(0, edge.edge.lengthKm));
+  }
+  return repeatedKm;
 }
 
 function repeatKm(state: GraphCandidateStateV3): number {

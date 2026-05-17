@@ -141,6 +141,9 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(assembled.metrics.visitedComponents).toContain('forest');
     expect(assembled.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
     expect(assembled.metrics.repeatEdgeKm).toBeCloseTo(1, 3);
+    expect(assembled.metrics.connectorRepeatKm).toBeCloseTo(1, 3);
+    expect(assembled.metrics.targetRepeatKm).toBe(0);
+    expect(assembled.metrics.repeatRatio).toBe(0);
     expect(assembled.edges.map((candidate) => candidate.id)).toEqual([
       'access-out',
       'forest-1',
@@ -321,6 +324,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
 
     const targetEdgeTraversals = route.edges.filter((candidate) => candidate.componentKind === 'field_paths').map((candidate) => candidate.id);
     expect(new Set(targetEdgeTraversals).size).toBe(targetEdgeTraversals.length);
+    expect(route.metrics.targetRepeatKm).toBe(0);
     expect(route.metrics.repeatRatio).toBeLessThanOrEqual(0.1);
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
   });

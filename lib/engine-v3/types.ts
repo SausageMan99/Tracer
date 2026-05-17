@@ -132,6 +132,8 @@ export interface RouteMetricsV3 {
   nonPavedKm: number;
   naturalDwellKm: number;
   repeatEdgeKm: number;
+  targetRepeatKm: number;
+  connectorRepeatKm: number;
   visitedComponents: TerrainComponentKindV3[];
   repeatRatio: number;
   overlapRatio: number;
