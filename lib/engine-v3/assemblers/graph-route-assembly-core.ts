@@ -120,13 +120,18 @@ function assembleGraphCandidates(
   const maxDistanceKm = targetDistanceKm * 1.15;
   const beamWidth = 64;
   const maxSteps = maxTraversalSteps(targetDistanceKm);
-  const initialTraversal = shortestTraversalToFirstNonPavedTarget(startNodeId, adjacency, intent, mission);
-  let frontier: GraphCandidateStateV3[] = options.mode === 'transition_to_woods' && initialTraversal.length > 0
-    ? [stateFromTraversal(startNodeId, initialTraversal, intent)]
+  const initialTraversals = traversalsToNonPavedTargetSeeds(startNodeId, adjacency, intent, mission, options);
+  let frontier: GraphCandidateStateV3[] = options.mode === 'transition_to_woods' && initialTraversals.length > 0
+    ? uniqueByCandidateKey(initialTraversals.map((traversal) => stateFromTraversal(startNodeId, traversal, intent)))
     : [
         { current: startNodeId, traversal: [], usedEdgeCounts: new Map(), distanceKm: 0, naturalDwellKm: 0, enteredTarget: false },
       ];
-  if (options.mode !== 'transition_to_woods' && initialTraversal.length > 0) frontier.push(stateFromTraversal(startNodeId, initialTraversal, intent));
+  if (options.mode !== 'transition_to_woods') {
+    for (const traversal of initialTraversals) {
+      if (traversal.length > 0) frontier.push(stateFromTraversal(startNodeId, traversal, intent));
+    }
+    frontier = uniqueByCandidateKey(frontier);
+  }
   const candidates: GraphCandidateStateV3[] = [];
   const frontierTrace: RouteAssemblyFrontierStepDiagnosticsV3[] = [];
 
@@ -459,17 +464,48 @@ function stateFromTraversal(startNodeId: string, traversal: TraversalEdgeV3[], i
   );
 }
 
-function shortestTraversalToFirstNonPavedTarget(
+interface InitialTargetSeedV3 {
+  distanceKm: number;
+  traversal: TraversalEdgeV3[];
+  capacityKm: number;
+  natural: boolean;
+}
+
+function traversalsToNonPavedTargetSeeds(
   startNodeId: string,
   adjacency: Map<string, TraversalEdgeV3[]>,
   intent: RouteIntentV3,
   mission: CorridorMissionV3,
-): TraversalEdgeV3[] {
+  options: GraphAssemblyOptionsV3,
+): TraversalEdgeV3[][] {
+  const targetCandidates = initialNonPavedTargetCandidates(startNodeId, adjacency, intent);
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const viable = targetCandidates.filter((candidate) => candidate.natural && candidate.capacityKm + 0.001 >= requestedDwellKm);
+  const fallbackNatural = targetCandidates.filter((candidate) => candidate.natural);
+  const pool = viable.length > 0 ? viable : fallbackNatural.length > 0 ? fallbackNatural : targetCandidates;
+  const nearestViableTarget = [...pool].sort((a, b) => a.distanceKm - b.distanceKm || b.capacityKm - a.capacityKm)[0];
+  if (!nearestViableTarget) return [];
+  if (options.mode !== 'transition_to_woods') return [nearestViableTarget.traversal];
+
+  const reasonableAccessDistanceKm = Math.max(0.75, Math.min(3, intent.constraints.targetDistanceKm * 0.25));
+  const highCapacitySeeds = [...pool]
+    .filter((candidate) => candidate.distanceKm <= reasonableAccessDistanceKm + 0.001)
+    .sort((a, b) => b.capacityKm - a.capacityKm || a.distanceKm - b.distanceKm)
+    .slice(0, 12);
+
+  return dedupeTraversals([nearestViableTarget, ...highCapacitySeeds].map((candidate) => candidate.traversal));
+}
+
+function initialNonPavedTargetCandidates(
+  startNodeId: string,
+  adjacency: Map<string, TraversalEdgeV3[]>,
+  intent: RouteIntentV3,
+): InitialTargetSeedV3[] {
   const bestDistances = new Map<string, number>([[startNodeId, 0]]);
   const pending: Array<{ nodeId: string; distanceKm: number; traversal: TraversalEdgeV3[] }> = [
     { nodeId: startNodeId, distanceKm: 0, traversal: [] },
   ];
-  const targetCandidates: Array<{ distanceKm: number; traversal: TraversalEdgeV3[]; capacityKm: number; natural: boolean }> = [];
+  const targetCandidates: InitialTargetSeedV3[] = [];
 
   while (pending.length > 0) {
     const current = pending.sort((a, b) => a.distanceKm - b.distanceKm).shift();
@@ -493,11 +529,19 @@ function shortestTraversalToFirstNonPavedTarget(
     }
   }
 
-  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
-  const viable = targetCandidates.filter((candidate) => candidate.natural && candidate.capacityKm + 0.001 >= requestedDwellKm);
-  const fallbackNatural = targetCandidates.filter((candidate) => candidate.natural);
-  const pool = viable.length > 0 ? viable : fallbackNatural.length > 0 ? fallbackNatural : targetCandidates;
-  return [...pool].sort((a, b) => a.distanceKm - b.distanceKm || b.capacityKm - a.capacityKm)[0]?.traversal ?? [];
+  return targetCandidates;
+}
+
+function dedupeTraversals(traversals: TraversalEdgeV3[][]): TraversalEdgeV3[][] {
+  const seen = new Set<string>();
+  const unique: TraversalEdgeV3[][] = [];
+  for (const traversal of traversals) {
+    const key = traversal.map((edge) => `${edge.edge.id}:${edge.from}:${edge.to}`).join('|');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(traversal);
+  }
+  return unique;
 }
 
 function reachableTargetDwellKmFrom(

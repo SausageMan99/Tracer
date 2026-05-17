@@ -307,6 +307,41 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(6);
   });
 
+
+  it('reproduces Fontainebleau: seeds deeper high-capacity field corridor instead of a nearer local dead-end star', () => {
+    const targetKm = 12;
+    const localDeadEndStar = Array.from({ length: 140 }, (_, index) =>
+      edge(`fontainebleau-local-star-${index + 1}`, 'local-hub', `local-leaf-${index + 1}`, 0.05, 'ground', 'path', null),
+    );
+    const deepNaturalCorridor = Array.from({ length: 95 }, (_, index) =>
+      edge(`fontainebleau-deep-corridor-${index + 1}`, `deep${index}`, `deep${index + 1}`, 0.075, 'dirt', index % 4 === 0 ? 'track' : 'path', null),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('fontainebleau-nearest-local-entry', 's', 'local-hub', 0.06, 'ground', 'path', null),
+        ...localDeadEndStar,
+        edge('fontainebleau-paved-transition-to-deep-corridor', 's', 'deep0', 0.42, 'asphalt', 'residential', 'urban'),
+        ...deepNaturalCorridor,
+      ]),
+    );
+
+    const edgeIds = route.edges.map((candidate) => candidate.id);
+    const frontierTrace = route.assemblyDiagnostics?.frontierTrace ?? [];
+
+    expect(route.assemblyDiagnostics).toMatchObject({
+      distanceToFirstNonPavedTargetKm: 0,
+    });
+    expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(14);
+    expect(edgeIds).toContain('fontainebleau-deep-corridor-70');
+    expect(edgeIds.filter((id) => id.includes('fontainebleau-local-star')).length).toBeLessThan(6);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
+    expect(Math.max(0, ...frontierTrace.map((step) => step.maxNaturalDwellKm))).toBeGreaterThan(5.4);
+  });
+
   it('does not repeat target-field edges when a clean connector can preserve natural access', () => {
     const targetKm = 6;
     const route = assembleGraphRouteV3(
