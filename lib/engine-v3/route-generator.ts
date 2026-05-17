@@ -79,6 +79,7 @@ function buildDiagnostics(
     limitations: limitations(snapshotSource, route),
     warnings: unique([...intent.warnings, ...mission.warnings, ...route.warnings]),
     metrics: { ...route.metrics },
+    assemblyDiagnostics: route.assemblyDiagnostics ? { ...route.assemblyDiagnostics } : undefined,
     outcomeEvidence: { reasonsOrCompromises: reasonsOrCompromises(outcome) },
   };
 }

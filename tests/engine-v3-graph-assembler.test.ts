@@ -91,15 +91,16 @@ function intent(targetDistanceKm: number, targetComponents: TerrainComponentKind
   };
 }
 
-function mission(targetDistanceKm: number): CorridorMissionV3 {
+function mission(targetDistanceKm: number, targetComponents: TerrainComponentKindV3[] = ['forest']): CorridorMissionV3 {
+  const anchorKind = targetComponents[0] ?? 'forest';
   return {
     engine: 'v3-clean-room',
     strategy: 'transition_to_woods',
     targetDistanceKm,
-    targetComponents: ['forest'],
+    targetComponents,
     anchor: {
-      componentId: 'forest-main',
-      kind: 'forest',
+      componentId: `${anchorKind}-main`,
+      kind: anchorKind,
       distanceFromStartKm: 1,
       totalLengthKm: 9,
       naturalCapacityKm: 9,
@@ -191,5 +192,95 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm);
     expect(outcome.type).toBe('refused');
     expect(outcome).toMatchObject({ reason: expect.stringContaining('GPS geometry') });
+  });
+
+  it('keeps exploring a significant non-paved target path instead of selecting a tiny returned target loop', () => {
+    const targetKm = 12;
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      mission(targetKm),
+      graph([
+        edge('tiny-target-out', 's', 'p1', 0.1, 'ground', 'path'),
+        edge('tiny-target-back', 'p1', 's', 0.1, 'ground', 'path'),
+        edge('access-to-forest', 's', 'a', 0.25, 'ground', 'path'),
+        edge('forest-1', 'a', 'b', 1.1, 'ground', 'path'),
+        edge('forest-2', 'b', 'c', 1.1, 'ground', 'track'),
+        edge('forest-3', 'c', 'd', 1.1, 'gravel', 'path'),
+        edge('forest-4', 'd', 'e', 1.1, 'ground', 'track'),
+        edge('forest-5', 'e', 'f', 1.1, 'ground', 'path'),
+      ]),
+    );
+
+    expect(route.edges.map((candidate) => candidate.id)).toContain('forest-5');
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThan(5);
+  });
+
+  it('prefers substantial reachable natural target progress over a paved returned micro-loop', () => {
+    const targetKm = 12;
+    const pavedLoops = Array.from({ length: 80 }, (_, index) => [
+      edge(`paved-micro-loop-${index + 1}-out`, 's', `p${index + 1}`, 0.2, 'asphalt', 'residential', 'forest'),
+      edge(`paved-micro-loop-${index + 1}-back`, `p${index + 1}`, 's', 0.2, 'asphalt', 'residential', 'forest'),
+    ]).flat();
+
+    const corridor = { ...mission(targetKm, ['scenic_paved', 'forest']), returnMode: 'out_and_back_connector' as const };
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['scenic_paved', 'forest']),
+      corridor,
+      graph([
+        ...pavedLoops,
+        edge('short-paved-access', 's', 'n0', 0.07, 'asphalt', 'residential', 'urban'),
+        edge('natural-branch-1', 'n0', 'n1', 1, 'ground', 'path', 'forest'),
+        edge('natural-branch-2', 'n1', 'n2', 1, 'ground', 'track', 'forest'),
+        edge('natural-branch-3', 'n2', 'n3', 1, 'gravel', 'path', 'forest'),
+        edge('natural-branch-4', 'n3', 'n4', 1, 'ground', 'track', 'forest'),
+        edge('natural-branch-5', 'n4', 'n5', 1, 'ground', 'path', 'forest'),
+      ]),
+    );
+
+    expect(route.edges.map((candidate) => candidate.id)).toContain('natural-branch-5');
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
+    expect(route.metrics.pavedRatio).toBeLessThan(0.5);
+  });
+
+  it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
+    const targetKm = 8;
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      mission(targetKm),
+      graph([
+        edge('paved-connector', 's', 'a', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('natural-target-1', 'a', 'b', 1.2, 'ground', 'path', 'forest'),
+        edge('natural-target-2', 'b', 'c', 0.8, 'gravel', 'track', 'forest'),
+        edge('natural-decoy-disconnected', 'x', 'y', 3, 'ground', 'path', 'forest'),
+      ]),
+    );
+
+    expect(route.assemblyDiagnostics).toMatchObject({
+      startNodeId: 's',
+      distanceToFirstNonPavedTargetKm: 0.4,
+      reachableNonPavedTargetEdgeCount: 2,
+      reachableNonPavedTargetKm: 2,
+    });
+  });
+
+  it('does not truncate reachable natural progress only because OSM split the path into many tiny edges', () => {
+    const targetKm = 8;
+    const tinyNaturalChain = Array.from({ length: 180 }, (_, index) =>
+      edge(`tiny-natural-${index + 1}`, `n${index}`, `n${index + 1}`, 0.035, 'ground', 'path', 'forest'),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      { ...mission(targetKm), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('access-to-chain', 's', 'n0', 0.2, 'asphalt', 'residential', 'urban'),
+        ...tinyNaturalChain,
+      ]),
+    );
+
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
+    expect(route.edges.map((candidate) => candidate.id)).toContain('tiny-natural-180');
   });
 });

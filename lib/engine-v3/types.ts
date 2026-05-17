@@ -156,6 +156,13 @@ export interface RouteGeometryV3 {
   coordinates: number[][];
 }
 
+export interface RouteAssemblyDiagnosticsV3 {
+  startNodeId: string | null;
+  distanceToFirstNonPavedTargetKm: number | null;
+  reachableNonPavedTargetEdgeCount: number;
+  reachableNonPavedTargetKm: number;
+}
+
 export interface AssembledRouteV3 {
   engine: 'v3-clean-room';
   strategy: RouteStrategyV3;
@@ -170,6 +177,7 @@ export interface AssembledRouteV3 {
     naturalDwellKm: number;
   };
   metrics: RouteMetricsV3;
+  assemblyDiagnostics?: RouteAssemblyDiagnosticsV3;
   warnings: string[];
 }
 
@@ -185,5 +193,6 @@ export interface RouteGenerationDiagnosticsV3 {
   limitations: string[];
   warnings: string[];
   metrics: RouteMetricsV3;
+  assemblyDiagnostics?: RouteAssemblyDiagnosticsV3;
   outcomeEvidence: RouteOutcomeEvidenceV3;
 }
