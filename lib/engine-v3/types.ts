@@ -164,6 +164,23 @@ export interface RouteAssemblyDiagnosticsV3 {
   reachableNonPavedTargetEdgeCount: number;
   reachableNonPavedTargetKm: number;
   frontierTrace?: RouteAssemblyFrontierStepDiagnosticsV3[];
+  topFinalCandidates?: RouteAssemblyFinalCandidateDiagnosticsV3[];
+}
+
+export interface RouteAssemblyFinalCandidateDiagnosticsV3 {
+  id: string;
+  rank: number;
+  selected: boolean;
+  inSelectionPool: boolean;
+  distanceKm: number;
+  naturalDwellKm: number;
+  pavedKm: number;
+  repeatKm: number;
+  targetRepeatKm: number;
+  connectorRepeatKm: number;
+  returned: boolean;
+  scoreComplete: number;
+  scoreProgress: number;
 }
 
 export interface RouteAssemblyFrontierStepDiagnosticsV3 {

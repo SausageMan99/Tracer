@@ -16,7 +16,7 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
 
   const targetComponents = new Set(input.targetComponents);
   const visitedComponents: TerrainComponentKindV3[] = [];
-  const traversalsByEdge = new Map<string, number>();
+  const traversalsByUndirectedPair = new Map<string, number>();
 
   let pavedKm = 0;
   let nonPavedKm = 0;
@@ -33,7 +33,8 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
     const lengthKm = edgeLength(edge);
     if (!visitedComponents.includes(edge.componentKind)) visitedComponents.push(edge.componentKind);
 
-    const previousTraversals = traversalsByEdge.get(edge.id) ?? 0;
+    const pairKey = undirectedPairKey(edge);
+    const previousTraversals = traversalsByUndirectedPair.get(pairKey) ?? 0;
     if (previousTraversals > 0) {
       repeatEdgeKm += lengthKm;
       if (targetComponents.has(edge.componentKind)) {
@@ -42,7 +43,7 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
         connectorRepeatKm += lengthKm;
       }
     }
-    traversalsByEdge.set(edge.id, previousTraversals + 1);
+    traversalsByUndirectedPair.set(pairKey, previousTraversals + 1);
 
     if (edge.surface === 'paved') {
       pavedKm += lengthKm;
@@ -125,6 +126,10 @@ function isBusyRoadEdge(edge: RouteEdgeV3): boolean {
 
 function edgeLength(edge: RouteEdgeV3): number {
   return Math.max(0, edge.lengthKm);
+}
+
+function undirectedPairKey(edge: RouteEdgeV3): string {
+  return edge.from < edge.to ? `${edge.from}::${edge.to}` : `${edge.to}::${edge.from}`;
 }
 
 function computeLoopClosureKm(geometry: RouteGeometryV3): number {

@@ -361,6 +361,56 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.assemblyDiagnostics?.frontierTrace?.[0]).toHaveProperty('bestReturnedNaturalDwellKm');
     expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.maxNaturalDwellKm >= 2)).toBe(true);
     expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.topCandidateIds.length > 0)).toBe(true);
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
+      selected: true,
+      distanceKm: expect.any(Number),
+      naturalDwellKm: expect.any(Number),
+      pavedKm: expect.any(Number),
+      repeatKm: expect.any(Number),
+      targetRepeatKm: expect.any(Number),
+      connectorRepeatKm: expect.any(Number),
+      returned: expect.any(Boolean),
+      scoreComplete: expect.any(Number),
+      scoreProgress: expect.any(Number),
+    });
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.length).toBeGreaterThan(0);
+  });
+
+  it('does not build a Fontainebleau target-zone comb from immediate out-and-back field-path teeth', () => {
+    const targetKm = 6;
+    const combTeeth = Array.from({ length: 16 }, (_, index) => [
+      edge(`comb-tooth-${index + 1}-out`, `spine${index}`, `tooth${index + 1}`, 0.18, 'ground', 'path', null),
+      edge(`comb-tooth-${index + 1}-back`, `tooth${index + 1}`, `spine${index}`, 0.18, 'ground', 'path', null),
+      edge(`spine-${index + 1}`, `spine${index}`, `spine${index + 1}`, 0.22, 'ground', 'track', null),
+    ]).flat();
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('connector-out', 's', 'spine0', 0.35, 'asphalt', 'residential', 'urban'),
+        ...combTeeth,
+        edge('target-clean-return', 'spine16', 'spine0', 2.2, 'ground', 'track', null),
+        edge('connector-back', 'spine0', 's', 0.35, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    const targetPairCounts = new Map<string, number>();
+    for (const candidate of route.edges.filter((edgeItem) => edgeItem.componentKind === 'field_paths')) {
+      const pairKey = [candidate.from, candidate.to].sort().join('::');
+      targetPairCounts.set(pairKey, (targetPairCounts.get(pairKey) ?? 0) + 1);
+    }
+
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.7);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+    expect([...targetPairCounts.values()].filter((count) => count > 1)).toEqual([]);
+    expect(route.edges.map((candidate) => candidate.id).filter((id) => id.includes('comb-tooth'))).toEqual([]);
+    expect(route.metrics.targetRepeatKm).toBe(0);
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
+      selected: true,
+      targetRepeatKm: 0,
+      connectorRepeatKm: expect.any(Number),
+    });
   });
 
   it('does not truncate reachable natural progress only because OSM split the path into many tiny edges', () => {

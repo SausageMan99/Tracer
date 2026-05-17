@@ -3,6 +3,7 @@ import { computeRouteMetricsV3, createEmptyRouteMetricsV3 } from '../route-metri
 import type {
   AssembledRouteV3,
   CorridorMissionV3,
+  RouteAssemblyFinalCandidateDiagnosticsV3,
   RouteAssemblyDiagnosticsV3,
   RouteAssemblyFrontierStepDiagnosticsV3,
   RouteEdgeV3,
@@ -46,8 +47,22 @@ export function assembleGraphRouteWithStrategyV3(
   const search = assembleGraphCandidates(startNodeId, intent, mission, adjacency, options);
   assemblyDiagnostics.frontierTrace = search.frontierTrace;
   const candidates = search.candidates;
-  const traversal = selectBestCandidate(candidates, startNodeId, intent, mission, options);
-  if (!traversal || traversal.length === 0) return emptyGraphRoute(intent, mission, 'graph assembly could not traverse routeable edges');
+  const selection = selectBestCandidate(candidates, startNodeId, intent, mission, options);
+  assemblyDiagnostics.topFinalCandidates = finalCandidateDiagnostics(
+    candidates,
+    selection.selectionPool,
+    selection.selected,
+    startNodeId,
+    intent,
+    mission,
+    options,
+  );
+  const traversal = selection.selected?.traversal ?? null;
+  if (!traversal || traversal.length === 0) {
+    const emptyRoute = emptyGraphRoute(intent, mission, 'graph assembly could not traverse routeable edges');
+    emptyRoute.assemblyDiagnostics = assemblyDiagnostics;
+    return emptyRoute;
+  }
 
   const nodeIds = nodesFromTraversal(startNodeId, traversal);
   const edges = traversal.map(toRouteEdge);
@@ -230,7 +245,7 @@ function selectBestCandidate(
   intent: RouteIntentV3,
   mission: CorridorMissionV3,
   options: GraphAssemblyOptionsV3,
-): TraversalEdgeV3[] | null {
+): { selected: GraphCandidateStateV3 | null; selectionPool: GraphCandidateStateV3[] } {
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const viableReturnedCandidates = candidates.filter(
     (candidate) =>
@@ -249,7 +264,78 @@ function selectBestCandidate(
   const selected = [...repeatAwarePool].sort(
     (a, b) => scorer(b, startNodeId, intent, mission, options) - scorer(a, startNodeId, intent, mission, options),
   )[0];
-  return selected?.traversal ?? null;
+  return { selected: selected ?? null, selectionPool: repeatAwarePool };
+}
+
+function finalCandidateDiagnostics(
+  candidates: GraphCandidateStateV3[],
+  selectionPool: GraphCandidateStateV3[],
+  selected: GraphCandidateStateV3 | null,
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): RouteAssemblyFinalCandidateDiagnosticsV3[] {
+  const selectionKeys = new Set(selectionPool.map(candidateKey));
+  const selectedKey = selected ? candidateKey(selected) : null;
+  const uniqueCandidates = uniqueByCandidateKey(candidates);
+  const sorted = uniqueCandidates.sort((a, b) => {
+    const aSelected = selectedKey !== null && candidateKey(a) === selectedKey ? 1 : 0;
+    const bSelected = selectedKey !== null && candidateKey(b) === selectedKey ? 1 : 0;
+    if (aSelected !== bSelected) return bSelected - aSelected;
+
+    const aInPool = selectionKeys.has(candidateKey(a)) ? 1 : 0;
+    const bInPool = selectionKeys.has(candidateKey(b)) ? 1 : 0;
+    if (aInPool !== bInPool) return bInPool - aInPool;
+
+    return scoreCompleteCandidate(b, startNodeId, intent, mission, options) - scoreCompleteCandidate(a, startNodeId, intent, mission, options);
+  });
+
+  return sorted.slice(0, 12).map((candidate, index) => {
+    const key = candidateKey(candidate);
+    return {
+      id: finalCandidateDiagnosticId(candidate, index + 1),
+      rank: index + 1,
+      selected: selectedKey !== null && key === selectedKey,
+      inSelectionPool: selectionKeys.has(key),
+      distanceKm: round(candidate.distanceKm),
+      naturalDwellKm: round(candidate.naturalDwellKm),
+      pavedKm: round(pavedKm(candidate)),
+      repeatKm: round(repeatKm(candidate)),
+      targetRepeatKm: round(targetRepeatKm(candidate, intent)),
+      connectorRepeatKm: round(connectorRepeatKm(candidate, intent)),
+      returned: candidate.current === startNodeId && candidate.traversal.length > 0,
+      scoreComplete: round(scoreCompleteCandidate(candidate, startNodeId, intent, mission, options)),
+      scoreProgress: round(scoreProgressCandidate(candidate, startNodeId, intent, mission, options)),
+    };
+  });
+}
+
+function uniqueByCandidateKey(candidates: GraphCandidateStateV3[]): GraphCandidateStateV3[] {
+  const seen = new Set<string>();
+  const unique: GraphCandidateStateV3[] = [];
+  for (const candidate of candidates) {
+    const key = candidateKey(candidate);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(candidate);
+  }
+  return unique;
+}
+
+function finalCandidateDiagnosticId(state: GraphCandidateStateV3, rank: number): string {
+  const keyHash = hashString(candidateKey(state));
+  const firstEdge = state.traversal[0]?.edge.id ?? 'start';
+  const lastEdge = state.traversal.at(-1)?.edge.id ?? 'start';
+  return `final-rank${rank}-${keyHash}:${state.current}:${state.traversal.length}:${firstEdge}>${lastEdge}`;
+}
+
+function hashString(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 function preferLowRepeatCandidates(
@@ -322,9 +408,17 @@ function canTraverse(
     return false;
   }
   if (usedCount >= 2) return false;
+  if (isImmediateTargetBacktrack(edge, state, intent)) return false;
   if (usedCount > 0 && !shouldAllowRepeat(edge, state, startNodeId, intent, mission)) return false;
   if (state.traversal.length === 0 && edge.to === startNodeId) return false;
   return true;
+}
+
+function isImmediateTargetBacktrack(edge: TraversalEdgeV3, state: GraphCandidateStateV3, intent: RouteIntentV3): boolean {
+  if (!intent.constraints.targetComponents.includes(edge.kind)) return false;
+  const previous = state.traversal.at(-1);
+  if (!previous || !intent.constraints.targetComponents.includes(previous.kind)) return false;
+  return previous.from === edge.to && previous.to === edge.from;
 }
 
 function shouldAllowRepeat(
@@ -548,24 +642,46 @@ function damagingRepeatRatio(state: GraphCandidateStateV3, intent: RouteIntentV3
 }
 
 function damagingRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
+  return targetRepeatKm(state, intent);
+}
+
+function targetRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
   const targetComponents = new Set(intent.constraints.targetComponents);
-  const firstLengths = new Map<string, number>();
+  const traversedPairs = new Set<string>();
   let repeatedKm = 0;
   for (const edge of state.traversal) {
-    if (targetComponents.has(edge.kind) && firstLengths.has(edge.edge.id)) repeatedKm += Math.max(0, edge.edge.lengthKm);
-    firstLengths.set(edge.edge.id, Math.max(0, edge.edge.lengthKm));
+    const pairKey = undirectedPairKey(edge);
+    if (targetComponents.has(edge.kind) && traversedPairs.has(pairKey)) repeatedKm += Math.max(0, edge.edge.lengthKm);
+    traversedPairs.add(pairKey);
+  }
+  return repeatedKm;
+}
+
+function connectorRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
+  const targetComponents = new Set(intent.constraints.targetComponents);
+  const traversedPairs = new Set<string>();
+  let repeatedKm = 0;
+  for (const edge of state.traversal) {
+    const pairKey = undirectedPairKey(edge);
+    if (!targetComponents.has(edge.kind) && traversedPairs.has(pairKey)) repeatedKm += Math.max(0, edge.edge.lengthKm);
+    traversedPairs.add(pairKey);
   }
   return repeatedKm;
 }
 
 function repeatKm(state: GraphCandidateStateV3): number {
-  const firstLengths = new Map<string, number>();
+  const traversedPairs = new Set<string>();
   let repeatedKm = 0;
   for (const edge of state.traversal) {
-    if (firstLengths.has(edge.edge.id)) repeatedKm += Math.max(0, edge.edge.lengthKm);
-    firstLengths.set(edge.edge.id, Math.max(0, edge.edge.lengthKm));
+    const pairKey = undirectedPairKey(edge);
+    if (traversedPairs.has(pairKey)) repeatedKm += Math.max(0, edge.edge.lengthKm);
+    traversedPairs.add(pairKey);
   }
   return repeatedKm;
+}
+
+function undirectedPairKey(edge: TraversalEdgeV3): string {
+  return edge.from < edge.to ? `${edge.from}::${edge.to}` : `${edge.to}::${edge.from}`;
 }
 
 function requestedNaturalDwellKm(intent: RouteIntentV3, mission: CorridorMissionV3): number {
