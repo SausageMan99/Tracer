@@ -276,6 +276,34 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThan(3.5);
   });
 
+  it('locks Fontainebleau against the 0.842 km micro-route when a large non-paved target network is reachable nearby', () => {
+    const targetKm = 12;
+    const nearbyNaturalMicroLoops = Array.from({ length: 8 }, (_, index) => [
+      edge(`fontainebleau-0842-micro-${index + 1}-out`, 'access', `micro${index + 1}`, 0.045, 'ground', 'path', null),
+      edge(`fontainebleau-0842-micro-${index + 1}-back`, `micro${index + 1}`, 'access', 0.045, 'ground', 'path', null),
+    ]).flat();
+    const reachableNonPavedNetwork = Array.from({ length: 640 }, (_, index) =>
+      edge(`fontainebleau-large-target-${index + 1}`, `large${index}`, `large${index + 1}`, 0.08, 'dirt', index % 4 === 0 ? 'track' : 'path', null),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('fontainebleau-short-paved-access', 's', 'access', 0.18, 'asphalt', 'residential', 'urban'),
+        ...nearbyNaturalMicroLoops,
+        edge('fontainebleau-large-network-gateway', 'access', 'large0', 0.01, 'ground', 'path', null),
+        ...reachableNonPavedNetwork,
+      ]),
+    );
+
+    expect(route.assemblyDiagnostics).toMatchObject({
+      distanceToFirstNonPavedTargetKm: 0.18,
+    });
+    expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(50);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(6);
+  });
+
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
     const targetKm = 8;
     const route = assembleGraphRouteV3(
