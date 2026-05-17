@@ -161,6 +161,19 @@ export interface RouteAssemblyDiagnosticsV3 {
   distanceToFirstNonPavedTargetKm: number | null;
   reachableNonPavedTargetEdgeCount: number;
   reachableNonPavedTargetKm: number;
+  frontierTrace?: RouteAssemblyFrontierStepDiagnosticsV3[];
+}
+
+export interface RouteAssemblyFrontierStepDiagnosticsV3 {
+  step: number;
+  frontierSize: number;
+  maxDistanceKm: number;
+  maxNaturalDwellKm: number;
+  bestReturnedDistanceKm: number | null;
+  bestReturnedNaturalDwellKm: number | null;
+  countEnteredTarget: number;
+  countReturned: number;
+  topCandidateIds: string[];
 }
 
 export interface AssembledRouteV3 {

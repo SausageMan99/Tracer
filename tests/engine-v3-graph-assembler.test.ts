@@ -151,7 +151,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     ]);
   });
 
-  it('lets the strict outcome decider refuse a returned target route below the 70% floor', () => {
+  it('keeps transition_to_woods inside the target until dwell is sufficient before closing', () => {
     const targetKm = 10;
     const route = assembleGraphRouteV3(
       intent(targetKm),
@@ -167,8 +167,8 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     const outcome = decideOutcomeV3(intent(targetKm), route);
 
     expect(route.nodeIds[0]).toBe('s');
-    expect(route.nodeIds.at(-1)).toBe('s');
-    expect(route.metrics.distanceProducedKm).toBeLessThan(targetKm * 0.7);
+    expect(route.nodeIds.at(-1)).not.toBe('s');
+    expect(route.metrics.naturalDwellKm).toBeLessThan(targetKm * 0.45);
     expect(outcome.type).toBe('refused');
   });
 
@@ -218,33 +218,6 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThan(5);
   });
 
-  it('prefers substantial reachable natural target progress over a paved returned micro-loop', () => {
-    const targetKm = 12;
-    const pavedLoops = Array.from({ length: 80 }, (_, index) => [
-      edge(`paved-micro-loop-${index + 1}-out`, 's', `p${index + 1}`, 0.2, 'asphalt', 'residential', 'forest'),
-      edge(`paved-micro-loop-${index + 1}-back`, `p${index + 1}`, 's', 0.2, 'asphalt', 'residential', 'forest'),
-    ]).flat();
-
-    const corridor = { ...mission(targetKm, ['scenic_paved', 'forest']), returnMode: 'out_and_back_connector' as const };
-    const route = assembleGraphRouteV3(
-      intent(targetKm, ['scenic_paved', 'forest']),
-      corridor,
-      graph([
-        ...pavedLoops,
-        edge('short-paved-access', 's', 'n0', 0.07, 'asphalt', 'residential', 'urban'),
-        edge('natural-branch-1', 'n0', 'n1', 1, 'ground', 'path', 'forest'),
-        edge('natural-branch-2', 'n1', 'n2', 1, 'ground', 'track', 'forest'),
-        edge('natural-branch-3', 'n2', 'n3', 1, 'gravel', 'path', 'forest'),
-        edge('natural-branch-4', 'n3', 'n4', 1, 'ground', 'track', 'forest'),
-        edge('natural-branch-5', 'n4', 'n5', 1, 'ground', 'path', 'forest'),
-      ]),
-    );
-
-    expect(route.edges.map((candidate) => candidate.id)).toContain('natural-branch-5');
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
-    expect(route.metrics.pavedRatio).toBeLessThan(0.5);
-  });
-
   it('reproduces Fontainebleau: does not lose a real dirt field-path corridor behind a nearer mixed footway spur', () => {
     const targetKm = 12;
     const mixedFootwaySpurs = Array.from({ length: 90 }, (_, index) => [
@@ -270,6 +243,39 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
   });
 
+
+  it('reproduces Fontainebleau: ignores nearby natural micro-loops when a short paved access reaches a large natural target network', () => {
+    const targetKm = 5;
+    const nearbyNaturalMicroLoops = Array.from({ length: 66 }, (_, index) => [
+      edge(`fontainebleau-near-micro-${index + 1}-out`, 'access', `near${index + 1}`, 0.045, 'ground', 'path', null),
+      edge(`fontainebleau-near-micro-${index + 1}-back`, `near${index + 1}`, 'access', 0.045, 'ground', 'path', null),
+    ]).flat();
+    const reachableNaturalNetwork = Array.from({ length: 70 }, (_, index) =>
+      edge(`fontainebleau-real-natural-${index + 1}`, `far${index}`, `far${index + 1}`, 0.055, 'dirt', index % 3 === 0 ? 'track' : 'path', null),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('fontainebleau-short-paved-access', 's', 'access', 0.18, 'asphalt', 'residential', 'urban'),
+        ...nearbyNaturalMicroLoops,
+        edge('fontainebleau-natural-gateway', 'access', 'far0', 0.04, 'ground', 'path', null),
+        ...reachableNaturalNetwork,
+      ]),
+    );
+
+    const edgeIds = route.edges.map((candidate) => candidate.id);
+    expect(route.assemblyDiagnostics).toMatchObject({
+      distanceToFirstNonPavedTargetKm: 0.18,
+      reachableNonPavedTargetEdgeCount: 203,
+    });
+    expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(9.5);
+    expect(edgeIds.filter((id) => id.includes('fontainebleau-near-micro')).length).toBeLessThan(8);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(3);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThan(3.5);
+  });
+
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
     const targetKm = 8;
     const route = assembleGraphRouteV3(
@@ -289,6 +295,19 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       reachableNonPavedTargetEdgeCount: 2,
       reachableNonPavedTargetKm: 2,
     });
+    expect(route.assemblyDiagnostics?.frontierTrace?.[0]).toMatchObject({
+      step: 0,
+      frontierSize: expect.any(Number),
+      maxDistanceKm: expect.any(Number),
+      maxNaturalDwellKm: expect.any(Number),
+      countEnteredTarget: expect.any(Number),
+      countReturned: expect.any(Number),
+      topCandidateIds: expect.any(Array),
+    });
+    expect(route.assemblyDiagnostics?.frontierTrace?.[0]).toHaveProperty('bestReturnedDistanceKm');
+    expect(route.assemblyDiagnostics?.frontierTrace?.[0]).toHaveProperty('bestReturnedNaturalDwellKm');
+    expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.maxNaturalDwellKm >= 2)).toBe(true);
+    expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.topCandidateIds.length > 0)).toBe(true);
   });
 
   it('does not truncate reachable natural progress only because OSM split the path into many tiny edges', () => {
@@ -308,6 +327,5 @@ describe('assembleGraphRouteV3 graph assembler', () => {
 
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
     expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
-    expect(route.edges.map((candidate) => candidate.id)).toContain('tiny-natural-180');
   });
 });

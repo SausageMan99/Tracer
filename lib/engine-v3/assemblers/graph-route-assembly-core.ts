@@ -1,6 +1,15 @@
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from '../../types';
 import { computeRouteMetricsV3, createEmptyRouteMetricsV3 } from '../route-metrics';
-import type { AssembledRouteV3, CorridorMissionV3, RouteAssemblyDiagnosticsV3, RouteEdgeV3, RouteIntentV3, RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
+import type {
+  AssembledRouteV3,
+  CorridorMissionV3,
+  RouteAssemblyDiagnosticsV3,
+  RouteAssemblyFrontierStepDiagnosticsV3,
+  RouteEdgeV3,
+  RouteIntentV3,
+  RouteSurfaceV3,
+  TerrainComponentKindV3,
+} from '../types';
 
 const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
 const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
@@ -34,7 +43,9 @@ export function assembleGraphRouteWithStrategyV3(
 
   const adjacency = buildAdjacency(graph);
   const assemblyDiagnostics = diagnoseReachableNonPavedTargets(startNodeId, adjacency, intent);
-  const candidates = assembleGraphCandidates(startNodeId, intent, mission, adjacency, options);
+  const search = assembleGraphCandidates(startNodeId, intent, mission, adjacency, options);
+  assemblyDiagnostics.frontierTrace = search.frontierTrace;
+  const candidates = search.candidates;
   const traversal = selectBestCandidate(candidates, startNodeId, intent, mission, options);
   if (!traversal || traversal.length === 0) return emptyGraphRoute(intent, mission, 'graph assembly could not traverse routeable edges');
 
@@ -89,17 +100,20 @@ function assembleGraphCandidates(
   mission: CorridorMissionV3,
   adjacency: Map<string, TraversalEdgeV3[]>,
   options: GraphAssemblyOptionsV3,
-): GraphCandidateStateV3[] {
+): { candidates: GraphCandidateStateV3[]; frontierTrace: RouteAssemblyFrontierStepDiagnosticsV3[] } {
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const maxDistanceKm = targetDistanceKm * 1.15;
   const beamWidth = 64;
   const maxSteps = maxTraversalSteps(targetDistanceKm);
-  const initialTraversal = shortestTraversalToFirstNonPavedTarget(startNodeId, adjacency, intent);
-  let frontier: GraphCandidateStateV3[] = [
-    { current: startNodeId, traversal: [], usedEdgeCounts: new Map(), distanceKm: 0, naturalDwellKm: 0, enteredTarget: false },
-  ];
-  if (initialTraversal.length > 0) frontier.push(stateFromTraversal(startNodeId, initialTraversal, intent));
+  const initialTraversal = shortestTraversalToFirstNonPavedTarget(startNodeId, adjacency, intent, mission);
+  let frontier: GraphCandidateStateV3[] = options.mode === 'transition_to_woods' && initialTraversal.length > 0
+    ? [stateFromTraversal(startNodeId, initialTraversal, intent)]
+    : [
+        { current: startNodeId, traversal: [], usedEdgeCounts: new Map(), distanceKm: 0, naturalDwellKm: 0, enteredTarget: false },
+      ];
+  if (options.mode !== 'transition_to_woods' && initialTraversal.length > 0) frontier.push(stateFromTraversal(startNodeId, initialTraversal, intent));
   const candidates: GraphCandidateStateV3[] = [];
+  const frontierTrace: RouteAssemblyFrontierStepDiagnosticsV3[] = [];
 
   for (let step = 0; step < maxSteps && frontier.length > 0; step += 1) {
     const expanded: GraphCandidateStateV3[] = [];
@@ -110,7 +124,7 @@ function assembleGraphCandidates(
 
       const nextEdges = orderExpansionCandidates(adjacency.get(state.current) ?? [], state, startNodeId, intent, mission, options).filter((next) => {
         const nextDistanceKm = state.distanceKm + Math.max(0, next.edge.lengthKm);
-        return nextDistanceKm <= maxDistanceKm + 0.001 && canTraverse(next, state, startNodeId, intent, mission);
+        return nextDistanceKm <= maxDistanceKm + 0.001 && canTraverse(next, state, startNodeId, intent, mission, options);
       });
       if (nextEdges.length === 0 && state.traversal.length > 0 && state.enteredTarget) candidates.push(state);
 
@@ -120,13 +134,49 @@ function assembleGraphCandidates(
     }
 
     frontier = pruneFrontier(expanded, beamWidth, startNodeId, intent, mission, options);
+    frontierTrace.push(frontierDiagnosticsStep(step, frontier, candidates, startNodeId, intent, mission, options));
   }
 
   for (const state of frontier) {
     if (state.traversal.length > 0 && state.current === startNodeId && state.enteredTarget) candidates.push(state);
   }
 
-  return candidates.length > 0 ? [...candidates, ...frontier] : frontier;
+  return { candidates: candidates.length > 0 ? [...candidates, ...frontier] : frontier, frontierTrace };
+}
+
+function frontierDiagnosticsStep(
+  step: number,
+  frontier: GraphCandidateStateV3[],
+  returnedCandidates: GraphCandidateStateV3[],
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
+): RouteAssemblyFrontierStepDiagnosticsV3 {
+  const bestReturned = [...returnedCandidates].sort(
+    (a, b) => scoreCompleteCandidate(b, startNodeId, intent, mission, options) - scoreCompleteCandidate(a, startNodeId, intent, mission, options),
+  )[0];
+
+  return {
+    step,
+    frontierSize: frontier.length,
+    maxDistanceKm: round(Math.max(0, ...frontier.map((candidate) => candidate.distanceKm))),
+    maxNaturalDwellKm: round(Math.max(0, ...frontier.map((candidate) => candidate.naturalDwellKm))),
+    bestReturnedDistanceKm: bestReturned ? round(bestReturned.distanceKm) : null,
+    bestReturnedNaturalDwellKm: bestReturned ? round(bestReturned.naturalDwellKm) : null,
+    countEnteredTarget: frontier.filter((candidate) => candidate.enteredTarget).length,
+    countReturned: returnedCandidates.length,
+    topCandidateIds: [...frontier]
+      .sort((a, b) => scoreProgressCandidate(b, startNodeId, intent, mission, options) - scoreProgressCandidate(a, startNodeId, intent, mission, options))
+      .slice(0, 8)
+      .map((candidate, rank) => candidateDiagnosticId(candidate, step, rank)),
+  };
+}
+
+function candidateDiagnosticId(state: GraphCandidateStateV3, step: number, rank: number): string {
+  const firstEdge = state.traversal[0]?.edge.id ?? 'start';
+  const lastEdge = state.traversal.at(-1)?.edge.id ?? 'start';
+  return `step${step}-rank${rank}:${state.current}:${state.traversal.length}:${firstEdge}>${lastEdge}`;
 }
 
 function maxTraversalSteps(targetDistanceKm: number): number {
@@ -220,10 +270,19 @@ function canTraverse(
   startNodeId: string,
   intent: RouteIntentV3,
   mission: CorridorMissionV3,
+  options: GraphAssemblyOptionsV3,
 ): boolean {
   const usedCount = state.usedEdgeCounts.get(edge.edge.id) ?? 0;
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  if (
+    options.mode === 'transition_to_woods' &&
+    edge.to === startNodeId &&
+    state.enteredTarget &&
+    state.naturalDwellKm + 0.001 < requestedDwellKm
+  ) {
+    return false;
+  }
   if (
     edge.to === startNodeId &&
     state.enteredTarget &&
@@ -280,34 +339,69 @@ function shortestTraversalToFirstNonPavedTarget(
   startNodeId: string,
   adjacency: Map<string, TraversalEdgeV3[]>,
   intent: RouteIntentV3,
+  mission: CorridorMissionV3,
 ): TraversalEdgeV3[] {
   const bestDistances = new Map<string, number>([[startNodeId, 0]]);
   const pending: Array<{ nodeId: string; distanceKm: number; traversal: TraversalEdgeV3[] }> = [
     { nodeId: startNodeId, distanceKm: 0, traversal: [] },
   ];
-  const seen = new Set<string>();
-  let fallbackMixedTarget: TraversalEdgeV3[] = [];
+  const targetCandidates: Array<{ distanceKm: number; traversal: TraversalEdgeV3[]; capacityKm: number; natural: boolean }> = [];
 
   while (pending.length > 0) {
     const current = pending.sort((a, b) => a.distanceKm - b.distanceKm).shift();
     if (!current) break;
-    if (seen.has(current.nodeId)) continue;
-    seen.add(current.nodeId);
+    if (current.distanceKm > (bestDistances.get(current.nodeId) ?? Number.POSITIVE_INFINITY) + 0.000001) continue;
 
     for (const edge of adjacency.get(current.nodeId) ?? []) {
       const nextDistanceKm = current.distanceKm + Math.max(0, edge.edge.lengthKm);
-      if (nextDistanceKm + 0.000001 >= (bestDistances.get(edge.to) ?? Number.POSITIVE_INFINITY)) continue;
       const traversal = [...current.traversal, edge];
       if (intent.constraints.targetComponents.includes(edge.kind) && edge.surface !== 'paved') {
-        if (edge.surface === 'natural') return traversal;
-        if (fallbackMixedTarget.length === 0) fallbackMixedTarget = traversal;
+        targetCandidates.push({
+          distanceKm: nextDistanceKm,
+          traversal,
+          capacityKm: reachableTargetDwellKmFrom(edge.to, edge.from, adjacency, intent),
+          natural: edge.surface === 'natural',
+        });
       }
+      if (nextDistanceKm + 0.000001 >= (bestDistances.get(edge.to) ?? Number.POSITIVE_INFINITY)) continue;
       bestDistances.set(edge.to, nextDistanceKm);
       pending.push({ nodeId: edge.to, distanceKm: nextDistanceKm, traversal });
     }
   }
 
-  return fallbackMixedTarget;
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const viable = targetCandidates.filter((candidate) => candidate.natural && candidate.capacityKm + 0.001 >= requestedDwellKm);
+  const fallbackNatural = targetCandidates.filter((candidate) => candidate.natural);
+  const pool = viable.length > 0 ? viable : fallbackNatural.length > 0 ? fallbackNatural : targetCandidates;
+  return [...pool].sort((a, b) => a.distanceKm - b.distanceKm || b.capacityKm - a.capacityKm)[0]?.traversal ?? [];
+}
+
+function reachableTargetDwellKmFrom(
+  nodeId: string,
+  blockedReturnNodeId: string,
+  adjacency: Map<string, TraversalEdgeV3[]>,
+  intent: RouteIntentV3,
+): number {
+  const pending = [nodeId];
+  const seenNodes = new Set<string>([blockedReturnNodeId]);
+  const seenEdges = new Set<string>();
+  let dwellKm = 0;
+
+  while (pending.length > 0 && seenNodes.size < 2000) {
+    const current = pending.shift();
+    if (!current || seenNodes.has(current)) continue;
+    seenNodes.add(current);
+    for (const edge of adjacency.get(current) ?? []) {
+      if (!intent.constraints.targetComponents.includes(edge.kind) || edge.surface === 'paved') continue;
+      if (!seenEdges.has(edge.edge.id)) {
+        dwellKm += edge.surface === 'mixed' ? Math.max(0, edge.edge.lengthKm) * 0.5 : Math.max(0, edge.edge.lengthKm);
+        seenEdges.add(edge.edge.id);
+      }
+      if (!seenNodes.has(edge.to)) pending.push(edge.to);
+    }
+  }
+
+  return dwellKm;
 }
 
 function scoreNextEdge(
