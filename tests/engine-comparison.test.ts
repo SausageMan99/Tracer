@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -56,6 +56,16 @@ describe('V2.5/V3 terrain-aware comparison harness', () => {
     expect(verdict.productOutcomeDelta).toBe('worse');
     expect(verdict.exportRegression).toBe(true);
     expect(verdict.reason.join(' ')).toContain('assembly/product weakness');
+  });
+
+  it('does not describe an errored V2.5 sample as usable route evidence', () => {
+    const verdict = compareEngineSamples(
+      sample({ engine: 'v2.5', outcome: 'errored', gpxAvailable: false, geometryAvailable: false, distanceKm: null, distanceErrorRatio: null }),
+      sample({ engine: 'v3', outcome: 'refused', gpxAvailable: false, geometryAvailable: false, distanceKm: null, distanceErrorRatio: null }),
+    );
+
+    expect(verdict.label).toBe('errored');
+    expect(verdict.reason.join(' ')).not.toContain('V2.5 produced route evidence');
   });
 
   it('keeps equivalent refusal equivalent even if V3 is faster', () => {
@@ -150,6 +160,58 @@ describe('V2.5/V3 terrain-aware comparison harness', () => {
     expect(report.cases[0].artifactPath).toContain(`${benchmark.id}.comparison.json`);
     expect(JSON.parse(readFileSync(outputPath, 'utf8')).summary).toEqual(report.summary);
     expect(JSON.parse(readFileSync(join(artifactDir, `${benchmark.id}.comparison.json`), 'utf8')).id).toBe(benchmark.id);
+  });
+
+  it('writes an incremental aggregate report after each completed case', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'engine-comparison-incremental-'));
+    const outputPath = join(dir, 'report.json');
+    const artifactDir = join(dir, 'cases');
+    const cases = BENCHMARK_CASES.filter((candidate) => [
+      'tourville-pommiers-trail-8k',
+      'fontainebleau-trail-15k',
+    ].includes(candidate.id));
+
+    const report = await runEngineComparison({
+      cases,
+      outputPath,
+      artifactDir,
+      baseUrl: 'http://example.test',
+      runV25: async () => sample({ engine: 'v2.5' }),
+      runV3: async ({ benchmark: currentBenchmark }) => {
+        if (currentBenchmark.id === 'fontainebleau-trail-15k') {
+          expect(existsSync(outputPath)).toBe(true);
+          const partial = JSON.parse(readFileSync(outputPath, 'utf8'));
+          expect(partial.total).toBe(1);
+          expect(partial.cases.map((item: { id: string }) => item.id)).toEqual(['tourville-pommiers-trail-8k']);
+        }
+        return sample({ engine: 'v3' });
+      },
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    expect(report.total).toBe(2);
+    expect(JSON.parse(readFileSync(outputPath, 'utf8')).total).toBe(2);
+  });
+
+  it('weights true forest trail regressions above negative impossible wins in the global verdict', async () => {
+    const forest = BENCHMARK_CASES.find((candidate) => candidate.id === 'fontainebleau-trail-15k')!;
+    const negative = BENCHMARK_CASES.find((candidate) => candidate.id === 'paris-buttes-chaumont-5k-constrained')!;
+
+    const report = await runEngineComparison({
+      cases: [forest, negative],
+      writeArtifacts: false,
+      runV25: async ({ benchmark: currentBenchmark }) => currentBenchmark.id === forest.id
+        ? sample({ engine: 'v2.5', outcome: 'generated', gpxAvailable: true, geometryAvailable: true })
+        : sample({ engine: 'v2.5', outcome: 'refused', gpxAvailable: false, geometryAvailable: false }),
+      runV3: async ({ benchmark: currentBenchmark }) => currentBenchmark.id === forest.id
+        ? sample({ engine: 'v3', outcome: 'refused', distanceKm: null, distanceErrorRatio: null, gpxAvailable: false, geometryAvailable: false, terrainTruthScore: 0 })
+        : sample({ engine: 'v3', outcome: 'generated', gpxAvailable: true, geometryAvailable: true, terrainTruthScore: 0.8 }),
+      now: () => new Date('2026-01-01T00:00:00.000Z'),
+    });
+
+    expect(report.overallVerdict.label).toBe('red');
+    expect(report.overallVerdict.reason.join(' ')).toContain('true_forest_trail');
+    expect(report.panelSummary.true_forest_trail.weightedScore).toBeLessThan(0);
   });
 
   it('exposes the one-command npm script', () => {

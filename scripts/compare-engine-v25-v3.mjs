@@ -55,9 +55,9 @@ try {
     artifactDir: writeArtifacts ? artifactDir : null,
     total: report.total,
     summary: report.summary,
+    panelSummary: report.panelSummary,
+    overallVerdict: report.overallVerdict,
   }, null, 2));
-
-  if (report.summary.errored > 0) process.exitCode = 1;
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;

@@ -146,6 +146,33 @@ function missingOpportunityCaptureFailure(benchmark, opportunityCapture) {
   };
 }
 
+function productVerdictForResult(result) {
+  const metrics = result.metrics ?? {};
+  const opportunityCapture = metrics.opportunityCapture ?? null;
+  const failures = Array.isArray(result.failures) ? result.failures : [];
+  const productVerdict = result.skipped
+    ? "skipped"
+    : result.passed
+      ? "product_pass"
+      : failures.includes("missing_opportunity_capture")
+        ? "blocked_missing_opportunity_capture"
+        : result.errorCode === "BENCHMARK_TIMEOUT" || failures.includes("duration_timeout")
+          ? "blocked_timeout"
+          : "product_fail";
+  return {
+    id: result.id,
+    outcome: metrics.actualOutcome ?? (result.errorCode ? "error" : "unknown"),
+    passed: result.passed === true,
+    primaryReason: failures[0] ?? result.errorCode ?? "pass",
+    opportunityScore: opportunityCapture?.opportunityCaptureScore ?? null,
+    shapeScore: metrics.shapeQualityScore ?? null,
+    pavedRatio: metrics.pavedRatio ?? null,
+    naturalDwellCapture: opportunityCapture?.naturalDwellCaptureRatio ?? null,
+    missedBetterComponents: opportunityCapture?.missedBetterComponentCount ?? null,
+    productVerdict,
+  };
+}
+
 async function saveRouteArtifacts(benchmark, payload) {
   if (!shouldSaveArtifacts || payload?.route == null) return null;
   const absoluteArtifactDir = resolve(repoRoot, artifactDir);
@@ -370,6 +397,7 @@ const report = {
   total: results.length,
   panelFilters,
   panelSummary: summarizeBenchmarkPanels(results),
+  productVerdictSummary: results.map(productVerdictForResult),
   failed: failed.length,
   skipped: skipped.length,
   passed: results.length - failed.length - skipped.length,

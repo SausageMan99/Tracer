@@ -60,7 +60,23 @@ export interface EngineComparisonReport {
   baseUrl: string;
   total: number;
   summary: Record<EngineComparisonVerdictLabel, number>;
+  panelSummary: Record<string, EngineComparisonPanelSummary>;
+  overallVerdict: EngineComparisonOverallVerdict;
   cases: EngineComparisonCaseResult[];
+}
+
+export interface EngineComparisonPanelSummary {
+  id: string;
+  weight: number;
+  total: number;
+  weightedScore: number;
+  verdicts: Record<EngineComparisonVerdictLabel, number>;
+}
+
+export interface EngineComparisonOverallVerdict {
+  label: 'green' | 'amber' | 'red';
+  weightedScore: number;
+  reason: string[];
 }
 
 export interface EngineRunContext {
@@ -132,6 +148,20 @@ export async function runEngineComparison(options: RunEngineComparisonOptions = 
     }
 
     results.push(result);
+    if (shouldWriteArtifacts) {
+      const partialReport: EngineComparisonReport = {
+        schemaVersion: 1,
+        generatedAt: now().toISOString(),
+        baseUrl,
+        total: results.length,
+        summary: summarizeComparison(results),
+        panelSummary: summarizePanels(results),
+        overallVerdict: decideOverallVerdict(results),
+        cases: results,
+      };
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, `${JSON.stringify(partialReport, null, 2)}\n`, 'utf8');
+    }
   }
 
   const report: EngineComparisonReport = {
@@ -140,6 +170,8 @@ export async function runEngineComparison(options: RunEngineComparisonOptions = 
     baseUrl,
     total: results.length,
     summary: summarizeComparison(results),
+    panelSummary: summarizePanels(results),
+    overallVerdict: decideOverallVerdict(results),
     cases: results,
   };
 
@@ -163,7 +195,7 @@ export function compareEngineSamples(v25: EngineSample, v3: EngineSample): Engin
   if (productOutcomeDelta === 'better') reasons.push('V3 improves product outcome rank.');
   if (productOutcomeDelta === 'worse') reasons.push('V3 loses product outcome rank versus V2.5.');
   if (exportRegression) reasons.push('V3 loses GPX/GeoJSON availability while V2.5 had usable export evidence.');
-  if (v25.outcome !== 'refused' && v3.outcome === 'refused') reasons.push('V3 refusal is treated as assembly/product weakness when V2.5 produced route evidence.');
+  if ((v25.outcome === 'generated' || v25.outcome === 'adjusted') && v3.outcome === 'refused') reasons.push('V3 refusal is treated as assembly/product weakness when V2.5 produced route evidence.');
   if (v25.outcome === 'refused' && v3.outcome === 'refused') reasons.push('Both engines refuse; speed alone does not make V3 better.');
   if (terrainTruthDelta > 0.05) reasons.push('V3 improves terrain truth metrics without considering speed as primary evidence.');
   if (terrainTruthDelta < -0.05) reasons.push('V3 regresses terrain truth metrics.');
@@ -334,14 +366,68 @@ function selectCases(cases: RouteBenchmarkCase[], filters: string[]): RouteBench
 }
 
 function summarizeComparison(results: EngineComparisonCaseResult[]): Record<EngineComparisonVerdictLabel, number> {
-  const summary: Record<EngineComparisonVerdictLabel, number> = {
+  const summary: Record<EngineComparisonVerdictLabel, number> = emptyVerdictCounts();
+  for (const result of results) summary[result.verdict.label] += 1;
+  return summary;
+}
+
+function summarizePanels(results: EngineComparisonCaseResult[]): Record<string, EngineComparisonPanelSummary> {
+  const summaries: Record<string, EngineComparisonPanelSummary> = {};
+  for (const result of results) {
+    const panelId = result.panel?.id ?? 'unpanelled';
+    const summary = summaries[panelId] ?? {
+      id: panelId,
+      weight: panelWeight(panelId),
+      total: 0,
+      weightedScore: 0,
+      verdicts: emptyVerdictCounts(),
+    };
+    summary.total += 1;
+    summary.verdicts[result.verdict.label] += 1;
+    summary.weightedScore = roundDelta(summary.weightedScore + verdictScore(result.verdict.label) * summary.weight);
+    summaries[panelId] = summary;
+  }
+  return summaries;
+}
+
+function decideOverallVerdict(results: EngineComparisonCaseResult[]): EngineComparisonOverallVerdict {
+  const panelSummary = summarizePanels(results);
+  const weightedScore = roundDelta(Object.values(panelSummary).reduce((sum, panel) => sum + panel.weightedScore, 0));
+  const criticalRegressionPanels = Object.values(panelSummary).filter((panel) => panel.weight >= 2 && panel.weightedScore < 0);
+  const reasons: string[] = [];
+  if (criticalRegressionPanels.length > 0) {
+    reasons.push(`Critical weighted panel regression: ${criticalRegressionPanels.map((panel) => panel.id).join(', ')}.`);
+  }
+  if (results.some((result) => result.verdict.exportRegression)) {
+    reasons.push('At least one V3 case loses GPX/GeoJSON evidence that V2.5 had.');
+  }
+  if (reasons.length === 0) reasons.push('Weighted panel comparison has no critical product regression.');
+  const label = criticalRegressionPanels.length > 0 || weightedScore < 0 ? 'red' : weightedScore > 0 ? 'green' : 'amber';
+  return { label, weightedScore, reason: reasons };
+}
+
+function emptyVerdictCounts(): Record<EngineComparisonVerdictLabel, number> {
+  return {
     v3_better: 0,
     v3_equivalent: 0,
     v3_worse: 0,
     errored: 0,
   };
-  for (const result of results) summary[result.verdict.label] += 1;
-  return summary;
+}
+
+function panelWeight(panelId: string): number {
+  if (panelId === 'true_forest_trail') return 3;
+  if (panelId === 'transition_to_woods') return 3;
+  if (panelId === 'park_recovery' || panelId === 'urban_nature') return 2;
+  if (panelId === 'poor_osm_rural') return 1.5;
+  if (panelId === 'negative_impossible') return 1;
+  return 1;
+}
+
+function verdictScore(label: EngineComparisonVerdictLabel): number {
+  if (label === 'v3_better') return 1;
+  if (label === 'v3_worse' || label === 'errored') return -1;
+  return 0;
 }
 
 function v25OutcomeFromSummary(summary: BenchmarkSummary): EngineComparisonOutcome {

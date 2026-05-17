@@ -234,6 +234,147 @@ describe("route benchmark scripts", () => {
     });
   });
 
+  it("writes a one-page product verdict summary with route-quality evidence", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-benchmark-one-page-summary-"));
+    const output = join(dir, "report.json");
+    const server = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          route: {
+            distanceKm: 15.1,
+            ascendM: 240,
+            quality: {
+              productionScore: 0.88,
+              loopClosureKm: 0.04,
+              busyRoadRatio: 0.01,
+              trailRatio: 0.72,
+              naturalWayRatio: 0.84,
+              pavedRatio: 0.16,
+              trailBeautyScore: 0.8,
+              longestTrailSegmentKm: 5,
+              naturalCorridorRatio: 0.72,
+              repeatEdgeRatio: 0.01,
+              uTurnRatio: 0,
+              terrainDataConfidence: "high",
+              trailPotential: "high",
+              routeTrailQuality: "high",
+              warnings: [],
+              geometry: {
+                loopCompactness: 0.1,
+                geometryOverlapRatio: 0.03,
+                selfIntersectionCount: 0,
+                sharpTurnDensityPerKm: 1,
+                headingReversalRatio: 0.02,
+                outAndBackSimilarityRatio: 0.04,
+                startStemKm: 0.03,
+                endStemKm: 0.03,
+                maxDistanceFromStartKm: 2.5,
+              },
+            },
+            routeIntent: {
+              type: "forest_loop",
+              strategy: "forest_loop",
+              targetDistanceKm: 15,
+              targetComponents: ["fontainebleau-forest"],
+              terrainComponents: [{
+                id: "fontainebleau-forest",
+                kind: "forest",
+                totalKm: 12,
+                nonPavedKm: 10,
+                pavedKm: 1,
+                unknownSurfaceKm: 1,
+                distanceFromStartKm: 0.1,
+                confidence: "high",
+              }],
+            },
+            best: {
+              distanceKm: 15.1,
+              ascendM: 240,
+              quality: {
+                productionScore: 0.88,
+                loopClosureKm: 0.04,
+                busyRoadRatio: 0.01,
+                trailRatio: 0.72,
+                naturalWayRatio: 0.84,
+                pavedRatio: 0.16,
+                trailBeautyScore: 0.8,
+                longestTrailSegmentKm: 5,
+                naturalCorridorRatio: 0.72,
+                repeatEdgeRatio: 0.01,
+                uTurnRatio: 0,
+                terrainDataConfidence: "high",
+                trailPotential: "high",
+                routeTrailQuality: "high",
+                warnings: [],
+                geometry: {
+                  loopCompactness: 0.1,
+                  geometryOverlapRatio: 0.03,
+                  selfIntersectionCount: 0,
+                  sharpTurnDensityPerKm: 1,
+                  headingReversalRatio: 0.02,
+                  outAndBackSimilarityRatio: 0.04,
+                  startStemKm: 0.03,
+                  endStemKm: 0.03,
+                  maxDistanceFromStartKm: 2.5,
+                },
+              },
+              edgeDiagnostics: [{
+                edgeId: "forest-1",
+                edgeKey: "a-b",
+                osmWayId: 1,
+                highway: "path",
+                surface: "dirt",
+                lengthKm: 4,
+                score: 1,
+                flags: { trail: true, natural: true, paved: false, busy: false },
+                componentId: "fontainebleau-forest",
+                repeatCount: 1,
+              }],
+            },
+          },
+        }));
+      });
+    });
+
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("Expected local test server port");
+
+    try {
+      await execFileAsync(nodeBin, [
+        "scripts/run-route-benchmarks.mjs",
+        "--case",
+        "fontainebleau-trail-15k",
+        "--output",
+        output,
+      ], {
+        cwd: repoRoot,
+        env: { ...process.env, ROUTE_BENCHMARK_BASE_URL: `http://127.0.0.1:${address.port}` },
+      });
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => error ? rejectClose(error) : resolveClose());
+      });
+    }
+
+    const report = JSON.parse(readFileSync(output, "utf8"));
+    expect(report.productVerdictSummary).toEqual([{
+      id: "fontainebleau-trail-15k",
+      outcome: "route_success",
+      passed: true,
+      primaryReason: "pass",
+      opportunityScore: expect.any(Number),
+      shapeScore: expect.any(Number),
+      pavedRatio: 0.16,
+      naturalDwellCapture: expect.any(Number),
+      missedBetterComponents: 0,
+      productVerdict: "product_pass",
+    }]);
+  });
+
   it("fails a terrain-aware successful route when opportunity capture is missing", async () => {
     const dir = mkdtempSync(join(tmpdir(), "route-benchmark-missing-opportunity-capture-"));
     const output = join(dir, "report.json");
