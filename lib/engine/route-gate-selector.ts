@@ -83,6 +83,15 @@ function overLimitSeverity(actual: number, limit: number): number {
   return Math.max(0, (actual - limit) / Math.max(Math.abs(limit), 0.001));
 }
 
+function zeroLimitCountSeverity(actual: number): number {
+  return actual >= 2 ? 2 : 1;
+}
+
+function selfIntersectionSeverity(actual: number, limit: number): number {
+  if (limit === 0) return zeroLimitCountSeverity(actual);
+  return overLimitSeverity(actual, limit);
+}
+
 function underLimitSeverity(actual: number, limit: number): number {
   return Math.max(0, (limit - actual) / Math.max(Math.abs(limit), 0.001));
 }
@@ -328,7 +337,15 @@ export function evaluateRouteHardGates(
   addMaxViolation(violations, "repeat_edge_ratio", quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), false, 0, 5);
   addMaxViolation(violations, "u_turn_ratio", quality?.uTurnRatio, maxUTurnRatio(profile), false, 0, 8);
   addMaxViolation(violations, "geometry_overlap", geometry?.geometryOverlapRatio, maxGeometryOverlapRatio(profile, routeIntent), false, 0, 3);
-  addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
+  if (geometry?.selfIntersectionCount != null && geometry.selfIntersectionCount > 0) {
+    violations.push({
+      key: "geometry_self_intersection",
+      actual: geometry.selfIntersectionCount,
+      limit: 0,
+      severity: selfIntersectionSeverity(geometry.selfIntersectionCount, 0),
+      relaxable: false,
+    });
+  }
   addMaxViolation(
     violations,
     "geometry_out_and_back_similarity",

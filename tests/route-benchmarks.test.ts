@@ -687,6 +687,52 @@ describe("route production benchmarks", () => {
     ]));
   });
 
+  it("keeps strict self-intersection shape severity readable when the limit is zero", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-10k")!;
+    const qualityWithSelfIntersections = (selfIntersectionCount: number) => summarizeBenchmarkResult(benchmark, {
+      distanceKm: 10,
+      ascendM: 120,
+      quality: {
+        productionScore: 0.8,
+        loopGapKm: 0.04,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.5,
+        pavedRatio: 0.3,
+        trailBeautyScore: 0.7,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.5,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.08,
+          geometryOverlapRatio: 0.04,
+          selfIntersectionCount,
+          sharpTurnDensityPerKm: 1,
+          headingReversalRatio: 0.02,
+          outAndBackSimilarityRatio: 0.04,
+          startStemKm: 0.05,
+          endStemKm: 0.04,
+          maxDistanceFromStartKm: 1.8,
+        },
+      },
+      durationMs: 20000,
+    });
+
+    const singleCrossing = qualityWithSelfIntersections(1);
+    const criticalCrossings = qualityWithSelfIntersections(2);
+    const singleIssue = singleCrossing.metrics.shapeQuality?.issues.find((issue) => issue.key === "self_intersection");
+    const criticalIssue = criticalCrossings.metrics.shapeQuality?.issues.find((issue) => issue.key === "self_intersection");
+
+    expect(singleIssue).toMatchObject({ actual: 1, limit: 0, severity: 1 });
+    expect(singleCrossing.metrics.shapeQualityScore).toBeGreaterThan(0.8);
+    expect(criticalIssue).toMatchObject({ actual: 2, limit: 0, severity: 2 });
+    expect(criticalCrossings.metrics.shapeQualityScore).toBeLessThan(singleCrossing.metrics.shapeQualityScore!);
+    expect(criticalCrossings.failures).toContain("geometry_self_intersection");
+  });
+
   it("allows Caen benchmark to pass with explicit adjusted_distance outcome", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;
     const summary = summarizeBenchmarkResult(benchmark, {

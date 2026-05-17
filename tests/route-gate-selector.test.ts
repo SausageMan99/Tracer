@@ -468,8 +468,9 @@ describe("route hard-gate selector", () => {
     const gate = evaluateRouteHardGates(cleanComplexTrail, context);
 
     expect(gate.violations).toEqual(expect.arrayContaining([
-      expect.objectContaining({ key: "geometry_self_intersection", relaxable: false }),
+      expect.objectContaining({ key: "geometry_self_intersection", relaxable: false, severity: 1 }),
     ]));
+    expect(gate.totalSeverity).toBeLessThan(10);
     expect(gate.bucket).toBe(2);
     expect(isBetaStableCandidate(cleanComplexTrail, context)).toBe(false);
   });
