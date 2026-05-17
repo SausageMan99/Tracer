@@ -4,6 +4,10 @@ import {
   BETA_BEHAVIOR_CASE_IDS,
   BETA_SMOKE_CASE_IDS,
   READINESS_UNSTABLE_CASE_IDS,
+  TERRAIN_AWARE_PANEL_IDS,
+  TERRAIN_AWARE_PANELS,
+  filterBenchmarksForTerrainAwarePanel,
+  getTerrainAwarePanelForBenchmark,
   benchmarkToRequest,
   summarizeBenchmarkFailure,
   summarizeBenchmarkResult,
@@ -112,6 +116,64 @@ describe("route production benchmarks", () => {
       "periurban",
     ]));
     expect(BETA_BEHAVIOR_CASE_IDS).not.toContain("tourville-pommiers-trail-12k");
+  });
+
+  it("defines terrain-aware specialized panels with full case coverage", () => {
+    expect(TERRAIN_AWARE_PANEL_IDS).toEqual([
+      "true_forest_trail",
+      "transition_to_woods",
+      "park_recovery",
+      "urban_nature",
+      "poor_osm_rural",
+      "negative_impossible",
+    ]);
+
+    const assignedIds = new Set<string>();
+    for (const panelId of TERRAIN_AWARE_PANEL_IDS) {
+      const panel = TERRAIN_AWARE_PANELS[panelId];
+      expect(panel.caseIds.length, `${panelId} must have at least one benchmark`).toBeGreaterThan(0);
+      expect(panel.promise.length).toBeGreaterThan(20);
+      expect(panel.hardSignals.length).toBeGreaterThanOrEqual(4);
+      expect(panel.acceptableOutcomes.length).toBeGreaterThan(0);
+
+      for (const caseId of panel.caseIds) {
+        expect(assignedIds.has(caseId), `${caseId} must belong to only one terrain-aware panel`).toBe(false);
+        assignedIds.add(caseId);
+        expect(BENCHMARK_CASES.some((benchmark) => benchmark.id === caseId)).toBe(true);
+        expect(getTerrainAwarePanelForBenchmark(caseId)?.id).toBe(panelId);
+      }
+    }
+
+    expect(Array.from(assignedIds).sort()).toEqual(BENCHMARK_CASES.map((benchmark) => benchmark.id).sort());
+    expect(TERRAIN_AWARE_PANELS.transition_to_woods.caseIds).toEqual(expect.arrayContaining([
+      "tourville-pommiers-trail-5k",
+      "tourville-pommiers-trail-8k",
+      "tourville-pommiers-trail-10k",
+      "tourville-pommiers-trail-12k",
+    ]));
+    expect(TERRAIN_AWARE_PANELS.true_forest_trail.caseIds).toEqual(expect.arrayContaining([
+      "fontainebleau-trail-15k",
+      "meudon-forest-trail-10k",
+      "clecy-suisse-normande-trail-12k",
+    ]));
+    expect(TERRAIN_AWARE_PANELS.urban_nature.caseIds).toEqual(expect.arrayContaining([
+      "caen-prairie-8k-mixed",
+      "lille-10k-citadel-loop",
+      "paris-19-canal-running",
+      "nanterre-east-avoid-highways",
+    ]));
+  });
+
+  it("filters benchmarks by terrain-aware panel without mixing product promises", () => {
+    const transitionCases = filterBenchmarksForTerrainAwarePanel(BENCHMARK_CASES, "transition_to_woods");
+    expect(transitionCases.map((benchmark) => benchmark.id)).toEqual([
+      "tourville-pommiers-trail-5k",
+      "tourville-pommiers-trail-8k",
+      "tourville-pommiers-trail-10k",
+      "tourville-pommiers-trail-12k",
+    ]);
+    expect(transitionCases.every((benchmark) => getTerrainAwarePanelForBenchmark(benchmark)?.id === "transition_to_woods")).toBe(true);
+    expect(transitionCases.every((benchmark) => benchmark.tags?.includes("field-feedback"))).toBe(true);
   });
 
   it("keeps benchmark ids unique and linked to valid session profiles", () => {
@@ -513,6 +575,117 @@ describe("route production benchmarks", () => {
     expect(summary.passed).toBe(true);
   });
 
+
+
+  it("publishes generalized shape quality metrics for every route summary without requiring per-case thresholds", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "fontainebleau-trail-15k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 15.1,
+      ascendM: 190,
+      quality: {
+        productionScore: 0.86,
+        loopGapKm: 0.04,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.72,
+        pavedRatio: 0.16,
+        trailBeautyScore: 0.78,
+        longestTrailSegmentKm: 5,
+        naturalCorridorRatio: 0.65,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.16,
+          geometryOverlapRatio: 0.03,
+          selfIntersectionCount: 0,
+          sharpTurnDensityPerKm: 1.2,
+          headingReversalRatio: 0.03,
+          outAndBackSimilarityRatio: 0.05,
+          startStemKm: 0.04,
+          endStemKm: 0.03,
+          maxDistanceFromStartKm: 2.2,
+        },
+      },
+      durationMs: 20000,
+    });
+
+    expect(benchmark.thresholds.maxGeometryOverlapRatio).toBeUndefined();
+    expect(summary.passed).toBe(true);
+    expect(summary.metrics.shapeQualityScore).toBe(1);
+    expect(summary.metrics.shapeQuality).toMatchObject({
+      available: true,
+      score: 1,
+      thresholds: expect.objectContaining({
+        source: "generalized_shape_defaults",
+        maxGeometryOverlapRatio: 0.12,
+        maxSelfIntersectionCount: 0,
+        maxStartEndStemKm: 0.3,
+      }),
+      issues: [],
+    });
+  });
+
+  it("fails strict trail benchmarks when generalized shape metrics are weak", () => {
+    const benchmark = BENCHMARK_CASES.find((item) => item.id === "tourville-pommiers-trail-10k")!;
+    const summary = summarizeBenchmarkResult(benchmark, {
+      distanceKm: 10,
+      ascendM: 120,
+      quality: {
+        productionScore: 0.8,
+        loopGapKm: 0.04,
+        busyRoadRatio: 0.01,
+        naturalWayRatio: 0.5,
+        pavedRatio: 0.3,
+        trailBeautyScore: 0.7,
+        longestTrailSegmentKm: 3,
+        naturalCorridorRatio: 0.5,
+        repeatEdgeRatio: 0.01,
+        uTurnRatio: 0,
+        terrainDataConfidence: "high",
+        trailPotential: "high",
+        warnings: [],
+        geometry: {
+          loopCompactness: 0.02,
+          geometryOverlapRatio: 0.22,
+          selfIntersectionCount: 2,
+          sharpTurnDensityPerKm: 6,
+          headingReversalRatio: 0.2,
+          outAndBackSimilarityRatio: 0.42,
+          startStemKm: 0.7,
+          endStemKm: 0.1,
+          maxDistanceFromStartKm: 0.4,
+        },
+      },
+      durationMs: 20000,
+    });
+
+    expect(summary.metrics.geometry.geometryOverlapRatio).toBe(0.22);
+    expect(summary.passed).toBe(false);
+    expect(summary.failures).toEqual(expect.arrayContaining([
+      "geometry_overlap",
+      "geometry_self_intersection",
+      "geometry_sharp_turn_density",
+      "geometry_heading_reversal",
+      "geometry_out_and_back_similarity",
+      "geometry_loop_compactness",
+      "geometry_start_end_stem",
+      "geometry_spatial_spread",
+    ]));
+    expect(summary.metrics.shapeQualityScore).toBeLessThan(1);
+    expect(summary.metrics.shapeQuality?.issues.map((issue) => issue.key)).toEqual(expect.arrayContaining([
+      "geometry_overlap",
+      "self_intersection",
+      "sharp_turn_density",
+      "heading_reversal",
+      "out_and_back_similarity",
+      "loop_compactness",
+      "start_end_stem",
+      "spatial_spread",
+    ]));
+  });
 
   it("allows Caen benchmark to pass with explicit adjusted_distance outcome", () => {
     const benchmark = BENCHMARK_CASES.find((item) => item.id === "caen-colline-aux-oiseaux-6k-soft")!;

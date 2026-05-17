@@ -28,7 +28,47 @@ describe("route benchmark scripts", () => {
 
     expect(stdout).toContain("tourville-pommiers-trail-10k");
     expect(stdout).toContain("p0");
+    expect(stdout).toContain("transition_to_woods");
     expect(stdout).toContain("tourville,trail,field-feedback");
+  });
+
+  it("filters benchmarks by terrain-aware panel without network", () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-benchmark-panel-filter-"));
+    const output = join(dir, "report.json");
+    const result = spawnSync(
+      nodeBin,
+      [
+        "scripts/run-route-benchmarks.mjs",
+        "--panel",
+        "transition_to_woods",
+        "--no-output",
+      ],
+      {
+        cwd: repoRoot,
+        env: { ...process.env, ROUTE_BENCHMARK_BASE_URL: "http://127.0.0.1:9", ROUTE_BENCHMARK_OUTPUT: output },
+        encoding: "utf8",
+      }
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("tourville-pommiers-trail-5k");
+    expect(result.stdout).toContain("tourville-pommiers-trail-8k");
+    expect(result.stdout).toContain("tourville-pommiers-trail-10k");
+    expect(result.stdout).toContain("tourville-pommiers-trail-12k");
+    expect(result.stdout).toContain('"total": 4');
+    expect(result.stdout).toContain('"panelFilters": [');
+    expect(result.stdout).toContain('"transition_to_woods"');
+    expect(result.stdout).toContain('"panelSummary"');
+  });
+
+  it("exposes one-command terrain-aware panel scripts", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8"));
+    expect(packageJson.scripts["benchmark:routes:panel:forest-trail"]).toContain("--panel true_forest_trail");
+    expect(packageJson.scripts["benchmark:routes:panel:transition-to-woods"]).toContain("--panel transition_to_woods");
+    expect(packageJson.scripts["benchmark:routes:panel:park-recovery"]).toContain("--panel park_recovery");
+    expect(packageJson.scripts["benchmark:routes:panel:urban-nature"]).toContain("--panel urban_nature");
+    expect(packageJson.scripts["benchmark:routes:panel:poor-osm-rural"]).toContain("--panel poor_osm_rural");
+    expect(packageJson.scripts["benchmark:routes:panel:negative-impossible"]).toContain("--panel negative_impossible");
   });
 
   it("exposes the mandatory Sprint 4 multi-zone smoke command", () => {
@@ -382,6 +422,14 @@ describe("route benchmark scripts", () => {
     expect(report.results[0].routeArtifacts).toMatchObject({
       routeJson: expect.stringContaining("fontainebleau-trail-15k.json"),
       terrainOpportunityReportJson: expect.stringContaining("fontainebleau-trail-15k.terrain-opportunity.json"),
+      opportunityCaptureJson: expect.stringContaining("fontainebleau-trail-15k.opportunity-capture.json"),
+    });
+    expect(report.results[0].metrics.opportunityCapture).toMatchObject({
+      observationOnly: true,
+      scoringBehaviorChanged: false,
+      caseId: "fontainebleau-trail-15k",
+      naturalDwellCaptureRatio: 1,
+      promiseHonestyScore: 1,
     });
     const artifact = JSON.parse(readFileSync(join(artifactDir, "fontainebleau-trail-15k.terrain-opportunity.json"), "utf8"));
     expect(artifact).toMatchObject({
@@ -390,6 +438,17 @@ describe("route benchmark scripts", () => {
       caseId: "fontainebleau-trail-15k",
       strategy: { routeIntentType: "forest_loop", targetComponents: ["fontainebleau-forest"] },
       bestAvailable: { realisticOutcome: "generated", maxNaturalDwellKm: 6.375 },
+    });
+    const captureArtifact = JSON.parse(readFileSync(join(artifactDir, "fontainebleau-trail-15k.opportunity-capture.json"), "utf8"));
+    expect(captureArtifact).toMatchObject({
+      observationOnly: true,
+      scoringBehaviorChanged: false,
+      benchmark: { id: "fontainebleau-trail-15k" },
+      opportunityCaptureMetrics: {
+        observationOnly: true,
+        caseId: "fontainebleau-trail-15k",
+        promiseHonestyScore: 1,
+      },
     });
   });
 

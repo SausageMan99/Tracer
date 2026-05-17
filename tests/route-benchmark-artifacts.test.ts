@@ -3,6 +3,8 @@ import {
   routeToEdgeDiagnosticsArtifact,
   routeToEdgesGeoJson,
   routeToGeoJson,
+  routeToOpportunityCaptureArtifact,
+  routeToOpportunityCaptureMetrics,
   routeToTerrainOpportunityReport,
   summarizeEdgeDiagnostics,
 } from "../lib/route-benchmark-artifacts.mjs";
@@ -215,6 +217,10 @@ describe("route benchmark edge artifacts", () => {
           naturalWayRatio: 0.68,
           pavedRatio: 0.42,
           scenicPavedRatio: 0.2,
+          naturalZoneDwellKm: 2.1,
+          longestNonPavedTrailStreakKm: 1.4,
+          targetComponentDwellKm: 1.7,
+          visitedTargetComponents: ["component-woods"],
           warnings: [],
         },
         edgeDiagnostics: [edgeA, edgeB],
@@ -482,6 +488,81 @@ describe("route benchmark edge artifacts", () => {
       },
     });
     expect(report?.bestAvailable.reason).toContain("road connectors");
+  });
+
+
+  it("computes P2 opportunity-capture metrics from TerrainOpportunityReport and route artifacts", () => {
+    const route = {
+      routeIntent: {
+        type: "transition_to_woods",
+        strategy: "transition_to_woods",
+        targetDistanceKm: 10,
+        targetComponents: ["component-woods"],
+        distancePolicy: { mode: "strict" },
+        terrainComponents: [{
+          id: "component-woods",
+          kind: "forest",
+          totalKm: 4.2,
+          nonPavedKm: 3.1,
+          pavedKm: 0.6,
+          unknownSurfaceKm: 0.5,
+          distanceFromStartKm: 1.1,
+          confidence: "high",
+          entryNodeIds: ["node-a"],
+        }, {
+          id: "component-better-ignored",
+          kind: "forest",
+          totalKm: 6,
+          nonPavedKm: 5,
+          pavedKm: 0.2,
+          unknownSurfaceKm: 0,
+          distanceFromStartKm: 1.8,
+          confidence: "high",
+          entryNodeIds: ["node-z"],
+        }],
+      },
+      candidates: [{
+        distanceKm: 9.8,
+        quality: {
+          naturalZoneDwellKm: 2.45,
+          longestNonPavedTrailStreakKm: 1.55,
+          targetComponentDwellKm: 1.7,
+          pavedRatio: 0.41,
+          trailRatio: 0.2,
+          visitedTargetComponents: ["component-woods"],
+        },
+        edgeDiagnostics: [edgeA, edgeB],
+      }],
+    };
+
+    const metrics = routeToOpportunityCaptureMetrics(benchmark, route);
+
+    expect(metrics).toMatchObject({
+      schemaVersion: 1,
+      observationOnly: true,
+      scoringBehaviorChanged: false,
+      caseId: benchmark.id,
+      naturalDwellCaptureRatio: 0.74809,
+      continuousNaturalCaptureRatio: 0.5,
+      targetComponentCaptureRatio: 0.51908,
+      avoidablePavementKm: 1.818,
+      missedBetterComponentCount: 1,
+      promiseHonestyScore: 1,
+    });
+    expect(metrics?.connectorEfficiencyRatio).toBeCloseTo(2.2 / 4.018, 5);
+    expect(metrics?.opportunityCaptureScore).toBeGreaterThan(0.4);
+    expect(metrics?.inputs).toMatchObject({
+      feasibleNaturalDwellKm: 3.275,
+      feasibleTargetDwellKm: 3.275,
+      actualConnectorKm: 4.018,
+      necessaryConnectorBudgetKm: 2.2,
+      realisticOutcome: "generated",
+      actualOutcome: "route_success",
+    });
+
+    const artifact = routeToOpportunityCaptureArtifact(benchmark, route);
+    expect(artifact?.terrainOpportunityReport?.bestAvailable.maxNaturalDwellKm).toBe(3.275);
+    expect(artifact?.opportunityCaptureMetrics).toEqual(metrics);
   });
 
   it("keeps the best-route GeoJSON artifact stable", () => {

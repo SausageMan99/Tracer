@@ -441,7 +441,7 @@ describe("route hard-gate selector", () => {
     expect(ordered[0]).toBe(healthyMediumCandidate);
   });
 
-  it("allows one geometry self-intersection on otherwise clean long transition-to-woods trail routes", () => {
+  it("blocks trail candidates with any self-intersection even when the rest of the route is clean", () => {
     const cleanComplexTrail = candidate(80, {
       distanceKm: 11.1,
       ascendM: 160,
@@ -465,11 +465,16 @@ describe("route hard-gate selector", () => {
       routeIntent: intent({ targetDistanceKm: 12, targetElevationM: 150, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
     };
 
-    expect(evaluateRouteHardGates(cleanComplexTrail, context).violations.map((violation) => violation.key)).not.toContain("geometry_self_intersection");
-    expect(isBetaStableCandidate(cleanComplexTrail, context)).toBe(true);
+    const gate = evaluateRouteHardGates(cleanComplexTrail, context);
+
+    expect(gate.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "geometry_self_intersection", relaxable: false }),
+    ]));
+    expect(gate.bucket).toBe(2);
+    expect(isBetaStableCandidate(cleanComplexTrail, context)).toBe(false);
   });
 
-  it("allows two trace self-intersections on high-quality Fontainebleau-style forest trail routes when overlap and backtracking stay clean", () => {
+  it("blocks high-quality Fontainebleau-style forest trail candidates with trace self-intersections", () => {
     const fontainebleauTraceCrossing = candidate(80, {
       distanceKm: 14.7,
       ascendM: 157,
@@ -495,8 +500,44 @@ describe("route hard-gate selector", () => {
       routeIntent: intent({ targetDistanceKm: 15, targetElevationM: 200, maxPavedRatio: 0.42, maxRepeatEdgeRatio: 0.04 }),
     };
 
-    expect(evaluateRouteHardGates(fontainebleauTraceCrossing, context).violations.map((violation) => violation.key)).not.toContain("geometry_self_intersection");
-    expect(isBetaStableCandidate(fontainebleauTraceCrossing, context)).toBe(true);
+    const gate = evaluateRouteHardGates(fontainebleauTraceCrossing, context);
+
+    expect(gate.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "geometry_self_intersection", relaxable: false }),
+    ]));
+    expect(gate.bucket).toBe(2);
+    expect(isBetaStableCandidate(fontainebleauTraceCrossing, context)).toBe(false);
+  });
+
+  it("blocks trail candidates with start/end stems or out-and-back geometry instead of relaxing them", () => {
+    const stemRoute = candidate(90, {
+      distanceKm: 10,
+      ascendM: 150,
+      quality: {
+        productionScore: 0.9,
+        trailBeautyScore: 0.78,
+        naturalCorridorRatio: 0.65,
+        longestTrailSegmentKm: 4.2,
+        trailPotential: "high",
+        routeTrailQuality: "high",
+        geometry: { ...quality().geometry!, startStemKm: 0.34, endStemKm: 0.05, outAndBackSimilarityRatio: 0.25 },
+      },
+    });
+    const context = {
+      targetDistanceKm: 10,
+      targetElevationM: 150,
+      profile: trailProfile,
+      routeIntent: intent({ targetDistanceKm: 10, targetElevationM: 150, maxPavedRatio: 0.42 }),
+    };
+
+    const gate = evaluateRouteHardGates(stemRoute, context);
+
+    expect(gate.violations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ key: "geometry_start_end_stem", relaxable: false }),
+      expect.objectContaining({ key: "geometry_out_and_back_similarity", relaxable: false }),
+    ]));
+    expect(gate.bucket).toBe(2);
+    expect(isBetaStableCandidate(stemRoute, context)).toBe(false);
   });
 
   it("rejects adjusted recovery park candidates that break pavement or geometry caps", () => {

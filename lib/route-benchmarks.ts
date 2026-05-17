@@ -4,7 +4,32 @@ import {
   summarizeBenchmarkFailure as summarizeBenchmarkFailureCore,
   summarizeBenchmarkResult as summarizeBenchmarkResultCore,
 } from "./route-benchmarks-core.mjs";
+import {
+  TERRAIN_AWARE_BENCHMARK_PANEL_IDS,
+  TERRAIN_AWARE_BENCHMARK_PANELS,
+  assertBenchmarkPanelCoverage,
+  filterBenchmarksByPanel,
+  resolveBenchmarkPanel,
+  summarizeBenchmarkPanels,
+} from "./route-benchmark-panels.mjs";
 import type { GenerateRouteRequest, RouteGenerationDiagnostics, RouteGenerationStageTimings } from "./types";
+
+export type TerrainAwareBenchmarkPanelId =
+  | "true_forest_trail"
+  | "transition_to_woods"
+  | "park_recovery"
+  | "urban_nature"
+  | "poor_osm_rural"
+  | "negative_impossible";
+
+export interface TerrainAwareBenchmarkPanel {
+  id: TerrainAwareBenchmarkPanelId;
+  label: string;
+  promise: string;
+  caseIds: readonly string[];
+  hardSignals: readonly string[];
+  acceptableOutcomes: readonly string[];
+}
 
 export interface RouteBenchmarkCase {
   id: string;
@@ -164,12 +189,60 @@ export interface BenchmarkSummary {
       endStemKm: number;
       maxDistanceFromStartKm: number;
     };
+    shapeQualityScore?: number;
+    shapeQuality?: {
+      available: boolean;
+      score: number;
+      thresholds: Record<string, number | string>;
+      issues: Array<{
+        key: string;
+        actual: number | null;
+        limit: number | null;
+        direction: string;
+        severity: number;
+        weight: number;
+      }>;
+    };
+    opportunityCapture?: {
+      schemaVersion: number;
+      observationOnly: boolean;
+      scoringBehaviorChanged: boolean;
+      caseId: string;
+      opportunityCaptureScore: number;
+      naturalDwellCaptureRatio: number;
+      continuousNaturalCaptureRatio: number;
+      targetComponentCaptureRatio: number;
+      connectorEfficiencyRatio: number;
+      avoidablePavementKm: number;
+      missedBetterComponentCount: number;
+      promiseHonestyScore: number;
+      inputs: Record<string, unknown>;
+      approximationNotes: string[];
+    };
   };
   stageTimings?: RouteGenerationStageTimings | unknown;
   generationDiagnostics?: RouteGenerationDiagnostics | unknown;
 }
 
 export const BENCHMARK_CASES = rawBenchmarkCases as RouteBenchmarkCase[];
+
+export const TERRAIN_AWARE_PANELS = TERRAIN_AWARE_BENCHMARK_PANELS as Record<TerrainAwareBenchmarkPanelId, TerrainAwareBenchmarkPanel>;
+export const TERRAIN_AWARE_PANEL_IDS = TERRAIN_AWARE_BENCHMARK_PANEL_IDS as readonly TerrainAwareBenchmarkPanelId[];
+export const getTerrainAwarePanelForBenchmark = resolveBenchmarkPanel as (benchmarkOrId: RouteBenchmarkCase | string) => TerrainAwareBenchmarkPanel | null;
+export const filterBenchmarksForTerrainAwarePanel = filterBenchmarksByPanel as (benchmarks: RouteBenchmarkCase[], panelId: TerrainAwareBenchmarkPanelId) => RouteBenchmarkCase[];
+export const summarizeTerrainAwarePanels = summarizeBenchmarkPanels as (results: Array<{ id: string; passed: boolean; skipped?: boolean; panel?: { id: string } }>) => Array<{
+  id: TerrainAwareBenchmarkPanelId;
+  label: string;
+  promise: string;
+  caseIds: string[];
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  hardSignals: string[];
+  acceptableOutcomes: string[];
+}>;
+export const validateTerrainAwarePanelCoverage = assertBenchmarkPanelCoverage as (benchmarks: RouteBenchmarkCase[]) => { ok: boolean; errors: string[] };
 
 export const BETA_SMOKE_CASE_IDS = [
   "tourville-pommiers-trail-8k",

@@ -24,6 +24,7 @@ export type RouteHardGateKey =
   | "geometry_self_intersection"
   | "geometry_loop_compactness"
   | "geometry_out_and_back_similarity"
+  | "geometry_start_end_stem"
   | "trail_beauty_score"
   | "natural_corridor_ratio"
   | "longest_trail_segment"
@@ -110,34 +111,26 @@ function minLoopCompactness(routeIntent?: RouteIntent): number | null {
   return routeIntent?.type === "park_loop" || routeIntent?.type === "urban_nature_loop" ? 0.06 : null;
 }
 
-function allowsTraceSelfIntersection(
-  geometry: RouteQualityMetrics["geometry"] | undefined,
-  quality: RouteQualityMetrics | undefined,
-  context: RouteGateSelectionContext
-): boolean {
-  if (context.profile.sessionType !== "trail") return false;
-  if (context.routeIntent?.type !== "transition_to_woods" && context.routeIntent?.type !== "forest_loop") return false;
-
-  const selfIntersectionCount = geometry?.selfIntersectionCount ?? 0;
-  const routeTrailQualityRank = routeTrailQualityRankFor(quality?.routeTrailQuality);
-  const allowsSecondForestTraceCrossing =
-    context.targetDistanceKm >= 14 &&
-    routeTrailQualityRank >= 2 &&
-    (geometry?.geometryOverlapRatio ?? 1) <= 0.02 &&
-    (quality?.repeatEdgeRatio ?? 1) <= maxRepeatEdgeRatio(context.profile, context.routeIntent) &&
-    (quality?.uTurnRatio ?? 1) <= maxUTurnRatio(context.profile);
-  const maxTraceSelfIntersections = allowsSecondForestTraceCrossing ? 2 : 1;
-
-  if (selfIntersectionCount > maxTraceSelfIntersections) return false;
-  if ((geometry?.geometryOverlapRatio ?? 1) > Math.min(0.08, maxGeometryOverlapRatio(context.profile, context.routeIntent) * 0.75)) return false;
-  if ((geometry?.outAndBackSimilarityRatio ?? 1) > 0.12) return false;
-  if ((quality?.repeatEdgeRatio ?? 1) > maxRepeatEdgeRatio(context.profile, context.routeIntent) * (allowsSecondForestTraceCrossing ? 1 : 0.8)) return false;
-  if ((quality?.uTurnRatio ?? 1) > maxUTurnRatio(context.profile) * (allowsSecondForestTraceCrossing ? 1 : 0.8)) return false;
-  return routeTrailQualityRank >= 1;
-}
-
 const HEALTHY_GATE_MARGIN_RATIO = 0.12;
 const STABILITY_RISK_EPSILON = 0.05;
+
+function isStrictTrailShapeContract(context: RouteGateSelectionContext): boolean {
+  return context.profile.id === "running_trail" ||
+    context.profile.sessionType === "trail" ||
+    context.routeIntent?.type === "forest_loop" ||
+    context.routeIntent?.type === "transition_to_woods" ||
+    context.routeIntent?.strategy === "forest_loop" ||
+    context.routeIntent?.strategy === "transition_to_woods";
+}
+
+function maxGeometryOutAndBackSimilarityRatio(context: RouteGateSelectionContext): number {
+  if (context.routeIntent?.type === "park_loop") return 0.22;
+  return isStrictTrailShapeContract(context) ? 0.24 : 0.32;
+}
+
+function maxStartEndStemKm(context: RouteGateSelectionContext): number {
+  return isStrictTrailShapeContract(context) ? 0.3 : 0.45;
+}
 
 export function distanceAcceptanceForCandidate(
   candidate: RouteCandidate,
@@ -335,10 +328,25 @@ export function evaluateRouteHardGates(
   addMaxViolation(violations, "repeat_edge_ratio", quality?.repeatEdgeRatio, maxRepeatEdgeRatio(profile, routeIntent), false, 0, 5);
   addMaxViolation(violations, "u_turn_ratio", quality?.uTurnRatio, maxUTurnRatio(profile), false, 0, 8);
   addMaxViolation(violations, "geometry_overlap", geometry?.geometryOverlapRatio, maxGeometryOverlapRatio(profile, routeIntent), false, 0, 3);
-  if (!allowsTraceSelfIntersection(geometry, quality, context)) {
-    addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
-  }
-  addMaxViolation(violations, "geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, routeIntent?.type === "park_loop" ? 0.22 : 0.32, true, 0.06, 1.2);
+  addMaxViolation(violations, "geometry_self_intersection", geometry?.selfIntersectionCount, 0, false, 0, 1);
+  addMaxViolation(
+    violations,
+    "geometry_out_and_back_similarity",
+    geometry?.outAndBackSimilarityRatio,
+    maxGeometryOutAndBackSimilarityRatio(context),
+    !isStrictTrailShapeContract(context),
+    isStrictTrailShapeContract(context) ? 0 : 0.06,
+    1.2
+  );
+  addMaxViolation(
+    violations,
+    "geometry_start_end_stem",
+    geometry != null ? Math.max(geometry.startStemKm ?? 0, geometry.endStemKm ?? 0) : undefined,
+    maxStartEndStemKm(context),
+    false,
+    0,
+    1
+  );
   if (profile.sessionType === "trail") {
     addMinViolation(violations, "trail_beauty_score", quality?.trailBeautyScore, targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55, false, 0, 2);
     addMinViolation(violations, "natural_corridor_ratio", quality?.naturalCorridorRatio, targetDistanceKm >= 14 ? 0.55 : targetDistanceKm >= 10 ? 0.45 : 0.4, false, 0, 1.4);
@@ -546,7 +554,8 @@ function candidateThresholds(context: RouteGateSelectionContext): Record<string,
     maxUTurnRatio: maxUTurnRatio(profile),
     maxGeometryOverlapRatio: maxGeometryOverlapRatio(profile, routeIntent),
     maxSelfIntersectionCount: 0,
-    maxGeometryOutAndBackSimilarityRatio: routeIntent?.type === "park_loop" ? 0.22 : 0.32,
+    maxGeometryOutAndBackSimilarityRatio: maxGeometryOutAndBackSimilarityRatio(context),
+    maxStartEndStemKm: maxStartEndStemKm(context),
     minGeometryLoopCompactness: minLoopCompactness(routeIntent),
     minTrailBeautyScore: profile.sessionType === "trail"
       ? targetDistanceKm >= 14 ? 0.65 : targetDistanceKm >= 10 ? 0.6 : 0.55
@@ -588,6 +597,7 @@ function candidateDeltas(candidate: RouteCandidate, context: RouteGateSelectionC
     numericDelta("geometry_overlap", geometry?.geometryOverlapRatio, thresholds.maxGeometryOverlapRatio as number, "max"),
     numericDelta("geometry_self_intersection", geometry?.selfIntersectionCount, thresholds.maxSelfIntersectionCount as number, "max"),
     numericDelta("geometry_out_and_back_similarity", geometry?.outAndBackSimilarityRatio, thresholds.maxGeometryOutAndBackSimilarityRatio as number, "max"),
+    numericDelta("geometry_start_end_stem", geometry != null ? Math.max(geometry.startStemKm ?? 0, geometry.endStemKm ?? 0) : undefined, thresholds.maxStartEndStemKm as number, "max"),
     numericDelta("geometry_loop_compactness", geometry?.loopCompactness, thresholds.minGeometryLoopCompactness as number | undefined, "min"),
     numericDelta("trail_beauty_score", quality?.trailBeautyScore, thresholds.minTrailBeautyScore as number | undefined, "min"),
     numericDelta("natural_corridor_ratio", quality?.naturalCorridorRatio, thresholds.minNaturalCorridorRatio as number | undefined, "min"),
