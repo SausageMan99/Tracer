@@ -3,6 +3,7 @@ import {
   routeToEdgeDiagnosticsArtifact,
   routeToEdgesGeoJson,
   routeToGeoJson,
+  routeToTerrainOpportunityReport,
   summarizeEdgeDiagnostics,
 } from "../lib/route-benchmark-artifacts.mjs";
 
@@ -384,6 +385,103 @@ describe("route benchmark edge artifacts", () => {
   it("does not create an edge artifact when the route has no candidates", () => {
     expect(routeToEdgeDiagnosticsArtifact(benchmark, { candidates: [] })).toBeNull();
     expect(routeToEdgeDiagnosticsArtifact(benchmark, {})).toBeNull();
+  });
+
+  it("exports a TerrainOpportunityReport from route intent without scoring side effects", () => {
+    const report = routeToTerrainOpportunityReport(benchmark, {
+      diagnostics: { graph: { nodeCount: 12, edgeCount: 24, totalEdgeKm: 6.8 } },
+      routeIntent: {
+        type: "transition_to_woods",
+        strategy: "transition_to_woods",
+        targetDistanceKm: 10,
+        targetElevationM: 120,
+        targetComponents: ["component-woods"],
+        distancePolicy: { mode: "strict" },
+        cleanReturnMode: "prefer",
+        terrainComponents: [{
+          id: "component-woods",
+          kind: "forest",
+          center: { lat: 49.13, lng: -0.48 },
+          totalKm: 4.2,
+          nonPavedKm: 3.1,
+          pavedKm: 0.6,
+          unknownSurfaceKm: 0.5,
+          distanceFromStartKm: 1.1,
+          confidence: "high",
+          entryNodeIds: ["node-a", "node-b"],
+          exitNodeIds: ["node-c"],
+        }, {
+          id: "component-road-scenic",
+          kind: "scenic_paved",
+          center: { lat: 49.12, lng: -0.47 },
+          totalKm: 1.8,
+          nonPavedKm: 0.1,
+          pavedKm: 1.6,
+          unknownSurfaceKm: 0.1,
+          distanceFromStartKm: 0.2,
+          confidence: "medium",
+          entryNodeIds: [],
+          exitNodeIds: [],
+        }],
+      },
+    });
+
+    expect(report).toMatchObject({
+      schemaVersion: 1,
+      observationOnly: true,
+      scoringBehaviorChanged: false,
+      caseId: benchmark.id,
+      request: {
+        address: benchmark.address,
+        targetDistanceKm: 10,
+        targetElevationM: 120,
+        mode: "trail",
+        profileId: "running_trail",
+      },
+      graph: {
+        totalEdgeKm: 6.8,
+        usableEdgeKm: 6,
+        connectedComponentKm: 4.2,
+        nodeCount: 12,
+        edgeCount: 24,
+        confidence: "medium",
+        warnings: [],
+      },
+      strategy: {
+        routeIntentType: "transition_to_woods",
+        routeStrategy: "transition_to_woods",
+        targetComponents: ["component-woods"],
+        distancePolicy: { mode: "strict" },
+        cleanReturnMode: "prefer",
+      },
+      components: [
+        expect.objectContaining({
+          id: "component-woods",
+          kind: "forest",
+          totalLengthKm: 4.2,
+          pavedRatio: 0.14286,
+          nonPavedRatio: 0.7381,
+          surfaceConfidence: "high",
+          estimatedDwellCapacityKm: 3.275,
+          connectorCostKm: 1.1,
+          entryNodeCount: 2,
+          exitNodeCount: 1,
+        }),
+        expect.objectContaining({
+          id: "component-road-scenic",
+          kind: "scenic_paved",
+          nonPavedRatio: 0.05556,
+        }),
+      ],
+      bestAvailable: {
+        maxNaturalDwellKm: 3.275,
+        maxContinuousNaturalKm: 3.1,
+        maxNonPavedRatioEstimate: 0.53333,
+        minConnectorKmToUsefulTerrain: 1.1,
+        realisticOutcome: "generated",
+      },
+    });
+    expect(report?.bestAvailable.reason).toContain("road connectors");
   });
 
   it("keeps the best-route GeoJSON artifact stable", () => {

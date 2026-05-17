@@ -11,6 +11,7 @@ import {
   routeToEdgeDiagnosticsArtifact,
   routeToEdgesGeoJson,
   routeToGeoJson,
+  routeToTerrainOpportunityReport,
 } from "../lib/route-benchmark-artifacts.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -129,6 +130,17 @@ async function saveRouteArtifacts(benchmark, payload) {
     const edgeGeoJsonArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.edges.geojson`);
     await writeFile(edgeGeoJsonArtifactPath, `${JSON.stringify(edgeGeoJson, null, 2)}\n`, "utf8");
     artifacts.edgeDiagnosticsGeoJson = edgeGeoJsonArtifactPath.replace(`${repoRoot}/`, "");
+  }
+
+  const terrainOpportunityReport = routeToTerrainOpportunityReport(benchmark, payload.route);
+  if (terrainOpportunityReport) {
+    const terrainOpportunityArtifactPath = resolve(absoluteArtifactDir, `${benchmark.id}.terrain-opportunity.json`);
+    await writeFile(
+      terrainOpportunityArtifactPath,
+      `${JSON.stringify(terrainOpportunityReport, null, 2)}\n`,
+      "utf8"
+    );
+    artifacts.terrainOpportunityReportJson = terrainOpportunityArtifactPath.replace(`${repoRoot}/`, "");
   }
 
   return artifacts;

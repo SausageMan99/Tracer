@@ -282,6 +282,117 @@ describe("route benchmark scripts", () => {
     expect(artifact).toEqual(rejectedCandidatesDiagnostics);
   });
 
+  it("persists TerrainOpportunityReport artifacts on successful route benchmarks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "route-benchmark-terrain-opportunity-"));
+    const output = join(dir, "report.json");
+    const artifactDir = join(dir, "artifacts");
+    const receivedBodies: unknown[] = [];
+    const server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (chunk) => {
+        body += chunk;
+      });
+      req.on("end", () => {
+        receivedBodies.push(JSON.parse(body));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          success: true,
+          route: {
+            distanceKm: 15.1,
+            ascendM: 230,
+            diagnostics: { graph: { nodeCount: 10, edgeCount: 20, totalEdgeKm: 8 } },
+            routeIntent: {
+              type: "forest_loop",
+              strategy: "forest_loop",
+              targetDistanceKm: 15,
+              targetElevationM: 250,
+              targetComponents: ["fontainebleau-forest"],
+              distancePolicy: { mode: "strict" },
+              cleanReturnMode: "prefer",
+              terrainComponents: [{
+                id: "fontainebleau-forest",
+                kind: "forest",
+                totalKm: 7.5,
+                nonPavedKm: 6.2,
+                pavedKm: 0.8,
+                unknownSurfaceKm: 0.5,
+                distanceFromStartKm: 0.1,
+                confidence: "high",
+                entryNodeIds: ["a", "b"],
+                exitNodeIds: ["c"],
+              }],
+            },
+            quality: {
+              productionScore: 0.9,
+              loopClosureKm: 0.1,
+              busyRoadRatio: 0.01,
+              naturalWayRatio: 0.75,
+              pavedRatio: 0.2,
+              trailBeautyScore: 0.8,
+              longestTrailSegmentKm: 4,
+              naturalCorridorRatio: 0.7,
+              repeatEdgeRatio: 0,
+              uTurnRatio: 0,
+              terrainDataConfidence: "high",
+              trailPotential: "high",
+              routeTrailQuality: "high",
+              warnings: [],
+            },
+          },
+        }));
+      });
+    });
+
+    await new Promise<void>((resolveListen) => server.listen(0, "127.0.0.1", resolveListen));
+    const address = server.address();
+    if (address == null || typeof address === "string") throw new Error("Expected local test server port");
+
+    try {
+      await execFileAsync(
+        nodeBin,
+        [
+          "scripts/run-route-benchmarks.mjs",
+          "--case",
+          "fontainebleau-trail-15k",
+          "--save-artifacts",
+          "--output",
+          output,
+          "--artifact-dir",
+          artifactDir,
+        ],
+        {
+          cwd: repoRoot,
+          env: {
+            ...process.env,
+            ROUTE_BENCHMARK_BASE_URL: `http://127.0.0.1:${address.port}`,
+          },
+        }
+      );
+    } finally {
+      await new Promise<void>((resolveClose, rejectClose) => {
+        server.close((error) => error ? rejectClose(error) : resolveClose());
+      });
+    }
+
+    expect(receivedBodies[0]).toMatchObject({
+      includeEdgeDiagnostics: true,
+      includeGenerationDiagnostics: true,
+    });
+    const report = JSON.parse(readFileSync(output, "utf8"));
+    expect(report.results[0].routeArtifacts).toMatchObject({
+      routeJson: expect.stringContaining("fontainebleau-trail-15k.json"),
+      terrainOpportunityReportJson: expect.stringContaining("fontainebleau-trail-15k.terrain-opportunity.json"),
+    });
+    const artifact = JSON.parse(readFileSync(join(artifactDir, "fontainebleau-trail-15k.terrain-opportunity.json"), "utf8"));
+    expect(artifact).toMatchObject({
+      observationOnly: true,
+      scoringBehaviorChanged: false,
+      caseId: "fontainebleau-trail-15k",
+      strategy: { routeIntentType: "forest_loop", targetComponents: ["fontainebleau-forest"] },
+      bestAvailable: { realisticOutcome: "generated", maxNaturalDwellKm: 6.375 },
+    });
+  });
+
   it("keeps metric-only regressions neutral without --strict", () => {
     const dir = mkdtempSync(join(tmpdir(), "route-benchmark-compare-"));
     const before = join(dir, "before.json");
