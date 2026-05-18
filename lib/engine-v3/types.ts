@@ -178,11 +178,20 @@ export interface RouteAssemblyTargetComponentHandoffDiagnosticsV3 {
 
 export interface RouteAssemblyTargetComponentCandidateDiagnosticsV3 {
   rank: number;
+  componentId: string;
+  selected: boolean;
+  rejectedReason: string | null;
   entryNodeId: string;
   entryDistanceKm: number;
   targetComponentKinds: TerrainComponentKindV3[];
   reachableTargetKm: number;
   cleanExploitableKm: number;
+  componentTargetKmRaw?: number;
+  componentTargetKmFinal?: number;
+  targetDistanceKm?: number;
+  minDistanceKm?: number;
+  maxDistanceKm?: number;
+  usedEdgeKeyCount?: number;
   traversalInputNodeCount: number;
   traversalInputEdgeCount: number;
   traversalResult: {

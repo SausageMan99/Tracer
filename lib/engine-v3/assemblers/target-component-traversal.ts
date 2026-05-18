@@ -51,6 +51,10 @@ export interface TargetComponentTraversalDiagnosticsV3 {
   reachableTargetKm: number;
   exploitableTargetKm: number;
   unusedTargetKm: number;
+  targetDistanceKm: number;
+  closureDistanceKm: number;
+  minDistanceKm: number;
+  maxDistanceKm: number;
   blocker: 'no_reachable_target_component' | 'branch_repeat_limited' | 'insufficient_clean_capacity' | 'no_clean_closure';
   bestPartialDistanceKm: number;
 }
@@ -75,6 +79,10 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
         reachableTargetKm: 0,
         exploitableTargetKm: 0,
         unusedTargetKm: 0,
+        targetDistanceKm: 0,
+        closureDistanceKm: 0,
+        minDistanceKm: round(minDistanceKm),
+        maxDistanceKm: round(maxDistanceKm),
         blocker: 'no_reachable_target_component',
         bestPartialDistanceKm: 0,
       },
@@ -88,14 +96,17 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
   );
   const pathToCore = shortestTargetPathToAnyEdge(input.entryNodeId, coreEdgeIds, adjacency, targetComponents);
   const entryToCoreEdgeIds = new Set(pathToCore.map((edge) => edge.edge.id));
-  const exploitableEdgeIds = new Set([...Array.from(coreEdgeIds), ...Array.from(entryToCoreEdgeIds)]);
+  const coreStartNodeId = pathToCore.at(-1)?.to ?? input.entryNodeId;
+  const reachableCoreEdgeIds = reachableCoreEdgesFrom(coreStartNodeId, coreEdgeIds, adjacency, targetComponents);
+  const exploitableEdgeIds = new Set([...Array.from(reachableCoreEdgeIds), ...Array.from(entryToCoreEdgeIds)]);
   const exploitableTargetKm = sumEdgeLengths(exploitableEdgeIds, targetEdges);
 
-  const targetTraversal = buildCleanTargetWalk(input.entryNodeId, pathToCore, coreEdgeIds, adjacency, targetComponents);
+  const targetTraversal = buildCleanTargetWalk(input.entryNodeId, pathToCore, reachableCoreEdgeIds, adjacency, targetComponents);
   const targetDistanceKm = sumDirectedLengths(targetTraversal);
   const repeatedTargetKm = repeatedKm(targetTraversal.filter((edge) => targetComponents.has(edge.kind)));
   const targetEndpoint = targetTraversal.at(-1)?.to ?? input.entryNodeId;
   const closure = shortestConnectorClosure(targetEndpoint, input.startNodeId, adjacency, targetComponents, new Set(targetTraversal.map((edge) => edge.edge.id)), usedEdgeKeys, maxDistanceKm - targetDistanceKm);
+  const closureDistanceKm = sumDirectedLengths(closure);
   const totalDistanceKm = targetDistanceKm + sumDirectedLengths(closure);
   const fallbackPartialDistanceKm = targetTraversal.length > 0
     ? totalDistanceKm
@@ -110,6 +121,10 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
     reachableTargetKm: round(reachableTargetKm),
     exploitableTargetKm: round(exploitableTargetKm),
     unusedTargetKm: round(Math.max(0, reachableTargetKm - targetDistanceKm)),
+    targetDistanceKm: round(targetDistanceKm),
+    closureDistanceKm: round(closureDistanceKm),
+    minDistanceKm: round(minDistanceKm),
+    maxDistanceKm: round(maxDistanceKm),
     blocker,
     bestPartialDistanceKm,
   };
@@ -186,6 +201,31 @@ function buildCleanTargetWalk(
   return traversal;
 }
 
+function reachableCoreEdgesFrom(
+  startNodeId: string,
+  coreEdgeIds: Set<string>,
+  adjacency: Map<string, DirectedTraversalEdgeV3[]>,
+  targetComponents: Set<TerrainComponentKindV3>,
+): Set<string> {
+  const reachableEdgeIds = new Set<string>();
+  const seenNodeIds = new Set<string>();
+  const pending = [startNodeId];
+
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current || seenNodeIds.has(current)) continue;
+    seenNodeIds.add(current);
+
+    for (const edge of adjacency.get(current) ?? []) {
+      if (!coreEdgeIds.has(edge.edge.id) || !targetComponents.has(edge.kind)) continue;
+      reachableEdgeIds.add(edge.edge.id);
+      if (!seenNodeIds.has(edge.to)) pending.push(edge.to);
+    }
+  }
+
+  return reachableEdgeIds;
+}
+
 function shortestPathToUnusedCoreEdge(
   startNodeId: string,
   used: Set<string>,
@@ -224,6 +264,13 @@ function shortestConnectorClosure(
   usedConnectorEdgeIds: Set<string>,
   maxDistanceKm: number,
 ): DirectedTraversalEdgeV3[] {
+  const cleanConnectorClosure = shortestPath(fromNodeId, startNodeId, adjacency, (edge, traversal) => {
+    if (sumDirectedLengths(traversal) + edgeLength(edge) > maxDistanceKm + 0.001) return false;
+    if (targetComponents.has(edge.kind)) return !usedTargetEdgeIds.has(edge.edge.id);
+    return !usedConnectorEdgeIds.has(edge.edge.id);
+  });
+  if (cleanConnectorClosure.length > 0) return cleanConnectorClosure;
+
   return shortestPath(fromNodeId, startNodeId, adjacency, (edge, traversal) => {
     if (sumDirectedLengths(traversal) + edgeLength(edge) > maxDistanceKm + 0.001) return false;
     if (targetComponents.has(edge.kind)) return !usedTargetEdgeIds.has(edge.edge.id);

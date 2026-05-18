@@ -345,6 +345,42 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(Math.max(0, ...frontierTrace.map((step) => step.maxNaturalDwellKm))).toBeGreaterThan(5.4);
   });
 
+  it('selects a deeper exploitable target component when a nearer pocket has only branchy raw capacity', () => {
+    const targetKm = 6;
+    const nearBranchPocket = Array.from({ length: 80 }, (_, index) =>
+      edge(`near-pocket-tooth-${index + 1}`, 'near-pocket', `near-leaf-${index + 1}`, 0.04, 'ground', 'path', null),
+    );
+    const deepLoop = [
+      edge('deep-loop-1', 'deep0', 'deep1', 1.1, 'dirt', 'track', null),
+      edge('deep-loop-2', 'deep1', 'deep2', 1.1, 'dirt', 'path', null),
+      edge('deep-loop-3', 'deep2', 'deep3', 1.1, 'dirt', 'track', null),
+      edge('deep-loop-4', 'deep3', 'deep0', 1.1, 'dirt', 'path', null),
+    ];
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('near-access', 's', 'near-pocket', 0.05, 'asphalt', 'residential', 'urban'),
+        ...nearBranchPocket,
+        edge('deep-access-out', 's', 'deep0', 0.9, 'asphalt', 'residential', 'urban'),
+        ...deepLoop,
+        edge('deep-access-back', 'deep0', 's', 0.9, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    const handoff = route.assemblyDiagnostics?.targetComponentHandoff;
+    expect(handoff?.componentCandidateCount).toBeGreaterThanOrEqual(2);
+    expect(handoff?.componentCandidates.some((candidate) => candidate.entryNodeId === 'near-pocket')).toBe(true);
+    expect(handoff?.componentCandidates.some((candidate) => candidate.entryNodeId === 'deep0')).toBe(true);
+    expect(handoff?.componentCandidates.find((candidate) => candidate.entryNodeId === 'near-pocket')?.traversalResult.blocker).toBe('branch_repeat_limited');
+    expect(handoff?.componentCandidates.find((candidate) => candidate.entryNodeId === 'deep0')?.traversalResult.status).toBe('success');
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.7);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+    expect(route.edges.map((candidate) => candidate.id)).toContain('deep-loop-1');
+    expect(route.edges.map((candidate) => candidate.id)).not.toContain('near-pocket-tooth-1');
+  });
+
   it('does not repeat target-field edges when a clean connector can preserve natural access', () => {
     const targetKm = 6;
     const route = assembleGraphRouteV3(
@@ -564,6 +600,52 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       'mission-natural-return',
       'mission-paved-access-back',
     ]);
+  });
+
+  it('surfaces a returned under-target natural-majority route as adjusted only when product gates allow it', () => {
+    const targetKm = 8;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('adjusted-paved-access-out', 's', 'a', 0.3, 'asphalt', 'residential', 'urban'),
+        edge('adjusted-natural-1', 'a', 'b', 1.3, 'ground', 'path', null),
+        edge('adjusted-natural-2', 'b', 'c', 1.3, 'ground', 'track', null),
+        edge('adjusted-natural-3', 'c', 'd', 1.3, 'gravel', 'path', null),
+        edge('adjusted-natural-return', 'd', 'a', 1.3, 'ground', 'track', null),
+        edge('adjusted-paved-access-back', 'a', 's', 0.3, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+    const outcome = decideOutcomeV3(intent(targetKm, ['field_paths']), route);
+
+    expect(route.nodeIds[0]).toBe('s');
+    expect(route.nodeIds.at(-1)).toBe('s');
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.7);
+    expect(route.metrics.distanceProducedKm).toBeLessThan(targetKm);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+    expect(route.metrics.pavedRatio).toBeLessThan(0.35);
+    expect(outcome.type).toBe('adjusted');
+  });
+
+  it('refuses a returned under-distance candidate when target repeat is excessive', () => {
+    const targetKm = 8;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('repeat-access-out', 's', 'a', 0.2, 'asphalt', 'residential', 'urban'),
+        edge('repeat-target-out', 'a', 'b', 1.2, 'ground', 'path', null),
+        edge('repeat-target-back', 'b', 'a', 1.2, 'ground', 'path', null),
+        edge('repeat-target-out-2', 'a', 'b', 1.2, 'ground', 'track', null),
+        edge('repeat-target-back-2', 'b', 'a', 1.2, 'ground', 'track', null),
+        edge('repeat-access-back', 'a', 's', 0.2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+    const outcome = decideOutcomeV3(intent(targetKm, ['field_paths']), route);
+
+    expect(outcome.type).toBe('refused');
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
   });
 
   it('P0 mission assembler: refuses impossible distance with an empty route instead of exposing a mini-route as final output', () => {

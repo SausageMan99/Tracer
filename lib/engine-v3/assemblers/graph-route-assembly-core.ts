@@ -13,6 +13,8 @@ import type {
   RouteSurfaceV3,
   TerrainComponentKindV3,
 } from '../types';
+import { solveComponentLoopV3 } from './component-loop-solver';
+import type { ComponentLoopSolverDiagnosticsV3 } from './component-loop-solver';
 import { buildTargetComponentTraversal } from './target-component-traversal';
 
 const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
@@ -181,6 +183,17 @@ function assembleGraphCandidates(
   return { candidates: allCandidates, frontierTrace, targetComponentHandoff: primitiveSearch.handoff };
 }
 
+interface TargetComponentCandidateV3 {
+  componentId: string;
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+  reachableTargetKm: number;
+  naturalTargetKm: number;
+  accessTraversal: TraversalEdgeV3[];
+  entryNodeId: string;
+  primitive: ReturnType<typeof buildTargetComponentTraversal>;
+}
+
 function buildTargetTraversalCandidates(
   startNodeId: string,
   intent: RouteIntentV3,
@@ -190,18 +203,95 @@ function buildTargetTraversalCandidates(
   options: GraphAssemblyOptionsV3,
 ): { candidates: GraphCandidateStateV3[]; handoff?: RouteAssemblyTargetComponentHandoffDiagnosticsV3 } {
   if (options.mode !== 'transition_to_woods') return { candidates: [] };
-  const initialTraversals = traversalsToNonPavedTargetSeeds(startNodeId, adjacency, intent, mission, options).slice(0, 24);
+  const componentLoop = solveComponentLoopV3({
+    graph,
+    startNodeId,
+    targetComponentIds: intent.constraints.targetComponents,
+    targetDistanceKm: intent.constraints.targetDistanceKm,
+    requestedNaturalDwellKm: requestedNaturalDwellKm(intent, mission),
+  });
+  const componentCandidates = targetComponentCandidatesFromGraph(startNodeId, intent, mission, graph, adjacency);
+  const rankedCandidates = rankTargetComponentCandidates(componentCandidates, intent, mission);
+  const selectedCandidate = rankedCandidates[0] ?? null;
+  const selectedComponentId = selectedCandidate?.componentId ?? null;
   const states: GraphCandidateStateV3[] = [];
-  const componentCandidates: RouteAssemblyTargetComponentCandidateDiagnosticsV3[] = [];
 
-  for (let index = 0; index < initialTraversals.length; index += 1) {
-    const initialTraversal = initialTraversals[index];
-    const firstTargetIndex = initialTraversal.findIndex((edge) => intent.constraints.targetComponents.includes(edge.kind) && edge.surface !== 'paved');
-    if (firstTargetIndex < 0) continue;
-    const prefix = initialTraversal.slice(0, firstTargetIndex);
-    const entryNodeId = initialTraversal[firstTargetIndex].from;
-    const inputStats = targetTraversalInputStats(entryNodeId, adjacency, intent);
-    const primitive = buildTargetComponentTraversal({
+  if (componentLoop.edgeIds.length > 0) {
+    const loopTraversal = traversalFromStartAndEdgeIds(startNodeId, componentLoop.edgeIds, adjacency);
+    const hasPartialEvidence = componentLoop.metrics.distanceKm >= intent.constraints.targetDistanceKm * 0.55 &&
+      componentLoop.metrics.naturalDwellKm + 0.001 >= requestedNaturalDwellKm(intent, mission) * 0.8;
+    if (loopTraversal.length > 0 && (componentLoop.status === 'success' || hasPartialEvidence)) {
+      const loopState = stateFromTraversal(startNodeId, loopTraversal, intent);
+      loopState.naturalDwellKm = Math.max(loopState.naturalDwellKm, componentLoop.metrics.naturalDwellKm);
+      if (componentLoop.metrics.targetRepeatKm <= 0.5 + 0.001) states.push(loopState);
+    }
+  }
+
+  for (const candidate of rankedCandidates.slice(0, 12)) {
+    if (candidate.primitive.status !== 'success') continue;
+    const primitiveTraversal = traversalFromNodeAndEdgeIds(candidate.entryNodeId, candidate.primitive.nodeIds, candidate.primitive.edgeIds, adjacency);
+    if (primitiveTraversal.length === 0) continue;
+    states.push(stateFromTraversal(startNodeId, [...candidate.accessTraversal, ...primitiveTraversal], intent));
+  }
+
+  const diagnosticCandidates = rankedCandidates.map((candidate, index) => targetComponentCandidateDiagnostics(
+    index + 1,
+    candidate,
+    selectedComponentId === candidate.componentId,
+    selectedComponentId === candidate.componentId ? null : targetComponentRejectionReason(candidate, selectedCandidate, mission, intent),
+    intent,
+  ));
+
+  const handoff: RouteAssemblyTargetComponentHandoffDiagnosticsV3 = {
+    selectedTargetComponentIds: [...intent.constraints.targetComponents],
+    targetComponentKinds: [...intent.constraints.targetComponents],
+    componentCandidateCount: rankedCandidates.length,
+    componentCandidates: diagnosticCandidates.slice(0, 24),
+    blocker: targetComponentHandoffBlocker(diagnosticCandidates, states),
+  };
+  (handoff as RouteAssemblyTargetComponentHandoffDiagnosticsV3 & { componentLoopSolver: ComponentLoopSolverDiagnosticsV3 }).componentLoopSolver = componentLoop.diagnostics;
+
+  return { candidates: uniqueByCandidateKey(states), handoff };
+}
+
+function targetComponentCandidatesFromGraph(
+  startNodeId: string,
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+  graph: EnrichedGraph,
+  adjacency: Map<string, TraversalEdgeV3[]>,
+): TargetComponentCandidateV3[] {
+  const components = targetComponentsFromGraph(adjacency, intent);
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  const maxAccessKm = Math.max(3, intent.constraints.targetDistanceKm * 0.5);
+  const preliminary = components
+    .map((component, index) => {
+      const accessTraversal = shortestAccessTraversalToComponent(startNodeId, component.nodeIds, adjacency);
+      if (!accessTraversal && !component.nodeIds.has(startNodeId)) return null;
+      const prefix = accessTraversal ?? [];
+      const entryNodeId = prefix.at(-1)?.to ?? startNodeId;
+      const accessDistanceKm = prefix.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0);
+      if (accessDistanceKm > maxAccessKm + 0.001 && component.reachableTargetKm < requestedDwellKm * 2) return null;
+      return { component, index, accessTraversal: prefix, entryNodeId, accessDistanceKm };
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== null)
+    .sort((a, b) => {
+      const aViable = a.component.reachableTargetKm + 0.001 >= requestedDwellKm ? 1 : 0;
+      const bViable = b.component.reachableTargetKm + 0.001 >= requestedDwellKm ? 1 : 0;
+      if (aViable !== bViable) return bViable - aViable;
+      return b.component.reachableTargetKm - a.component.reachableTargetKm || a.accessDistanceKm - b.accessDistanceKm;
+    })
+    .slice(0, 64);
+
+  return preliminary.map(({ component, index, accessTraversal, entryNodeId }) => ({
+    componentId: `target-component-${index + 1}`,
+    nodeIds: component.nodeIds,
+    edgeIds: component.edgeIds,
+    reachableTargetKm: component.reachableTargetKm,
+    naturalTargetKm: component.naturalTargetKm,
+    accessTraversal,
+    entryNodeId,
+    primitive: buildTargetComponentTraversal({
       graph,
       startNodeId,
       entryNodeId,
@@ -209,58 +299,44 @@ function buildTargetTraversalCandidates(
       targetDistanceKm: intent.constraints.targetDistanceKm,
       minDistanceRatio: 0.7,
       maxDistanceRatio: 1.15,
-      usedEdgeKeys: new Set(prefix.map((edge) => edge.edge.id)),
+      usedEdgeKeys: new Set(accessTraversal.map((edge) => edge.edge.id)),
       forbidTargetRepeat: true,
-    });
-    componentCandidates.push(targetComponentCandidateDiagnostics(
-      index + 1,
-      entryNodeId,
-      prefix,
-      inputStats,
-      intent,
-      primitive,
-    ));
-    if (primitive.status !== 'success') continue;
-    const primitiveTraversal = traversalFromNodeAndEdgeIds(entryNodeId, primitive.nodeIds, primitive.edgeIds, adjacency);
-    if (primitiveTraversal.length === 0) continue;
-    states.push(stateFromTraversal(startNodeId, [...prefix, ...primitiveTraversal], intent));
-  }
-
-  const handoff: RouteAssemblyTargetComponentHandoffDiagnosticsV3 = {
-    selectedTargetComponentIds: [...intent.constraints.targetComponents],
-    targetComponentKinds: [...intent.constraints.targetComponents],
-    componentCandidateCount: componentCandidates.length,
-    componentCandidates: componentCandidates.slice(0, 24),
-    blocker: targetComponentHandoffBlocker(componentCandidates, states),
-  };
-
-  return { candidates: uniqueByCandidateKey(states), handoff };
+    }),
+  }));
 }
 
 function targetComponentCandidateDiagnostics(
   rank: number,
-  entryNodeId: string,
-  prefix: TraversalEdgeV3[],
-  inputStats: { nodeCount: number; edgeCount: number },
+  candidate: TargetComponentCandidateV3,
+  selected: boolean,
+  rejectedReason: string | null,
   intent: RouteIntentV3,
-  primitive: ReturnType<typeof buildTargetComponentTraversal>,
 ): RouteAssemblyTargetComponentCandidateDiagnosticsV3 {
-  const success = primitive.status === 'success' ? primitive : null;
+  const success = candidate.primitive.status === 'success' ? candidate.primitive : null;
   return {
     rank,
-    entryNodeId,
-    entryDistanceKm: round(prefix.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0)),
+    componentId: candidate.componentId,
+    selected,
+    rejectedReason,
+    entryNodeId: candidate.entryNodeId,
+    entryDistanceKm: round(candidate.accessTraversal.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0)),
     targetComponentKinds: [...intent.constraints.targetComponents],
-    reachableTargetKm: primitive.diagnostics.reachableTargetKm,
-    cleanExploitableKm: primitive.diagnostics.exploitableTargetKm,
-    traversalInputNodeCount: inputStats.nodeCount,
-    traversalInputEdgeCount: inputStats.edgeCount,
+    reachableTargetKm: candidate.primitive.diagnostics.reachableTargetKm,
+    cleanExploitableKm: candidate.primitive.diagnostics.exploitableTargetKm,
+    componentTargetKmRaw: candidate.primitive.diagnostics.reachableTargetKm,
+    componentTargetKmFinal: candidate.primitive.diagnostics.exploitableTargetKm,
+    targetDistanceKm: candidate.primitive.diagnostics.targetDistanceKm,
+    minDistanceKm: candidate.primitive.diagnostics.minDistanceKm,
+    maxDistanceKm: candidate.primitive.diagnostics.maxDistanceKm,
+    usedEdgeKeyCount: candidate.accessTraversal.length,
+    traversalInputNodeCount: candidate.nodeIds.size,
+    traversalInputEdgeCount: candidate.edgeIds.size,
     traversalResult: {
-      status: primitive.status,
-      distanceKm: success?.distanceKm ?? primitive.diagnostics.bestPartialDistanceKm,
-      targetKm: success?.targetKm ?? 0,
+      status: candidate.primitive.status,
+      distanceKm: success?.distanceKm ?? candidate.primitive.diagnostics.bestPartialDistanceKm,
+      targetKm: success?.targetKm ?? candidate.primitive.diagnostics.targetDistanceKm,
       repeatedTargetKm: success?.repeatedTargetKm ?? 0,
-      blocker: primitive.status === 'failure' ? primitive.diagnostics.blocker : null,
+      blocker: candidate.primitive.status === 'failure' ? candidate.primitive.diagnostics.blocker : null,
     },
     closureAttempt: success
       ? {
@@ -270,7 +346,7 @@ function targetComponentCandidateDiagnostics(
           targetRepeatKm: success.closure.targetRepeatKm,
         }
       : {
-          status: primitive.diagnostics.blocker === 'no_clean_closure' ? 'failure' : 'not_attempted',
+          status: candidate.primitive.diagnostics.blocker === 'no_clean_closure' ? 'failure' : 'not_attempted',
           closureDistanceKm: 0,
           connectorRepeatKm: 0,
           targetRepeatKm: 0,
@@ -278,27 +354,134 @@ function targetComponentCandidateDiagnostics(
   };
 }
 
-function targetTraversalInputStats(
-  entryNodeId: string,
+interface TargetComponentGraphComponentV3 {
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+  reachableTargetKm: number;
+  naturalTargetKm: number;
+}
+
+function targetComponentsFromGraph(
   adjacency: Map<string, TraversalEdgeV3[]>,
   intent: RouteIntentV3,
-): { nodeCount: number; edgeCount: number } {
-  const pending = [entryNodeId];
-  const seenNodes = new Set<string>();
+): TargetComponentGraphComponentV3[] {
   const seenEdges = new Set<string>();
+  const components: TargetComponentGraphComponentV3[] = [];
 
-  while (pending.length > 0 && seenNodes.size < 5000) {
-    const current = pending.shift();
-    if (!current || seenNodes.has(current)) continue;
-    seenNodes.add(current);
-    for (const edge of adjacency.get(current) ?? []) {
-      if (!intent.constraints.targetComponents.includes(edge.kind) || edge.surface === 'paved') continue;
-      seenEdges.add(edge.edge.id);
-      if (!seenNodes.has(edge.to)) pending.push(edge.to);
+  for (const edges of Array.from(adjacency.values())) {
+    for (const seed of edges) {
+      if (seenEdges.has(seed.edge.id) || !isTargetComponentTraversalEdge(seed, intent)) continue;
+      const pending = [seed.from, seed.to];
+      const nodeIds = new Set<string>();
+      const edgeIds = new Set<string>();
+      let reachableTargetKm = 0;
+      let naturalTargetKm = 0;
+
+      while (pending.length > 0) {
+        const current = pending.shift();
+        if (!current || nodeIds.has(current)) continue;
+        nodeIds.add(current);
+        for (const edge of adjacency.get(current) ?? []) {
+          if (!isTargetComponentTraversalEdge(edge, intent)) continue;
+          if (!edgeIds.has(edge.edge.id)) {
+            edgeIds.add(edge.edge.id);
+            seenEdges.add(edge.edge.id);
+            const lengthKm = Math.max(0, edge.edge.lengthKm);
+            reachableTargetKm += lengthKm;
+            if (edge.surface === 'natural') naturalTargetKm += lengthKm;
+          }
+          if (!nodeIds.has(edge.to)) pending.push(edge.to);
+        }
+      }
+
+      components.push({
+        nodeIds,
+        edgeIds,
+        reachableTargetKm: round(reachableTargetKm),
+        naturalTargetKm: round(naturalTargetKm),
+      });
     }
   }
 
-  return { nodeCount: seenNodes.size, edgeCount: seenEdges.size };
+  return components;
+}
+
+function isTargetComponentTraversalEdge(edge: TraversalEdgeV3, intent: RouteIntentV3): boolean {
+  return intent.constraints.targetComponents.includes(edge.kind) && edge.surface !== 'paved';
+}
+
+function shortestAccessTraversalToComponent(
+  startNodeId: string,
+  componentNodeIds: Set<string>,
+  adjacency: Map<string, TraversalEdgeV3[]>,
+): TraversalEdgeV3[] | null {
+  if (componentNodeIds.has(startNodeId)) return [];
+  const bestCosts = new Map<string, number>([[startNodeId, 0]]);
+  const pending: Array<{ nodeId: string; distanceKm: number; cost: number; traversal: TraversalEdgeV3[] }> = [
+    { nodeId: startNodeId, distanceKm: 0, cost: 0, traversal: [] },
+  ];
+
+  while (pending.length > 0) {
+    const current = pending.sort((a, b) => a.cost - b.cost || a.distanceKm - b.distanceKm).shift();
+    if (!current) break;
+    if (componentNodeIds.has(current.nodeId) && current.traversal.length > 0) return current.traversal;
+    if (current.cost > (bestCosts.get(current.nodeId) ?? Number.POSITIVE_INFINITY) + 0.000001) continue;
+
+    for (const edge of adjacency.get(current.nodeId) ?? []) {
+      const nextDistanceKm = current.distanceKm + Math.max(0, edge.edge.lengthKm);
+      const nextCost = current.cost + weightedConnectorCost(edge);
+      if (nextCost + 0.000001 >= (bestCosts.get(edge.to) ?? Number.POSITIVE_INFINITY)) continue;
+      bestCosts.set(edge.to, nextCost);
+      pending.push({ nodeId: edge.to, distanceKm: nextDistanceKm, cost: nextCost, traversal: [...current.traversal, edge] });
+    }
+  }
+
+  return null;
+}
+
+function rankTargetComponentCandidates(
+  candidates: TargetComponentCandidateV3[],
+  intent: RouteIntentV3,
+  mission: CorridorMissionV3,
+): TargetComponentCandidateV3[] {
+  const requestedDwellKm = requestedNaturalDwellKm(intent, mission);
+  return [...candidates].sort((a, b) => {
+    const aSuccess = a.primitive.status === 'success' ? 1 : 0;
+    const bSuccess = b.primitive.status === 'success' ? 1 : 0;
+    if (aSuccess !== bSuccess) return bSuccess - aSuccess;
+
+    const aCleanViable = a.primitive.diagnostics.exploitableTargetKm + 0.001 >= requestedDwellKm ? 1 : 0;
+    const bCleanViable = b.primitive.diagnostics.exploitableTargetKm + 0.001 >= requestedDwellKm ? 1 : 0;
+    if (aCleanViable !== bCleanViable) return bCleanViable - aCleanViable;
+
+    const cleanDelta = b.primitive.diagnostics.exploitableTargetKm - a.primitive.diagnostics.exploitableTargetKm;
+    if (Math.abs(cleanDelta) > 0.001) return cleanDelta;
+
+    const naturalDelta = b.naturalTargetKm - a.naturalTargetKm;
+    if (Math.abs(naturalDelta) > 0.001) return naturalDelta;
+
+    const accessDelta = accessDistanceKm(a) - accessDistanceKm(b);
+    if (Math.abs(accessDelta) > 0.001) return accessDelta;
+
+    return b.reachableTargetKm - a.reachableTargetKm;
+  });
+}
+
+function targetComponentRejectionReason(
+  candidate: TargetComponentCandidateV3,
+  selectedCandidate: TargetComponentCandidateV3 | null,
+  mission: CorridorMissionV3,
+  intent: RouteIntentV3,
+): string | null {
+  if (candidate.primitive.status === 'failure') return candidate.primitive.diagnostics.blocker;
+  if (!selectedCandidate) return null;
+  if (candidate.primitive.diagnostics.exploitableTargetKm < requestedNaturalDwellKm(intent, mission)) return 'lower_clean_exploitable_capacity';
+  if (accessDistanceKm(candidate) > accessDistanceKm(selectedCandidate) + 0.001) return 'higher_access_cost';
+  return 'lower_ranked_component';
+}
+
+function accessDistanceKm(candidate: TargetComponentCandidateV3): number {
+  return candidate.accessTraversal.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0);
 }
 
 function targetComponentHandoffBlocker(
@@ -324,6 +507,22 @@ function traversalFromNodeAndEdgeIds(
     const edge = (adjacency.get(from) ?? []).find((candidate) => candidate.edge.id === edgeIds[index] && candidate.to === to);
     if (!edge) return [];
     traversal.push(edge);
+  }
+  return traversal;
+}
+
+function traversalFromStartAndEdgeIds(
+  startNodeId: string,
+  edgeIds: string[],
+  adjacency: Map<string, TraversalEdgeV3[]>,
+): TraversalEdgeV3[] {
+  const traversal: TraversalEdgeV3[] = [];
+  let current = startNodeId;
+  for (const edgeId of edgeIds) {
+    const edge = (adjacency.get(current) ?? []).find((candidate) => candidate.edge.id === edgeId);
+    if (!edge) return [];
+    traversal.push(edge);
+    current = edge.to;
   }
   return traversal;
 }
@@ -386,7 +585,7 @@ function shortestCleanReturnTraversal(
       if (nextDistanceKm > maxAdditionalKm + 0.001) continue;
       if (!canAppendCleanReturnEdge(edge, seed, current.usedEdgeCounts, intent, startNodeId)) continue;
       const repeatPenaltyKm = (current.usedEdgeCounts.get(edge.edge.id) ?? 0) > 0 ? Math.max(0.5, edgeLengthKm * 4) : 0;
-      const nextCost = current.cost + edgeLengthKm + repeatPenaltyKm;
+      const nextCost = current.cost + weightedConnectorCost(edge) + repeatPenaltyKm;
       if (nextCost + 0.000001 >= (bestCosts.get(edge.to) ?? Number.POSITIVE_INFINITY)) continue;
       const usedEdgeCounts = new Map(current.usedEdgeCounts);
       usedEdgeCounts.set(edge.edge.id, (usedEdgeCounts.get(edge.edge.id) ?? 0) + 1);
@@ -514,6 +713,23 @@ function selectBestCandidate(
   );
   const productValidCandidates = options.requireNaturalDwell ? viableReturnedWithDwell : viableReturnedCandidates;
   if (productValidCandidates.length === 0) {
+    const adjustedEvidenceCandidates = candidates.filter(
+      (candidate) =>
+        options.mode === 'transition_to_woods' &&
+        candidate.current === startNodeId &&
+        candidate.traversal.length > 0 &&
+        candidate.distanceKm >= targetDistanceKm * 0.55 &&
+        candidate.distanceKm <= targetDistanceKm * 1.15 &&
+        candidate.naturalDwellKm + 0.001 >= requestedDwellKm * 0.4 &&
+        targetRepeatWithinAdjustedEvidence(candidate, intent),
+    );
+    if (adjustedEvidenceCandidates.length > 0) {
+      const adjustedPool = preferLowRepeatCandidates(adjustedEvidenceCandidates, true, intent, mission);
+      const adjustedSelected = [...adjustedPool].sort(
+        (a, b) => scoreProgressCandidate(b, startNodeId, intent, mission, options) - scoreProgressCandidate(a, startNodeId, intent, mission, options),
+      )[0];
+      return { selected: adjustedSelected ?? null, selectionPool: adjustedPool };
+    }
     return { selected: null, selectionPool: candidates };
   }
 
@@ -974,6 +1190,13 @@ function pavedKm(state: GraphCandidateStateV3): number {
   return state.traversal.reduce((total, edge) => total + (edge.surface === 'paved' ? Math.max(0, edge.edge.lengthKm) : 0), 0);
 }
 
+function weightedConnectorCost(edge: TraversalEdgeV3): number {
+  const lengthKm = Math.max(0, edge.edge.lengthKm);
+  if (edge.surface === 'paved') return lengthKm * 3.5;
+  if (edge.surface === 'mixed') return lengthKm * 1.35;
+  return lengthKm * 0.85;
+}
+
 function repeatRatio(state: GraphCandidateStateV3): number {
   return repeatKm(state) / Math.max(0.001, state.distanceKm);
 }
@@ -984,6 +1207,12 @@ function damagingRepeatRatio(state: GraphCandidateStateV3, intent: RouteIntentV3
 
 function damagingRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
   return targetRepeatKm(state, intent);
+}
+
+function targetRepeatWithinAdjustedEvidence(state: GraphCandidateStateV3, intent: RouteIntentV3): boolean {
+  const repeatedKm = targetRepeatKm(state, intent);
+  if (repeatedKm <= 0.001) return true;
+  return repeatedKm <= 0.5 && repeatedKm / Math.max(0.001, state.distanceKm) <= 0.08 && state.distanceKm < intent.constraints.targetDistanceKm * 0.7;
 }
 
 function targetRepeatKm(state: GraphCandidateStateV3, intent: RouteIntentV3): number {
