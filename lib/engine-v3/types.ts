@@ -165,6 +165,39 @@ export interface RouteAssemblyDiagnosticsV3 {
   reachableNonPavedTargetKm: number;
   frontierTrace?: RouteAssemblyFrontierStepDiagnosticsV3[];
   topFinalCandidates?: RouteAssemblyFinalCandidateDiagnosticsV3[];
+  targetComponentHandoff?: RouteAssemblyTargetComponentHandoffDiagnosticsV3;
+}
+
+export interface RouteAssemblyTargetComponentHandoffDiagnosticsV3 {
+  selectedTargetComponentIds: TerrainComponentKindV3[];
+  targetComponentKinds: TerrainComponentKindV3[];
+  componentCandidateCount: number;
+  componentCandidates: RouteAssemblyTargetComponentCandidateDiagnosticsV3[];
+  blocker: string | null;
+}
+
+export interface RouteAssemblyTargetComponentCandidateDiagnosticsV3 {
+  rank: number;
+  entryNodeId: string;
+  entryDistanceKm: number;
+  targetComponentKinds: TerrainComponentKindV3[];
+  reachableTargetKm: number;
+  cleanExploitableKm: number;
+  traversalInputNodeCount: number;
+  traversalInputEdgeCount: number;
+  traversalResult: {
+    status: 'success' | 'failure';
+    distanceKm: number;
+    targetKm: number;
+    repeatedTargetKm: number;
+    blocker: string | null;
+  };
+  closureAttempt: {
+    status: 'success' | 'failure' | 'not_attempted';
+    closureDistanceKm: number;
+    connectorRepeatKm: number;
+    targetRepeatKm: number;
+  };
 }
 
 export interface RouteAssemblyFinalCandidateDiagnosticsV3 {

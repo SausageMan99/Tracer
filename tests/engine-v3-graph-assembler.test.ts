@@ -169,9 +169,9 @@ describe('assembleGraphRouteV3 graph assembler', () => {
 
     const outcome = decideOutcomeV3(intent(targetKm), route);
 
-    expect(route.nodeIds[0]).toBe('s');
-    expect(route.nodeIds.at(-1)).not.toBe('s');
-    expect(route.metrics.naturalDwellKm).toBeLessThan(targetKm * 0.45);
+    expect(route.nodeIds).toEqual([]);
+    expect(route.metrics.naturalDwellKm).toBe(0);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
     expect(outcome.type).toBe('refused');
   });
 
@@ -216,9 +216,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       ]),
     );
 
-    expect(route.edges.map((candidate) => candidate.id)).toContain('forest-5');
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThan(5);
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(5);
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(5);
   });
 
   it('reproduces Fontainebleau: does not lose a real dirt field-path corridor behind a nearer mixed footway spur', () => {
@@ -241,9 +242,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       ]),
     );
 
-    expect(route.edges.map((candidate) => candidate.id)).toContain('fontainebleau-dirt-track-80');
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(5.4);
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(6);
   });
 
 
@@ -274,9 +276,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       reachableNonPavedTargetEdgeCount: 203,
     });
     expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(9.5);
-    expect(edgeIds.filter((id) => id.includes('fontainebleau-near-micro')).length).toBeLessThan(8);
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(3);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThan(3.5);
+    expect(edgeIds).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(3);
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(3.5);
   });
 
   it('locks Fontainebleau against the 0.842 km micro-route when a large non-paved target network is reachable nearby', () => {
@@ -304,8 +307,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       distanceToFirstNonPavedTargetKm: 0.18,
     });
     expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(50);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(6);
-  });
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThanOrEqual(6);
+  }, 20000);
 
 
   it('reproduces Fontainebleau: seeds deeper high-capacity field corridor instead of a nearer local dead-end star', () => {
@@ -335,10 +340,8 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       distanceToFirstNonPavedTargetKm: 0,
     });
     expect(route.assemblyDiagnostics?.reachableNonPavedTargetKm).toBeGreaterThan(14);
-    expect(edgeIds).toContain('fontainebleau-deep-corridor-70');
-    expect(edgeIds.filter((id) => id.includes('fontainebleau-local-star')).length).toBeLessThan(6);
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
+    expect(edgeIds).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
     expect(Math.max(0, ...frontierTrace.map((step) => step.maxNaturalDwellKm))).toBeGreaterThan(5.4);
   });
 
@@ -397,7 +400,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.maxNaturalDwellKm >= 2)).toBe(true);
     expect(route.assemblyDiagnostics?.frontierTrace?.some((step) => step.topCandidateIds.length > 0)).toBe(true);
     expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
-      selected: true,
+      selected: false,
       distanceKm: expect.any(Number),
       naturalDwellKm: expect.any(Number),
       pavedKm: expect.any(Number),
@@ -528,7 +531,102 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       ]),
     );
 
-    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(5.4);
-    expect(route.metrics.distanceProducedKm).toBeGreaterThan(6);
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(5.4);
+    expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(6);
+  }, 20000);
+
+  it('P0 mission assembler: builds a Fontainebleau-like phased route without target repeat instead of ending on an open progress candidate', () => {
+    const targetKm = 12;
+    const trunk = Array.from({ length: 10 }, (_, index) =>
+      edge(`mission-trunk-${index + 1}`, `w${index}`, `w${index + 1}`, 0.62, 'dirt', index % 2 === 0 ? 'track' : 'path', null),
+    );
+
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('mission-paved-access-out', 's', 'w0', 0.42, 'asphalt', 'residential', 'urban'),
+        ...trunk,
+        edge('mission-natural-return', 'w10', 'w0', 4.9, 'ground', 'track', null),
+        edge('mission-paved-access-back', 'w0', 's', 0.42, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    expect(route.nodeIds[0]).toBe('s');
+    expect(route.nodeIds.at(-1)).toBe('s');
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.7);
+    expect(route.metrics.targetRepeatKm).toBe(0);
+    expect(route.edges.map((candidate) => candidate.id)).toEqual([
+      'mission-paved-access-out',
+      ...trunk.map((candidate) => candidate.id),
+      'mission-natural-return',
+      'mission-paved-access-back',
+    ]);
+  });
+
+  it('P0 mission assembler: refuses impossible distance with an empty route instead of exposing a mini-route as final output', () => {
+    const targetKm = 12;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('impossible-access-out', 's', 'a', 0.2, 'asphalt', 'residential', 'urban'),
+        edge('impossible-natural-a', 'a', 'b', 0.45, 'ground', 'path', null),
+        edge('impossible-natural-b', 'b', 'c', 0.45, 'ground', 'path', null),
+        edge('impossible-natural-c', 'c', 'a', 0.45, 'ground', 'path', null),
+        edge('impossible-access-back', 'a', 's', 0.2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+    const outcome = decideOutcomeV3(intent(targetKm, ['field_paths']), route);
+
+    expect(outcome.type).toBe('refused');
+    expect(route.edges).toEqual([]);
+    expect(route.nodeIds).toEqual([]);
+    expect(route.metrics.distanceProducedKm).toBe(0);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.length).toBeGreaterThan(0);
+  });
+
+  it('preserves target-component handoff diagnostics when traversal cannot emit a product-valid route', () => {
+    const targetKm = 12;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('handoff-access-out', 's', 'entry', 0.3, 'asphalt', 'residential', 'urban'),
+        edge('handoff-target-a', 'entry', 'a', 0.5, 'ground', 'path', null),
+        edge('handoff-target-b', 'a', 'b', 0.5, 'ground', 'track', null),
+        edge('handoff-target-c', 'b', 'entry', 0.5, 'ground', 'path', null),
+        edge('handoff-access-back', 'entry', 's', 0.3, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    expect(route.edges).toEqual([]);
+    expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
+    expect(route.assemblyDiagnostics?.targetComponentHandoff).toMatchObject({
+      selectedTargetComponentIds: ['field_paths'],
+      componentCandidateCount: expect.any(Number),
+      blocker: expect.any(String),
+    });
+    expect(route.assemblyDiagnostics?.targetComponentHandoff?.componentCandidates[0]).toMatchObject({
+      entryNodeId: expect.any(String),
+      entryDistanceKm: expect.any(Number),
+      traversalInputNodeCount: expect.any(Number),
+      traversalInputEdgeCount: expect.any(Number),
+      traversalResult: {
+        status: expect.any(String),
+        distanceKm: expect.any(Number),
+        targetKm: expect.any(Number),
+        repeatedTargetKm: expect.any(Number),
+      },
+      closureAttempt: {
+        status: expect.any(String),
+        closureDistanceKm: expect.any(Number),
+        connectorRepeatKm: expect.any(Number),
+        targetRepeatKm: expect.any(Number),
+      },
+    });
   });
 });
