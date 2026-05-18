@@ -413,10 +413,19 @@ function canTraverse(
     return false;
   }
   if (usedCount >= 2) return false;
+  if (isTraversedTargetPair(edge, state, intent)) return false;
   if (isImmediateTargetBacktrack(edge, state, intent)) return false;
   if (usedCount > 0 && !shouldAllowRepeat(edge, state, startNodeId, intent, mission)) return false;
   if (state.traversal.length === 0 && edge.to === startNodeId) return false;
   return true;
+}
+
+function isTraversedTargetPair(edge: TraversalEdgeV3, state: GraphCandidateStateV3, intent: RouteIntentV3): boolean {
+  if (!intent.constraints.targetComponents.includes(edge.kind)) return false;
+  const pairKey = undirectedPairKey(edge);
+  return state.traversal.some(
+    (previous) => intent.constraints.targetComponents.includes(previous.kind) && undirectedPairKey(previous) === pairKey,
+  );
 }
 
 function isImmediateTargetBacktrack(edge: TraversalEdgeV3, state: GraphCandidateStateV3, intent: RouteIntentV3): boolean {

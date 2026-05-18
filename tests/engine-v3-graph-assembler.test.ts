@@ -448,6 +448,71 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     });
   });
 
+  it('never uses a new target edge to traverse a target pair already used earlier for distance recovery', () => {
+    const targetKm = 5.5;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('connector-out', 's', 'a', 0.2, 'asphalt', 'residential', 'urban'),
+        edge('target-ab-first', 'a', 'b', 1, 'ground', 'path', null),
+        edge('target-bc', 'b', 'c', 1, 'ground', 'path', null),
+        edge('target-ca', 'c', 'a', 1, 'ground', 'track', null),
+        edge('target-ab-repeat-different-osm-edge', 'a', 'b', 1, 'ground', 'track', null),
+        edge('connector-back-from-b', 'b', 's', 0.2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    const targetPairCounts = new Map<string, number>();
+    for (const candidate of route.edges.filter((edgeItem) => edgeItem.componentKind === 'field_paths')) {
+      const pairKey = [candidate.from, candidate.to].sort().join('::');
+      targetPairCounts.set(pairKey, (targetPairCounts.get(pairKey) ?? 0) + 1);
+    }
+
+    expect(route.edges.map((candidate) => candidate.id)).not.toContain('target-ab-repeat-different-osm-edge');
+    expect([...targetPairCounts.values()].filter((count) => count > 1)).toEqual([]);
+    expect(route.metrics.targetRepeatKm).toBe(0);
+  });
+
+  it('recovers distance through lateral target alternatives instead of reverse-traversing target pairs', () => {
+    const targetKm = 5.5;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('connector-out', 's', 'a', 0.2, 'asphalt', 'residential', 'urban'),
+        edge('target-entry', 'a', 'b', 1, 'ground', 'path', null),
+        edge('target-forward', 'b', 'c', 1, 'ground', 'path', null),
+        edge('target-reverse-forbidden', 'c', 'b', 1, 'ground', 'path', null),
+        edge('target-lateral-1', 'c', 'd', 1, 'ground', 'track', null),
+        edge('target-lateral-2', 'd', 'e', 1, 'ground', 'track', null),
+        edge('target-lateral-return', 'e', 'a', 1, 'ground', 'path', null),
+        edge('connector-back', 'a', 's', 0.2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    const targetPairCounts = new Map<string, number>();
+    for (const candidate of route.edges.filter((edgeItem) => edgeItem.componentKind === 'field_paths')) {
+      const pairKey = [candidate.from, candidate.to].sort().join('::');
+      targetPairCounts.set(pairKey, (targetPairCounts.get(pairKey) ?? 0) + 1);
+    }
+
+    expect(route.edges.map((candidate) => candidate.id)).not.toContain('target-reverse-forbidden');
+    expect(route.edges.map((candidate) => candidate.id)).toEqual([
+      'connector-out',
+      'target-entry',
+      'target-forward',
+      'target-lateral-1',
+      'target-lateral-2',
+      'target-lateral-return',
+      'connector-back',
+    ]);
+    expect([...targetPairCounts.values()].filter((count) => count > 1)).toEqual([]);
+    expect(route.metrics.targetRepeatKm).toBe(0);
+    expect(route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.7);
+    expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+  });
+
   it('does not truncate reachable natural progress only because OSM split the path into many tiny edges', () => {
     const targetKm = 8;
     const tinyNaturalChain = Array.from({ length: 180 }, (_, index) =>
