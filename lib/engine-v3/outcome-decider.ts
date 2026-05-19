@@ -1,4 +1,5 @@
 import type { AssembledRouteV3, RouteIntentV3, RouteOutcomeV3 } from './types';
+import type { OutcomeEvidenceV3, ProductVerdictV3, RouteCandidateV3 } from './contracts';
 
 const STRICT_OUTCOME_RULES = {
   minimumGeneratedDistanceRatio: 1,
@@ -69,6 +70,10 @@ function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, dist
     reasons.push('trail promise refused: paved evidence dominates the produced route');
   }
 
+  if (isTrailRequest(intent) && roadLikeUnknownDominates(route)) {
+    reasons.push('trail promise refused: road-like unknown evidence dominates the produced route');
+  }
+
   if (route.metrics.repeatRatio >= STRICT_OUTCOME_RULES.repeatRefuseRatio || route.metrics.overlapRatio >= STRICT_OUTCOME_RULES.overlapRefuseRatio) {
     reasons.push('route is too repetitive to be a valid generated loop');
   }
@@ -120,6 +125,10 @@ function adjustmentReasons(intent: RouteIntentV3, route: AssembledRouteV3, dista
     reasons.push('trail route lacks a meaningful continuous trail segment');
   }
 
+  if (isTrailRequest(intent) && (route.metrics.unverifiedTrailCandidateKm ?? 0) > (route.metrics.strictTrailKm ?? 0) + 0.5) {
+    reasons.push('route depends on credible but unverified path/track trail candidates');
+  }
+
   return unique(reasons);
 }
 
@@ -142,6 +151,12 @@ function diagnostics(intent: RouteIntentV3, route: AssembledRouteV3): string[] {
   }
   if (route.metrics.pavedRatio > intent.constraints.maxPavedRatio) {
     details.push(`pavedRatio ${route.metrics.pavedRatio} exceeds budget ${intent.constraints.maxPavedRatio}`);
+  }
+  if ((route.metrics.pathTrackUnknownKm ?? 0) > 0) {
+    details.push(`pathTrackUnknown ${round(route.metrics.pathTrackUnknownKm ?? 0)}km; candidateNatural ${round(route.metrics.candidateNaturalKm ?? 0)}km kept separate from strictTrail ${round(route.metrics.strictTrailKm ?? 0)}km`);
+  }
+  if (roadLikeUnknownDominates(route)) {
+    details.push(`roadLikeUnknown ${round(route.metrics.roadLikeUnknownKm ?? 0)}km dominates credible path/track evidence`);
   }
   if (route.metrics.naturalDwellKm + 0.001 < requiredDwellKm) {
     details.push(`naturalDwell ${route.metrics.naturalDwellKm}km below requested ${round(requiredDwellKm)}km`);
@@ -177,6 +192,14 @@ function isTrailRequest(intent: RouteIntentV3): boolean {
   return intent.request?.mode === 'trail';
 }
 
+function roadLikeUnknownDominates(route: AssembledRouteV3): boolean {
+  const distance = route.metrics.distanceProducedKm;
+  if (distance <= 0) return false;
+  const roadLikeUnknownKm = route.metrics.roadLikeUnknownKm ?? 0;
+  const pathTrackUnknownKm = route.metrics.pathTrackUnknownKm ?? 0;
+  return roadLikeUnknownKm / distance >= 0.5 && roadLikeUnknownKm > pathTrackUnknownKm + 0.25;
+}
+
 function hasUsableGpsGeometry(route: AssembledRouteV3): boolean {
   return route.geometry.coordinates.length >= 2;
 }
@@ -196,6 +219,89 @@ function isSmallParkOverclaim(intent: RouteIntentV3, route: AssembledRouteV3): b
   const distanceWasReduced = route.metrics.distanceProducedKm < intent.constraints.targetDistanceKm;
 
   return !distanceWasReduced && parkCapacityKm < intent.constraints.targetDistanceKm;
+}
+
+interface BuildOutcomeEvidenceV3Input {
+  missionId: string;
+  selectedCandidate: RouteCandidateV3 | null;
+  outcome: RouteOutcomeV3;
+  hardGateFailures?: string[];
+  commandSucceeded?: boolean;
+}
+
+export function buildOutcomeEvidenceV3(input: BuildOutcomeEvidenceV3Input): OutcomeEvidenceV3 {
+  const hardGateFailures = unique([
+    ...(input.hardGateFailures ?? []),
+    ...((input.selectedCandidate?.gates ?? [])
+      .filter((gate) => gate.status === 'fail' && gate.severity === 'hard')
+      .map((gate) => gate.reason ?? gate.id)),
+  ]);
+  const adjustedWithoutCompromise = input.outcome.type === 'adjusted' && input.outcome.compromises.length === 0;
+  const productOutcome: OutcomeEvidenceV3['productOutcome'] =
+    input.outcome.type === 'generated' && hardGateFailures.length > 0
+      ? 'refused'
+      : adjustedWithoutCompromise
+        ? 'refused'
+        : input.outcome.type;
+  const refused = productOutcome === 'refused';
+  const reasons = reasonsFromOutcome(input.outcome, hardGateFailures, adjustedWithoutCompromise);
+  const compromises = input.outcome.type === 'adjusted' && !adjustedWithoutCompromise
+    ? unique(input.outcome.compromises)
+    : [];
+  const primaryReason = reasons[0] ?? compromises[0] ?? outcomeSummary(input.outcome) ?? 'outcome evidence recorded';
+
+  return {
+    missionId: input.missionId,
+    selectedCandidateId: refused ? null : input.selectedCandidate?.id ?? null,
+    productOutcome,
+    primaryReason,
+    userFacingSummary: summaryFromOutcome(productOutcome, input.outcome, primaryReason),
+    reasons,
+    compromises,
+    hardGateFailures,
+    benchmarkEvidence: {
+      commandSucceeded: input.commandSucceeded,
+      productVerdict: productVerdict(productOutcome),
+    },
+    exportPolicy: {
+      geoJsonAvailable: !refused && hasCandidateGeometry(input.selectedCandidate),
+      gpxAvailable: !refused && hasCandidateGeometry(input.selectedCandidate),
+      emptyOnRefusal: refused,
+    },
+    surfaceEvidence: input.selectedCandidate ? {
+      trailRatio: input.selectedCandidate.metrics.trailRatio,
+      naturalWayRatio: input.selectedCandidate.metrics.naturalWayRatio,
+      pavedRatio: input.selectedCandidate.metrics.pavedRatio,
+      pavedKm: input.selectedCandidate.metrics.pavedKm,
+      naturalDwellKm: input.selectedCandidate.metrics.naturalDwellKm,
+    } : null,
+  };
+}
+
+function reasonsFromOutcome(outcome: RouteOutcomeV3, hardGateFailures: string[], adjustedWithoutCompromise: boolean): string[] {
+  if (hardGateFailures.length > 0) return hardGateFailures;
+  if (adjustedWithoutCompromise) return ['adjusted outcome missing user-facing compromise'];
+  if (outcome.type === 'refused') return unique([outcome.reason, ...(outcome.details ?? [])]);
+  return [];
+}
+
+function summaryFromOutcome(productOutcome: OutcomeEvidenceV3['productOutcome'], outcome: RouteOutcomeV3, primaryReason: string): string {
+  if (productOutcome === 'refused') return outcome.type === 'refused' ? outcome.reason : primaryReason;
+  return outcomeSummary(outcome) ?? primaryReason;
+}
+
+function outcomeSummary(outcome: RouteOutcomeV3): string | null {
+  return outcome.type === 'refused' ? null : outcome.summary;
+}
+
+function productVerdict(productOutcome: OutcomeEvidenceV3['productOutcome']): ProductVerdictV3 {
+  if (productOutcome === 'generated') return 'good_route';
+  if (productOutcome === 'adjusted') return 'acceptable_adjusted';
+  return 'honest_refusal';
+}
+
+function hasCandidateGeometry(candidate: RouteCandidateV3 | null): boolean {
+  return (candidate?.geometry.coordinates.length ?? 0) >= 2;
 }
 
 function cloneOutcome(outcome: RouteOutcomeV3): RouteOutcomeV3 {

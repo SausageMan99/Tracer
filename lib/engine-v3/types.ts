@@ -125,6 +125,14 @@ export interface RouteSegmentV3 {
 export interface RouteMetricsV3 {
   targetDistanceKm: number;
   distanceProducedKm: number;
+  strictTrailKm?: number;
+  explicitNaturalKm?: number;
+  explicitPavedKm?: number;
+  roadLikeUnknownKm?: number;
+  pathTrackUnknownKm?: number;
+  candidateNaturalKm?: number;
+  trailCandidateKm?: number;
+  unverifiedTrailCandidateKm?: number;
   trailRatio: number;
   naturalWayRatio: number;
   pavedRatio: number;
