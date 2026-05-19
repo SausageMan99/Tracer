@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { assembleMissionV3 } from '@/lib/engine-v3/assemblers/mission-dispatcher';
+import { generateRouteV3FromGraph } from '@/lib/engine-v3/route-generator';
 import {
   syntheticLargeForestLoop,
   syntheticParkSmall,
@@ -156,5 +157,25 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(scenicCandidate?.metrics.trailRatio ?? 0).toBe(0);
     expect(scenicCandidate?.lane).not.toBe('complete_valid');
     expect(scenicCandidate?.rejectedReason ?? result.diagnostics.blocker).toBe(scenario.expected.requiredBlocker);
+  });
+
+  it('real graph generator uses mission-driven selected candidate instead of old scenic paved shortcut', () => {
+    const scenario = syntheticLargeForestLoop();
+    const generated = generateRouteV3FromGraph(
+      {
+        start: scenario.mission.request.start,
+        targetDistanceKm: scenario.mission.request.targetDistanceKm,
+        mode: scenario.mission.request.mode,
+        sport: 'running',
+        loop: true,
+      },
+      scenario.graph,
+    );
+
+    expect(generated.route.edges.map((edge) => edge.id)).not.toContain('scenic-paved-decoy');
+    expect(generated.route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(scenario.expected.minDistanceKm!);
+    expect(generated.route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(scenario.expected.minNaturalDwellKm!);
+    expect(generated.route.assemblyDiagnostics?.selectedReason).toContain('mission-driven');
+    expect(generated.outcome.type).not.toBe('refused');
   });
 });

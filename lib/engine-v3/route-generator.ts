@@ -1,6 +1,9 @@
 import { assembleRouteV3 } from './route-assembler';
 import { assembleGraphRouteV3 } from './graph-route-assembler';
+import { assembleMissionV3 } from './assemblers/mission-dispatcher';
 import { buildCorridorMissionV3 } from './corridor-anchor-builder';
+import { buildMissionContractV3 } from './mission-contract-builder';
+import { assembledRouteFromMissionCandidateV3 } from './mission-candidate-route-adapter';
 import { decideOutcomeV3 } from './outcome-decider';
 import { planRouteIntentV3 } from './route-intent-planner';
 import { buildTerrainSnapshotV3FromGraph } from './terrain-snapshot-builder';
@@ -33,7 +36,17 @@ export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: Enr
   const snapshot = buildTerrainSnapshotV3FromGraph(graph);
   const intent = planRouteIntentV3(request, snapshot);
   const mission = buildCorridorMissionV3(intent);
-  const route = assembleGraphRouteV3(intent, mission, graph);
+  const missionContract = buildMissionContractV3(intent);
+  const missionResult = missionContract ? assembleMissionV3(graph, missionContract) : null;
+  const route = missionResult?.selectedCandidate
+    ? assembledRouteFromMissionCandidateV3({
+        intent,
+        corridorMission: mission,
+        graph,
+        assemblerResult: missionResult,
+        candidate: missionResult.selectedCandidate,
+      })
+    : assembleGraphRouteV3(intent, mission, graph);
   const outcome = decideOutcomeV3(intent, route);
 
   return {
