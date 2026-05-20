@@ -56,6 +56,39 @@ export function planRouteIntentV3(request: UserRouteRequestV3, snapshot: Terrain
     });
   }
 
+  if (accepted.mode === 'nature_urbaine') {
+    const park = nearestUseful(snapshot.components, ['park'], 0.8);
+    if (park && accepted.targetDistanceKm <= 8) {
+      return buildIntent({
+        strategy: 'park_loop',
+        request: accepted,
+        snapshot,
+        constraints: constraints(accepted, ['park'], 0.7, 'relaxed', 0.25),
+        outcome: snapshot.audit.pavedRatio > 0.5
+          ? { type: 'adjusted', summary: 'Short park loop possible with paved compromises.', compromises: ['park paths may be mostly paved'] }
+          : { type: 'generated', summary: 'Short park loop can be generated.' },
+        warnings: withWarning(snapshot.audit.warnings, 'paved park paths are accepted as paved compromises'),
+      });
+    }
+
+    const urbanNatureOpportunity = nearestUseful(snapshot.components, ['urban_green', 'river_corridor', 'park'], 1.2)
+      ?? strongestUrbanPavedCorridorOpportunity(snapshot.components, 1.5, accepted.targetDistanceKm * 0.7);
+    if (urbanNatureOpportunity) {
+      return buildIntent({
+        strategy: 'urban_nature_loop',
+        request: accepted,
+        snapshot,
+        constraints: constraints(accepted, urbanTargets(snapshot.components), 0.9, 'relaxed', 0.1),
+        outcome: {
+          type: 'adjusted',
+          summary: 'Urban nature route uses park/canal/corridor evidence without inventing trail terrain.',
+          compromises: ['mostly paved urban surfaces remain paved'],
+        },
+        warnings: withWarning(snapshot.audit.warnings, 'urban nature corridor kept separate from trail/field-path promise'),
+      });
+    }
+  }
+
   const reachableWoods = nearestUseful(snapshot.components, ['forest', 'field_paths'], 1.5);
   const largeMixedWoodsOpportunity = strongestAbsoluteNonPavedOpportunity(
     snapshot.components,
@@ -215,6 +248,30 @@ function strongestAbsoluteNonPavedOpportunity(
 
 function nonPavedOpportunityKm(component: TerrainComponentV3): number {
   return component.totalLengthKm * component.nonPavedRatio;
+}
+
+function strongestUrbanPavedCorridorOpportunity(
+  components: TerrainComponentV3[],
+  maxDistanceKm: number,
+  minTotalLengthKm: number,
+): TerrainComponentV3 | undefined {
+  return components
+    .filter((component) => component.distanceFromStartKm <= maxDistanceKm)
+    .filter((component) => isUrbanNatureCorridor(component))
+    .filter((component) => component.totalLengthKm + 0.001 >= minTotalLengthKm)
+    .sort((a, b) => urbanNatureCorridorScore(b) - urbanNatureCorridorScore(a) || a.distanceFromStartKm - b.distanceFromStartKm)[0];
+}
+
+function isUrbanNatureCorridor(component: TerrainComponentV3): boolean {
+  if (['urban_green', 'river_corridor', 'park', 'scenic_paved'].includes(component.kind)) return true;
+  return component.kind === 'field_paths'
+    && component.pavedRatio >= 0.65
+    && component.nonPavedRatio >= 0.05;
+}
+
+function urbanNatureCorridorScore(component: TerrainComponentV3): number {
+  const kindBonus = ['urban_green', 'river_corridor', 'park', 'scenic_paved'].includes(component.kind) ? 1000 : 0;
+  return kindBonus + component.totalLengthKm * (1 + component.nonPavedRatio);
 }
 
 function urbanTargets(components: TerrainComponentV3[]): TerrainComponentKindV3[] {

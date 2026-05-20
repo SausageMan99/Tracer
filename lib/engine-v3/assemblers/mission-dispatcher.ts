@@ -16,8 +16,8 @@ export function assembleMissionV3(
     case 'transition_to_woods':
       return assembleTransitionToWoodsMissionV3(graph, mission);
     case 'park_loop':
-      return assembleParkLoopMissionV3(graph, mission);
     case 'urban_nature_loop':
+      return assembleParkLoopMissionV3(graph, mission);
     case 'simple_quiet_loop':
       return createNoCandidateAssemblerResultV3(mission, 'strategy_not_supported_yet');
     case 'poor_osm_rural':

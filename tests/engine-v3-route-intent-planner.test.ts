@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { buildMissionContractV3 } from '@/lib/engine-v3/mission-contract-builder';
 import { planRouteIntentV3 } from '@/lib/engine-v3/route-intent-planner';
-import type { TerrainComponentKindV3, TerrainSnapshotV3, UserRouteRequestV3 } from '@/lib/engine-v3/types';
+import type { RouteModeV3, TerrainComponentKindV3, TerrainSnapshotV3, UserRouteRequestV3 } from '@/lib/engine-v3/types';
 
-function trailRequest(targetDistanceKm: number): UserRouteRequestV3 {
+function request(targetDistanceKm: number, mode: RouteModeV3 = 'trail'): UserRouteRequestV3 {
   return {
     start: { lat: 49.13, lng: -0.48 },
     targetDistanceKm,
     sport: 'running',
-    mode: 'trail',
+    mode,
     loop: true,
   };
+}
+
+function trailRequest(targetDistanceKm: number): UserRouteRequestV3 {
+  return request(targetDistanceKm, 'trail');
 }
 
 function component(
@@ -60,7 +65,28 @@ describe('planRouteIntentV3 target-component reachability', () => {
     expect(intent.warnings.join(' ')).toContain('paved connectors remain paved');
   });
 
-  it('does not drop a park-ish field-path component to low_trail_potential when absolute non-paved opportunity can satisfy dwell', () => {
+  it('routes nature_urbaine paved corridor opportunity as urban_nature instead of fake transition_to_woods field paths', () => {
+    const intent = planRouteIntentV3(
+      request(6, 'nature_urbaine'),
+      snapshot([
+        component('residential', 46.864, 0, 0),
+        component('field_paths', 101.761, 0.199, 0.014),
+      ]),
+    );
+    const contract = buildMissionContractV3(intent);
+
+    expect(intent.strategy).toBe('urban_nature_loop');
+    expect(intent.constraints.targetComponents).not.toContain('field_paths');
+    expect(intent.constraints.maxPavedRatio).toBeGreaterThanOrEqual(0.85);
+    expect(intent.outcome.type).toBe('adjusted');
+    if (intent.outcome.type !== 'adjusted') throw new Error('expected adjusted urban nature intent');
+    expect(intent.outcome.summary).toContain('Urban nature');
+    expect(contract?.promise).toBe('urban_nature');
+    expect(contract?.target.requiredEntry).toBe('preferred');
+    expect(contract?.refusalPolicy.refuseIfNoTargetEntry).toBe(false);
+  });
+
+  it('keeps trail requests with absolute non-paved field-path capacity on transition_to_woods', () => {
     const intent = planRouteIntentV3(
       trailRequest(6),
       snapshot([

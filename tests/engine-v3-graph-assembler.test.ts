@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from '@/lib/types';
 import { assembleGraphRouteV3 } from '@/lib/engine-v3/graph-route-assembler';
+import { generateRouteV3FromGraph } from '@/lib/engine-v3/route-generator';
 import {
   isAdjustedMixedUnknownWithinEvidenceBudgetV3,
   isAdjustedTargetRepeatWithinEvidenceBudgetV3,
@@ -19,7 +20,7 @@ function edge(
   lengthKm: number,
   surface: string,
   highway: string,
-  landcoverClass: 'forest' | 'urban' | null = surface === 'asphalt' ? 'urban' : 'forest',
+  landcoverClass: 'forest' | 'park' | 'water_corridor' | 'urban' | null = surface === 'asphalt' ? 'urban' : 'forest',
 ): EnrichedEdge {
   return {
     id,
@@ -193,6 +194,69 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.naturalDwellKm).toBe(0);
     expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
     expect(outcome.type).toBe('refused');
+  });
+
+  it('uses urban-nature wording when an urban strategy has no assembled route evidence', () => {
+    const targetKm = 10;
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      mission(targetKm),
+      graph([
+        edge('access-out', 's', 'a', 1, 'asphalt', 'residential', 'urban'),
+        edge('forest-1', 'a', 'b', 1, 'ground', 'path'),
+        edge('forest-2', 'b', 'a', 1, 'ground', 'path'),
+        edge('access-back', 'a', 's', 1, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(targetKm, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(targetKm, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(targetKm, []).constraints, targetComponents: [], maxPavedRatio: 0.85, minNaturalDwellRatio: 0.1 },
+    };
+
+    const outcome = decideOutcomeV3(urbanIntent, route);
+
+    expect(outcome.type).toBe('refused');
+    if (outcome.type !== 'refused') throw new Error('expected refused urban nature outcome');
+    expect(outcome.reason).toContain('urban-nature');
+    expect(outcome.reason).not.toContain('trail promise');
+    expect(outcome.details?.join(' ')).not.toContain('misses target field_paths');
+  });
+
+  it('assembles an urban-nature park/canal compromise with geometry and honest paved metrics', () => {
+    const targetKm = 6;
+    const generated = generateRouteV3FromGraph(
+      {
+        start: { lat: 49, lng: -0.6 },
+        targetDistanceKm: targetKm,
+        sport: 'running',
+        mode: 'nature_urbaine',
+        loop: true,
+      },
+      graph([
+        { ...edge('urban-canal-paved-1', 's', 'a', 1, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-canal-paved-2', 'a', 'b', 1, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-park-soft-1', 'b', 'c', 1, 'grass', 'path', 'urban'), scenic: true },
+        { ...edge('urban-canal-paved-3', 'c', 'd', 1, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-canal-paved-4', 'd', 'e', 1, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-canal-return', 'e', 's', 1, 'asphalt', 'footway', 'urban'), scenic: true },
+      ]),
+    );
+
+    expect(generated.intent.strategy).toBe('urban_nature_loop');
+    expect(generated.route.nodeIds[0]).toBe('s');
+    expect(generated.route.nodeIds.at(-1)).toBe('s');
+    expect(generated.route.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+    expect(generated.route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.85);
+    expect(generated.route.metrics.pavedRatio).toBeGreaterThan(0.75);
+    expect(generated.route.metrics.naturalWayRatio).toBeLessThan(0.25);
+    expect(generated.route.assemblyDiagnostics?.selectedReason).toContain('mission-driven');
+    expect(generated.route.warnings.join(' ')).toContain('urban');
+    expect(generated.route.warnings.join(' ')).toContain('paved');
+    expect(generated.outcome.type).toBe('adjusted');
+    if (generated.outcome.type !== 'adjusted') throw new Error('expected adjusted urban nature compromise');
+    expect(generated.outcome.compromises.join(' ')).toContain('paved urban');
   });
 
   it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {

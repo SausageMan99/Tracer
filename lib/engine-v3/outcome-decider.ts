@@ -67,7 +67,7 @@ function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, dist
   const reasons: string[] = [];
 
   if ((route.segments.length === 0 && route.edges.length === 0) || poorGraph(intent)) {
-    reasons.push('poor graph evidence: no assembled route can support the requested trail promise');
+    reasons.push(noAssemblyEvidenceReason(intent));
   }
 
   if (!hasUsableGpsGeometry(route)) {
@@ -202,6 +202,13 @@ function poorGraph(intent: RouteIntentV3): boolean {
 
 function isTrailRequest(intent: RouteIntentV3): boolean {
   return intent.request?.mode === 'trail';
+}
+
+function noAssemblyEvidenceReason(intent: RouteIntentV3): string {
+  if (intent.strategy === 'park_loop') return 'park route refused: no assembled route can support the park-loop promise';
+  if (intent.strategy === 'urban_nature_loop') return 'urban-nature route refused: no assembled route can support the urban corridor promise';
+  if (intent.strategy === 'simple_quiet_loop' || intent.strategy === 'low_trail_potential') return 'quiet loop refused: no assembled route can support the requested loop';
+  return 'poor graph evidence: no assembled route can support the requested trail promise';
 }
 
 function roadLikeUnknownDominates(route: AssembledRouteV3): boolean {

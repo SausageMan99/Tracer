@@ -7,7 +7,7 @@ import type {
   MissionContractV3,
   RouteCandidateV3,
 } from '../contracts';
-import type { AssembledRouteV3, CorridorMissionV3, RouteIntentV3, RouteMetricsV3 } from '../types';
+import type { AssembledRouteV3, CorridorMissionV3, RouteIntentV3, RouteMetricsV3, TerrainComponentKindV3 } from '../types';
 import { createNoCandidateAssemblerResultV3 } from './assembler-result-factory';
 import { normalizeCandidatePortfolioV3, selectCandidateFromPortfolioV3 } from './candidate-portfolio';
 import { assembleGraphRouteWithStrategyV3 } from './graph-route-assembly-core';
@@ -27,9 +27,11 @@ export function assembleParkLoopMissionV3(
   graph: EnrichedGraph,
   mission: MissionContractV3,
 ): AssemblerResultV3 {
-  const parkEdges = Array.from(graph.edges.values()).filter((edge) => classifyEdgeSemanticsV3(edge).componentKind === 'park');
+  const parkEdges = routeableUrbanParkEdges(graph, mission);
   const parkCapacityKm = sumLengthKm(parkEdges);
-  const blocker = 'park_capacity_below_requested_distance';
+  const blocker = mission.strategy === 'urban_nature_loop'
+    ? 'urban_nature_corridor_capacity_below_requested_distance'
+    : 'park_capacity_below_requested_distance';
   const relaxationAllowed = mission.relaxations.some((relaxation) => relaxation.allowed && relaxation.id === 'adjust_to_park_capacity');
 
   if (parkCapacityKm < mission.request.minDistanceKm && !relaxationAllowed) {
@@ -40,7 +42,7 @@ export function assembleParkLoopMissionV3(
     return createNoCandidateAssemblerResultV3(mission, blocker);
   }
 
-  const adjustableCandidate = createParkCandidate(graph, mission, parkEdges, blocker);
+  const adjustableCandidate = createParkCandidate(graph, mission, selectUrbanParkRouteEdges(graph, mission, parkEdges), blocker);
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
     candidates: [adjustableCandidate],
@@ -75,7 +77,12 @@ export function assembleParkLoopMissionV3(
         compromise: mission.relaxations.find((relaxation) => relaxation.allowed)?.userFacingCompromise ?? null,
       },
     },
-    warnings: [blocker],
+    warnings: [
+      mission.strategy === 'urban_nature_loop'
+        ? 'urban_nature_loop may use paved park/canal/corridor paths but keeps paved distance explicit instead of selling it as pure trail'
+        : 'park_loop may use paved park paths but keeps paved distance explicit instead of selling it as pure trail',
+      blocker,
+    ],
   };
 }
 
@@ -160,6 +167,96 @@ function createParkPhaseDiagnostics(
       gateFailures: [blocker],
     },
   };
+}
+
+function routeableUrbanParkEdges(graph: EnrichedGraph, mission: MissionContractV3): EnrichedEdge[] {
+  const allowedKinds = allowedUrbanParkComponentKinds(mission);
+  return Array.from(graph.edges.values()).filter((edge) => allowedKinds.has(classifyEdgeSemanticsV3(edge).componentKind));
+}
+
+function allowedUrbanParkComponentKinds(mission: MissionContractV3): ReadonlySet<TerrainComponentKindV3> {
+  if (mission.strategy === 'urban_nature_loop') {
+    return new Set<TerrainComponentKindV3>(['park', 'urban_green', 'river_corridor', 'scenic_paved', 'field_paths']);
+  }
+  return new Set<TerrainComponentKindV3>(['park']);
+}
+
+function selectUrbanParkRouteEdges(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  edges: EnrichedEdge[],
+): EnrichedEdge[] {
+  const startNodeId = closestNodeId(graph, mission.request.start) ?? edges[0]?.from ?? null;
+  if (!startNodeId) return [];
+
+  const adjacency = buildAllowedAdjacency(edges);
+  const selected: EnrichedEdge[] = [];
+  const used = new Set<string>();
+  let current = startNodeId;
+  let distanceKm = 0;
+  const minDistanceKm = mission.request.minDistanceKm;
+  const maxDistanceKm = mission.request.maxDistanceKm;
+
+  for (let step = 0; step < 320 && distanceKm < maxDistanceKm; step += 1) {
+    const choices = (adjacency.get(current) ?? [])
+      .filter((candidate) => !used.has(candidate.edge.id) || (distanceKm >= minDistanceKm && candidate.to === startNodeId))
+      .filter((candidate) => distanceKm + candidate.edge.lengthKm <= maxDistanceKm + 0.001)
+      .sort((left, right) => scoreUrbanParkStep(right, startNodeId, distanceKm, minDistanceKm) - scoreUrbanParkStep(left, startNodeId, distanceKm, minDistanceKm));
+    const next = choices[0];
+    if (!next) break;
+    selected.push(next.edge);
+    used.add(next.edge.id);
+    distanceKm += Math.max(0, next.edge.lengthKm);
+    current = next.to;
+    if (current === startNodeId && distanceKm >= minDistanceKm) return selected;
+  }
+
+  if (selected.length > 0 && distanceKm >= minDistanceKm * 0.7) return selected;
+
+  const fallback: EnrichedEdge[] = [];
+  let fallbackDistanceKm = 0;
+  for (const edge of edges) {
+    if (fallbackDistanceKm >= minDistanceKm) break;
+    if (fallbackDistanceKm + edge.lengthKm > maxDistanceKm + 0.001 && fallback.length > 0) continue;
+    fallback.push(edge);
+    fallbackDistanceKm += Math.max(0, edge.lengthKm);
+  }
+  return fallback;
+}
+
+function buildAllowedAdjacency(edges: EnrichedEdge[]): Map<string, { edge: EnrichedEdge; to: string }[]> {
+  const adjacency = new Map<string, { edge: EnrichedEdge; to: string }[]>();
+  for (const edge of edges) {
+    const fromEdges = adjacency.get(edge.from) ?? [];
+    fromEdges.push({ edge, to: edge.to });
+    adjacency.set(edge.from, fromEdges);
+    const toEdges = adjacency.get(edge.to) ?? [];
+    toEdges.push({ edge, to: edge.from });
+    adjacency.set(edge.to, toEdges);
+  }
+  return adjacency;
+}
+
+function scoreUrbanParkStep(
+  candidate: { edge: EnrichedEdge; to: string },
+  startNodeId: string,
+  distanceKm: number,
+  minDistanceKm: number,
+): number {
+  const semantics = classifyEdgeSemanticsV3(candidate.edge);
+  const returnBonus = distanceKm >= minDistanceKm && candidate.to === startNodeId ? 10_000 : 0;
+  const naturalBonus = semantics.surfaceEvidence === 'explicit_natural' ? 50 : 0;
+  const pathBonus = semantics.isConnectorLike ? 0 : 10;
+  return returnBonus + naturalBonus + pathBonus + candidate.edge.lengthKm;
+}
+
+function closestNodeId(graph: EnrichedGraph, point: { lat: number; lng: number }): string | null {
+  let best: { id: string; distance: number } | null = null;
+  for (const node of Array.from(graph.nodes.values())) {
+    const distance = Math.hypot(node.lat - point.lat, node.lng - point.lng);
+    if (!best || distance < best.distance) best = { id: node.id, distance };
+  }
+  return best?.id ?? null;
 }
 
 function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): RouteMetricsV3 {
