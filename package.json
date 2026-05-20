@@ -22,6 +22,7 @@
     "benchmark:engine-v25-v3": "node scripts/compare-engine-v25-v3.mjs",
     "benchmark:engine-v3": "node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts",
     "benchmark:engine-v3:beta-multiterrain": "node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts --panel beta-multiterrain --output artifacts/engine-v3-benchmarks/beta-multiterrain-latest.json --artifact-dir artifacts/engine-v3-benchmarks/beta-multiterrain-routes",
+    "benchmark:engine-v3:asm-3i-fontainebleau-contract": "node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts --panel asm-3i-fontainebleau-contract --output /tmp/trailforge-v3-asm-3i-fontainebleau-contract-latest.json --artifact-dir /tmp/trailforge-v3-asm-3i-fontainebleau-contract-routes",
     "benchmark:engine-v3:summary": "node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/summarize-engine-v3-benchmarks.ts",
     "ign:poc": "node scripts/run-ign-terrain-poc.mjs",
     "release:evidence-check": "node scripts/release-evidence-check.mjs",

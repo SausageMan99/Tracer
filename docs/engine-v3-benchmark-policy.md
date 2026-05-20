@@ -24,7 +24,8 @@ Ces cas sont le cœur de promesse. Un refus peut rester temporairement honnête,
 
 | Cas | Stratégie attendue | Verdict attendu P0 |
 | --- | --- | --- |
-| `fontainebleau-trail-15k` | `forest_loop` | `good_route` ou `acceptable_adjusted`; refus acceptable seulement si le `TerrainOpportunityReport` prouve une contrainte réelle malgré capacité forestière apparente. |
+| `fontainebleau-croix-augas-trail-12k` | `forest_loop` | `good_route` ou `acceptable_adjusted`; c’est le benchmark durable de capacité forestière propre Fontainebleau après ASM-3h (départ Croix d’Augas ~48.4054, 2.6786, GPX/GeoJSON attendus). |
+| `fontainebleau-trail-12k` | `forest_loop` diagnostic town-edge | Cas d’ancre sur-demandant: `adjusted` / `refused` / sous-distance honnête attendu depuis ce départ, sans affaiblir les seuils et sans maquiller le paved. Ne pas le traiter comme le benchmark produit clean 12k. |
 | `meudon-forest-trail-10k` | `forest_loop` périurbain | `good_route` ou `acceptable_adjusted`; le candidat rejeté 10.117 km / 7.361 km dwell montre qu'un simple refus global n'est pas suffisant. |
 | `tourville-pommiers-trail-8k` | `transition_to_woods` | `good_route` ou `acceptable_adjusted`; les connecteurs routiers sont acceptables uniquement s'ils débloquent un vrai dwell bois/chemins. |
 | `caen-colline-aux-oiseaux-6k-soft` | `park_loop` / `urban_nature` | `acceptable_adjusted` au minimum; ne pas vendre comme trail forestier. |
@@ -49,7 +50,7 @@ GO beta V3 exige une combinaison de routes utiles et de refus honnêtes. Un benc
 
 Minimum recommandé pour P0 beta:
 
-- au moins 4 cas cœur avec verdict produit `good_route` ou `acceptable_adjusted`: Fontainebleau, Meudon, Tourville 8k, Caen Colline;
+- au moins 4 cas cœur avec verdict produit `good_route` ou `acceptable_adjusted`: Fontainebleau Croix d’Augas 12k, Meudon, Tourville 8k, Caen Colline;
 - au moins 1 cas négatif avec `honest_refusal` prouvé par opportunité terrain, idéalement OSM-poor ou Paris 19;
 - 0 `fake_success`;
 - 0 `engine_failure` sur le panel P0;

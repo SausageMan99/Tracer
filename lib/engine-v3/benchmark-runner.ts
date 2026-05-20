@@ -12,6 +12,14 @@ export interface EngineV3BenchmarkCase {
   description: string;
   request: UserRouteRequestV3;
   tags: string[];
+  contract?: EngineV3BenchmarkContract;
+}
+
+export interface EngineV3BenchmarkContract {
+  role: 'clean-capacity' | 'diagnostic-anchor' | 'regression' | 'negative';
+  expectedOutcomeTypes: RouteOutcomeV3['type'][];
+  requiresGeometryExports: boolean;
+  notes: string;
 }
 
 export interface EngineV3BenchmarkArtifactPaths {
@@ -108,17 +116,62 @@ interface ErroredBenchmarkArtifact {
 const DEFAULT_ARTIFACT_DIR = 'artifacts/engine-v3-benchmarks/latest-routes';
 const DEFAULT_REPORT_PATH = 'artifacts/engine-v3-benchmarks/latest.json';
 
+const REGRESSION_CONTRACT: EngineV3BenchmarkContract = {
+  role: 'regression',
+  expectedOutcomeTypes: ['generated', 'adjusted', 'refused'],
+  requiresGeometryExports: true,
+  notes: 'Regression coverage case: inspect outcome metrics instead of treating command success as product success.',
+};
+
+const NEGATIVE_CONTRACT: EngineV3BenchmarkContract = {
+  role: 'negative',
+  expectedOutcomeTypes: ['refused', 'adjusted'],
+  requiresGeometryExports: false,
+  notes: 'Negative terrain/data-confidence case: honest refusal is acceptable and preferred to fake trail/paved laundering.',
+};
+
 export const ENGINE_V3_BENCHMARK_CASES: EngineV3BenchmarkCase[] = [
-  benchmarkCase('tourville-trail-8k', 'Tourville 8k', 'Tourville-sur-Odon / Bois des Amis: accept road transitions only to actually enter wooded paths.', 49.1436, -0.5062, 8, 'trail', ['tourville', 'woods-transition', 'legacy-readiness-id']),
-  benchmarkCase('tourville-pommiers-trail-8k', 'Tourville Pommiers 8k', 'Transition-to-woods field feedback case: accept road connectors only if they unlock real wooded/path dwell.', 49.1436, -0.5062, 8, 'trail', ['tourville', 'woods-transition', 'field-feedback', 'beta-multiterrain']),
+  benchmarkCase('tourville-trail-8k', 'Tourville 8k', 'Tourville-sur-Odon / Bois des Amis: accept road transitions only to actually enter wooded paths.', 49.1436, -0.5062, 8, 'trail', ['tourville', 'woods-transition', 'legacy-readiness-id'], REGRESSION_CONTRACT),
+  benchmarkCase('tourville-pommiers-trail-8k', 'Tourville Pommiers 8k', 'Transition-to-woods field feedback case: accept road connectors only if they unlock real wooded/path dwell.', 49.1436, -0.5062, 8, 'trail', ['tourville', 'woods-transition', 'field-feedback', 'beta-multiterrain'], REGRESSION_CONTRACT),
   benchmarkCase('tourville-pommiers-trail-12k', 'Tourville Pommiers 12k', 'Longer transition-to-woods field feedback case around Jean Bosco / Baron; no parasite loops or scenic-paved laundering.', 49.1436, -0.5062, 12, 'trail', ['tourville', 'woods-transition', 'field-feedback', 'unstable', 'beta-multiterrain']),
-  benchmarkCase('caen-colline-aux-oiseaux-6k-soft', 'Caen Colline aux Oiseaux 6k', 'Urban park recovery/nature case: useful short loop, no fake forest promise.', 49.2058, -0.3762, 6, 'nature_urbaine', ['caen', 'park', 'urban-nature', 'beta-multiterrain']),
+  benchmarkCase('caen-colline-aux-oiseaux-6k-soft', 'Caen Colline aux Oiseaux 6k', 'Urban park recovery/nature case: useful short loop, no fake forest promise.', 49.2058, -0.3762, 6, 'nature_urbaine', ['caen', 'park', 'urban-nature', 'beta-multiterrain'], REGRESSION_CONTRACT),
   benchmarkCase('caen-prairie-8k-mixed', 'Caen Prairie/Orne 8k', 'Mixed urban nature case: exploit Prairie/Orne without drifting to major city axes.', 49.1829, -0.3707, 8, 'nature_urbaine', ['caen', 'urban-nature', 'mixed', 'orne', 'beta-multiterrain']),
-  benchmarkCase('fontainebleau-trail-12k', 'Fontainebleau 12k', 'High-confidence forest benchmark with enough natural capacity for a real trail loop.', 48.4039, 2.7016, 12, 'trail', ['fontainebleau', 'forest', 'legacy-readiness-id']),
+  benchmarkCase(
+    'fontainebleau-trail-12k',
+    'Fontainebleau town-edge 12k diagnostic',
+    'Town-edge Fontainebleau anchor: expected to stay honest as adjusted/refused/under-distance from this start, not product-green clean 12k.',
+    48.4039,
+    2.7016,
+    12,
+    'trail',
+    ['fontainebleau', 'forest', 'diagnostic-anchor', 'town-edge', 'legacy-readiness-id'],
+    {
+      role: 'diagnostic-anchor',
+      expectedOutcomeTypes: ['adjusted', 'refused'],
+      requiresGeometryExports: false,
+      notes: 'ASM-3h showed this exact anchor produces an honest ~10 km adjusted route for a 12 km request; do not weaken thresholds or relabel paved/unknown surfaces to make it green.',
+    },
+  ),
+  benchmarkCase(
+    'fontainebleau-croix-augas-trail-12k',
+    'Fontainebleau Croix d’Augas 12k',
+    'Clean Fontainebleau forest-capacity benchmark: nearby Croix d’Augas start has current evidence for a geometry-bearing usable 12k-ish trail route.',
+    48.4054,
+    2.6786,
+    12,
+    'trail',
+    ['fontainebleau', 'forest', 'clean-capacity', 'croix-augas', 'readiness-id'],
+    {
+      role: 'clean-capacity',
+      expectedOutcomeTypes: ['generated', 'adjusted'],
+      requiresGeometryExports: true,
+      notes: 'ASM-3h evidence: 12.124 km, naturalWayRatio 0.982, pavedRatio 0.018, naturalDwellKm 11.909, targetRepeatKm 0.108, GPX/GeoJSON present.',
+    },
+  ),
   benchmarkCase('fontainebleau-trail-15k', 'Fontainebleau 15k', 'Longer Fontainebleau forest/trail capacity check; adjusted/refused is acceptable if evidence is weak.', 48.4039, 2.7016, 15, 'trail', ['fontainebleau', 'forest', 'longer', 'beta-multiterrain']),
   benchmarkCase('meudon-forest-trail-10k', 'Meudon forest 10k', 'Peri-urban forest case with access ambiguity; do not hide restricted/paved compromises.', 48.8055, 2.1877, 10, 'trail', ['meudon', 'forest', 'periurban', 'beta-multiterrain']),
-  benchmarkCase('paris-19-canal-running', 'Paris 19 canal running', 'Dense urban canal/park corridor case: urban nature running, never forest trail claim.', 48.884, 2.3691, 10, 'nature_urbaine', ['paris', 'dense-urban', 'canal', 'urban-nature', 'beta-multiterrain']),
-  benchmarkCase('osm-poor-rural-trail-8k', 'Poor rural 8k', 'Sparse rural / poor OSM negative case: refuse or warn instead of fabricating surface confidence.', 48.9438, -0.6986, 8, 'trail', ['negative', 'poor-rural', 'osm-poor-data', 'beta-multiterrain']),
+  benchmarkCase('paris-19-canal-running', 'Paris 19 canal running', 'Dense urban canal/park corridor case: urban nature running, never forest trail claim.', 48.884, 2.3691, 10, 'nature_urbaine', ['paris', 'dense-urban', 'canal', 'urban-nature', 'beta-multiterrain'], REGRESSION_CONTRACT),
+  benchmarkCase('osm-poor-rural-trail-8k', 'Poor rural 8k', 'Sparse rural / poor OSM negative case: refuse or warn instead of fabricating surface confidence.', 48.9438, -0.6986, 8, 'trail', ['negative', 'poor-rural', 'osm-poor-data', 'beta-multiterrain'], NEGATIVE_CONTRACT),
   benchmarkCase('clecy-trail-10k', 'Clécy 10k', 'Suisse normande trail-ish terrain with rural connectors and real natural path evidence.', 48.9171, -0.4849, 10, 'trail', ['clecy', 'suisse-normande']),
   benchmarkCase('clecy-trail-12k', 'Clécy 12k', 'Longer Suisse normande rural/trail case; should expose if distance padding becomes dishonest.', 48.9171, -0.4849, 12, 'trail', ['clecy', 'suisse-normande', 'longer']),
   benchmarkCase('paris-buttes-chaumont-urban-nature', 'Paris Buttes-Chaumont', 'Dense urban park case: nature urbaine only, never a forest trail claim.', 48.8809, 2.3824, 6, 'nature_urbaine', ['paris', 'dense-urban', 'park']),
@@ -282,6 +335,7 @@ function benchmarkCase(
   targetDistanceKm: number,
   mode: RouteModeV3,
   tags: string[],
+  contract?: EngineV3BenchmarkContract,
 ): EngineV3BenchmarkCase {
   return {
     id,
@@ -295,6 +349,7 @@ function benchmarkCase(
       loop: true,
     },
     tags,
+    contract,
   };
 }
 

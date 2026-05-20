@@ -1,6 +1,6 @@
 import { runEngineV3BenchmarkPanel, ENGINE_V3_BENCHMARK_CASES, type EngineV3BenchmarkCase } from '../lib/engine-v3/benchmark-runner';
 
-const DEFAULT_CASE_IDS = ['tourville-trail-8k', 'fontainebleau-trail-12k'];
+const DEFAULT_CASE_IDS = ['tourville-trail-8k', 'fontainebleau-croix-augas-trail-12k'];
 const DEFAULT_OUTPUT = 'artifacts/engine-v3-benchmarks/latest.json';
 const DEFAULT_ARTIFACT_DIR = 'artifacts/engine-v3-benchmarks/latest-routes';
 
@@ -21,6 +21,14 @@ const ENGINE_V3_BENCHMARK_PANELS = {
     'caen-prairie-8k-mixed',
     'fontainebleau-trail-15k',
     'meudon-forest-trail-10k',
+    'paris-19-canal-running',
+    'osm-poor-rural-trail-8k',
+  ],
+  'asm-3i-fontainebleau-contract': [
+    'fontainebleau-croix-augas-trail-12k',
+    'fontainebleau-trail-12k',
+    'tourville-pommiers-trail-8k',
+    'caen-colline-aux-oiseaux-6k-soft',
     'paris-19-canal-running',
     'osm-poor-rural-trail-8k',
   ],
@@ -130,7 +138,7 @@ function requireValue(args: string[], index: number, flag: string): string {
 }
 
 function usage(): string {
-  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--panel <panel-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-trail-12k. Use --panel beta-multiterrain for the explicit eight-case short beta panel. Outcomes may be generated, adjusted, refused, or errored; the command writes an aggregate JSON plus JSON, GeoJSON, and GPX artifacts for each case.\n`;
+  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--panel <panel-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-croix-augas-trail-12k. Use --panel beta-multiterrain for the explicit eight-case short beta panel, or --panel asm-3i-fontainebleau-contract for the Fontainebleau contract split regression panel. Outcomes may be generated, adjusted, refused, or errored; the command writes an aggregate JSON plus JSON, GeoJSON, and GPX artifacts for each case.\n`;
 }
 
 main().catch((error: unknown) => {
