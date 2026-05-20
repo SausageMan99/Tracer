@@ -1747,6 +1747,61 @@ describe("planMultiCycleDwellV3", () => {
     ).toBeTruthy();
   });
 
+  it("extends cycle-chain selection into the 12km distance envelope instead of stopping at the clean 10km chain", () => {
+    const fixture = graph([
+      edge("access", "s", "a", 0.2, "asphalt", "residential", "urban"),
+      edge("c1-1", "a", "b", 1, "ground", "path", null),
+      edge("c1-2", "b", "c", 1, "ground", "track", null),
+      edge("c1-3", "c", "d", 1, "ground", "path", null),
+      edge("c1-4", "d", "a", 1, "ground", "track", null),
+      edge("bridge-12", "d", "e", 0.3, "ground", "path", null),
+      edge("c2-1", "e", "f", 1, "ground", "path", null),
+      edge("c2-2", "f", "g", 1, "ground", "track", null),
+      edge("c2-3", "g", "h", 1, "ground", "path", null),
+      edge("c2-4", "h", "e", 1, "ground", "track", null),
+      edge("bridge-23", "h", "i", 0.3, "ground", "path", null),
+      edge("c3-1", "i", "j", 1, "ground", "path", null),
+      edge("c3-2", "j", "k", 1, "ground", "track", null),
+      edge("c3-3", "k", "l", 1, "ground", "path", null),
+      edge("c3-4", "l", "i", 1, "ground", "track", null),
+      edge("bridge-34", "l", "m", 0.3, "ground", "path", null),
+      edge("c4-1", "m", "n", 1, "ground", "path", null),
+      edge("c4-2", "n", "o", 1, "ground", "track", null),
+      edge("c4-3", "o", "p", 1, "ground", "path", null),
+      edge("c4-4", "p", "m", 1, "ground", "track", null),
+      edge("closure-short", "h", "s", 0.2, "asphalt", "residential", "urban"),
+      edge("closure-medium", "l", "s", 0.2, "asphalt", "residential", "urban"),
+      edge("closure-in-envelope", "p", "s", 0.2, "asphalt", "residential", "urban"),
+    ]);
+    const contraction = contractNaturalGraphV3({
+      graph: fixture,
+      targetComponentIds: ["field_paths"],
+      startNodeId: "s",
+      minUsefulCycleKm: 2,
+    });
+
+    const result = planMultiCycleDwellV3({
+      graph: fixture,
+      startNodeId: "s",
+      contraction,
+      targetComponentIds: ["field_paths"],
+      targetDistanceKm: 12,
+      minDistanceKm: 11.2,
+      maxDistanceKm: 13.5,
+      requestedNaturalDwellKm: 7.5,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(result.metrics.distanceKm).toBeGreaterThanOrEqual(11.2);
+    expect(result.metrics.distanceKm).toBeLessThanOrEqual(13.5);
+    expect(result.metrics.chainTargetRepeatKm).toBe(0);
+    expect(result.diagnostics.multiCycleDwellCandidates.underMinCount).toBeGreaterThan(0);
+    expect(result.diagnostics.multiCycleDwellCandidates.inEnvelopeCount).toBeGreaterThan(0);
+    expect(result.diagnostics.maxCycles).toBeGreaterThanOrEqual(4);
+    expect(result.diagnostics.multiCycleDwellCandidates.selectedCandidate?.distanceKm).toBeGreaterThan(10.5);
+  });
+
   it("prefers a less exact but natural in-envelope candidate over a paved distance match", () => {
     const fixture = graph([
       edge("access", "s", "a", 0.2, "asphalt", "residential", "urban"),

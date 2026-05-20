@@ -494,7 +494,8 @@ const EMPTY_METRICS: MultiCycleDwellMetricsV3 = {
 export function planMultiCycleDwellV3(
   input: MultiCycleDwellInputV3,
 ): MultiCycleDwellResultV3 {
-  const maxCycles = input.maxCycles ?? 3;
+  const maxCycles =
+    input.maxCycles ?? Math.max(3, Math.min(5, Math.ceil(input.targetDistanceKm / 3)));
   const beamWidth = input.beamWidth ?? 8;
   const assemblyBudget: AssemblyBudgetV3 = {
     startedAt: Date.now(),

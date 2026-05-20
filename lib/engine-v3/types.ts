@@ -209,6 +209,7 @@ export interface RouteAssemblyDiagnosticsV3 {
     depth: number | null;
     lastProgress: string;
   };
+  candidateProductionDiagnostics?: Record<string, unknown>;
 }
 
 export interface RouteAssemblyTargetComponentHandoffDiagnosticsV3 {

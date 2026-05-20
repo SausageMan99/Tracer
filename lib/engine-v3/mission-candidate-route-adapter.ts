@@ -91,6 +91,7 @@ export function assembledRouteFromMissionCandidateV3(input: {
         selectedReason: candidate.selectedReason ?? null,
       })),
       firstDropStage: input.assemblerResult.diagnostics.firstDropStage,
+      candidateProductionDiagnostics: input.assemblerResult.diagnostics.observationOnly,
     },
     warnings: unique([...input.corridorMission.warnings, ...input.assemblerResult.warnings]),
   };
