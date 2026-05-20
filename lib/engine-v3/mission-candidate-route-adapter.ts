@@ -39,6 +39,33 @@ export function assembledRouteFromMissionCandidateV3(input: {
       candidateCountByLane: { ...input.assemblerResult.portfolio.counts },
       selectedCandidateId: input.candidate.id,
       selectedReason: `mission-driven:${input.candidate.selectedReason ?? input.candidate.lane}`,
+      topFinalCandidates: input.assemblerResult.portfolio.candidates
+        .sort((left, right) => right.selectionScore - left.selectionScore)
+        .slice(0, 8)
+        .map((candidate, index) => ({
+          rank: index + 1,
+          id: candidate.id,
+          selected: candidate.id === input.candidate.id,
+          inSelectionPool: candidate.lane === 'complete_valid' || candidate.lane === 'complete_adjustable',
+          rejectedReason: candidate.rejectedReason ?? null,
+          gate: candidate.gates.find((gate) => gate.status === 'fail')?.id ?? null,
+          distanceKm: candidate.metrics.distanceProducedKm,
+          naturalDwellKm: candidate.metrics.naturalDwellKm,
+          pavedKm: candidate.metrics.pavedKm,
+          pavedRatio: candidate.metrics.pavedRatio,
+          finalPavedRatioEstimate: candidate.metrics.pavedRatio,
+          mixedUnknownKm: candidate.metrics.pathTrackUnknownKm ?? 0,
+          strictTrailKm: candidate.metrics.strictTrailKm ?? 0,
+          longestTrailSegmentKm: candidate.metrics.longestTrailSegmentKm,
+          repeatKm: candidate.metrics.repeatEdgeKm,
+          targetRepeatKm: candidate.metrics.targetRepeatKm,
+          connectorRepeatKm: candidate.metrics.connectorRepeatKm,
+          returned: candidate.returned,
+          scoreComplete: candidate.selectionScore,
+          scoreProgress: candidate.selectionScore,
+          source: candidate.source,
+          selectedReason: candidate.selectedReason ?? null,
+        })),
       topRejected: input.assemblerResult.portfolio.topRejected.map((candidate, index) => ({
         rank: index + 1,
         id: candidate.id,

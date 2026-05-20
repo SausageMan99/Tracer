@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { assembleMissionV3 } from '@/lib/engine-v3/assemblers/mission-dispatcher';
 import { generateRouteV3FromGraph } from '@/lib/engine-v3/route-generator';
 import {
+  makeEdge,
+  makeGraph,
+  makeMission,
   syntheticLargeForestLoop,
   syntheticParkSmall,
   syntheticRuralPoorSurfaceConfidence,
@@ -124,6 +127,137 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(result.phaseDiagnostics.closure.targetRepeatKm).toBeLessThanOrEqual(scenario.mission.budgets.maxTargetRepeatKm);
     expect(result.phaseDiagnostics.closure.connectorRepeatKm).toBeGreaterThan(0);
     expect(result.portfolio.candidates.find((candidate) => candidate.id.includes('residential'))?.lane).not.toBe('complete_valid');
+  });
+
+  it('transition_to_woods produces a returned candidate after multi-edge paved access to target dwell', () => {
+    const scenario = syntheticTransitionWoodsConnectorThenDwell();
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access-1', from: 'start', to: 'village-mid', lengthKm: 0.45, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'village-access-2', from: 'village-mid', to: 'woods-entry', lengthKm: 0.45, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'field-dwell-1', from: 'woods-entry', to: 'field-1', lengthKm: 1.8, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'forest-dwell-1', from: 'field-1', to: 'forest-1', lengthKm: 2.1, surface: 'dirt', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'forest-dwell-2', from: 'forest-1', to: 'woods-entry', lengthKm: 2, surface: 'earth', highway: 'track', componentKind: 'forest' }),
+      makeEdge({ id: 'residential-decoy-loop', from: 'start', to: 'start-loop', lengthKm: 1.2, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+
+    const result = assembleMissionV3(graph, scenario.mission);
+
+    expect(result.selectedCandidate?.returned).toBe(true);
+    expect(result.selectedCandidate?.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+    expect(result.selectedCandidate?.edgeIds).toEqual([
+      'village-access-1',
+      'village-access-2',
+      'field-dwell-1',
+      'forest-dwell-1',
+      'forest-dwell-2',
+      'village-access-2',
+      'village-access-1',
+    ]);
+    expect(result.phaseDiagnostics.dwell.targetDwellKm).toBeGreaterThanOrEqual(scenario.expected.minNaturalDwellKm!);
+    expect(result.phaseDiagnostics.closure.connectorRepeatKm).toBeGreaterThan(0);
+    expect(result.phaseDiagnostics.closure.targetRepeatKm).toBe(0);
+  });
+
+  it('transition_to_woods prefers a lateral target traverse with separate connector closure over target out-and-back repeat', () => {
+    const scenario = syntheticTransitionWoodsConnectorThenDwell();
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.7, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'repeat-prone-target-1', from: 'woods-entry', to: 'spur-1', lengthKm: 2.1, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'repeat-prone-target-2', from: 'spur-1', to: 'dead-end', lengthKm: 2.1, surface: 'dirt', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'lateral-target-1', from: 'woods-entry', to: 'lateral-1', lengthKm: 2.2, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'lateral-target-2', from: 'lateral-1', to: 'woods-exit', lengthKm: 2.3, surface: 'earth', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'separate-connector-closure', from: 'woods-exit', to: 'start', lengthKm: 0.8, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+
+    const result = assembleMissionV3(graph, scenario.mission);
+
+    expect(result.selectedCandidate?.returned).toBe(true);
+    expect(result.selectedCandidate?.edgeIds).toEqual([
+      'village-access',
+      'lateral-target-1',
+      'lateral-target-2',
+      'separate-connector-closure',
+    ]);
+    expect(result.selectedCandidate?.metrics.naturalDwellKm).toBeGreaterThanOrEqual(scenario.expected.minNaturalDwellKm!);
+    expect(result.phaseDiagnostics.closure.targetRepeatKm).toBe(0);
+    expect(result.selectedCandidate?.metrics.repeatRatio).toBe(0);
+  });
+
+  it('transition_to_woods chains multiple clean target cycles before connector closure', () => {
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.5, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'cycle-a-1', from: 'woods-entry', to: 'a1', lengthKm: 1.4, surface: 'ground', highway: 'track', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'cycle-a-2', from: 'a1', to: 'a2', lengthKm: 1.4, surface: 'dirt', highway: 'path', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'cycle-a-3', from: 'a2', to: 'woods-entry', lengthKm: 1.4, surface: 'earth', highway: 'track', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'cycle-b-1', from: 'woods-entry', to: 'b1', lengthKm: 1.5, surface: 'ground', highway: 'track', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'cycle-b-2', from: 'b1', to: 'b2', lengthKm: 1.5, surface: 'dirt', highway: 'path', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'cycle-b-3', from: 'b2', to: 'woods-entry', lengthKm: 1.5, surface: 'earth', highway: 'track', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'dirty-spur-1', from: 'woods-entry', to: 'dirty-a', lengthKm: 2.1, surface: 'ground', highway: 'track', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'dirty-spur-2', from: 'dirty-a', to: 'dirty-dead-end', lengthKm: 2.1, surface: 'dirt', highway: 'path', componentKind: 'forest', landcoverClass: 'forest' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-transition-multi-cycle-chain',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 10, minDistanceKm: 8.5, maxDistanceKm: 11.5, sport: 'running', mode: 'trail', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 1.2 },
+      target: { componentIds: ['forest-core'], componentKinds: ['forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 4, minContinuousTrailKm: 1.5 },
+      budgets: { maxPavedKm: 2.4, maxPavedRatio: 0.32, maxBusyRoadRatio: 0.08, maxRepeatKm: 2.1, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 1.2, maxOverlapRatio: 0.18, maxAccessPavedKm: 1.2, maxClosurePavedKm: 1.2, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+    const cycleCandidate = result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'cycle_or_lateral');
+
+    expect(cycleCandidate?.edgeIds).toEqual(expect.arrayContaining(['cycle-a-1', 'cycle-a-2', 'cycle-a-3', 'cycle-b-1', 'cycle-b-2', 'cycle-b-3']));
+    expect(cycleCandidate?.metrics.distanceProducedKm).toBeGreaterThanOrEqual(mission.request.minDistanceKm);
+    expect(cycleCandidate?.metrics.targetRepeatKm).toBe(0);
+    expect(result.selectedCandidate?.selectedReason).toBe('cycle_or_lateral');
+    expect(result.diagnostics.observationOnly.topologyLaneCounts).toMatchObject({
+      cycle_or_lateral: expect.any(Number),
+    });
+  });
+
+  it('transition_to_woods retains clean_short, long_dirty, and cycle_or_lateral topology lanes in the portfolio', () => {
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.5, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'clean-loop-1', from: 'woods-entry', to: 'clean-a', lengthKm: 1.4, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'clean-loop-2', from: 'clean-a', to: 'clean-b', lengthKm: 1.4, surface: 'dirt', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'clean-loop-3', from: 'clean-b', to: 'woods-entry', lengthKm: 1.4, surface: 'earth', highway: 'track', componentKind: 'forest' }),
+      makeEdge({ id: 'dirty-spur-1', from: 'woods-entry', to: 'dirty-a', lengthKm: 2.1, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'dirty-spur-2', from: 'dirty-a', to: 'dirty-dead-end', lengthKm: 2.1, surface: 'dirt', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'lateral-cycle-1', from: 'woods-entry', to: 'lateral-a', lengthKm: 2.8, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'lateral-cycle-2', from: 'lateral-a', to: 'woods-exit', lengthKm: 2.9, surface: 'earth', highway: 'path', componentKind: 'forest' }),
+      makeEdge({ id: 'lateral-connector-closure', from: 'woods-exit', to: 'start', lengthKm: 0.7, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-transition-topology-portfolio',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'trail', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 1.2 },
+      target: { componentIds: ['field-core', 'forest-core'], componentKinds: ['field_paths', 'forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 4, minContinuousTrailKm: 1.5 },
+      budgets: { maxPavedKm: 2.4, maxPavedRatio: 0.32, maxBusyRoadRatio: 0.08, maxRepeatKm: 4.8, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 2.1, maxOverlapRatio: 0.18, maxAccessPavedKm: 1.2, maxClosurePavedKm: 1.2, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+    const candidateReasons = result.portfolio.candidates.map((candidate) => candidate.selectedReason);
+
+    expect(candidateReasons).toEqual(expect.arrayContaining(['clean_short', 'long_dirty', 'cycle_or_lateral']));
+    expect(result.diagnostics.observationOnly.topologyLaneCounts).toMatchObject({
+      clean_short: expect.any(Number),
+      long_dirty: expect.any(Number),
+      cycle_or_lateral: expect.any(Number),
+    });
+    expect(result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'long_dirty')?.metrics.targetRepeatKm).toBeGreaterThan(0);
+    expect(result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'clean_short')?.metrics.targetRepeatKm).toBe(0);
+    expect(result.selectedCandidate?.selectedReason).toBe('cycle_or_lateral');
+    expect(result.selectedCandidate?.edgeIds).toEqual(expect.arrayContaining([
+      'village-access',
+      'lateral-cycle-1',
+      'lateral-cycle-2',
+      'lateral-connector-closure',
+    ]));
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeGreaterThanOrEqual(mission.request.minDistanceKm);
   });
 
   it('park_small returns adjusted/refused but never generated trail', () => {
