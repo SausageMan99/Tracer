@@ -1,32 +1,7 @@
 import { haversineKm } from '../route-generator-legacy';
 import type { EnrichedEdge, EnrichedGraph } from '../types';
+import { classifyEdgeSemanticsV3 } from './edge-semantics';
 import type { ConfidenceV3, TerrainComponentKindV3, TerrainComponentV3, TerrainSnapshotV3 } from './types';
-
-const PAVED_SURFACES = new Set([
-  'asphalt',
-  'concrete',
-  'paved',
-  'paving_stones',
-  'sett',
-  'cobblestone',
-  'compacted',
-]);
-
-const NATURAL_SURFACES = new Set([
-  'dirt',
-  'earth',
-  'grass',
-  'ground',
-  'gravel',
-  'mud',
-  'sand',
-  'soil',
-  'unpaved',
-  'woodchips',
-]);
-
-const ROAD_LIKE_HIGHWAYS = new Set(['secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service']);
-const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian']);
 
 interface ComponentAccumulator {
   kind: TerrainComponentKindV3;
@@ -52,8 +27,9 @@ export function buildTerrainSnapshotV3FromGraph(graph: EnrichedGraph): TerrainSn
 
   for (const edge of uniqueEdges) {
     const lengthKm = Math.max(0, edge.lengthKm);
-    const surface = classifySurface(edge);
-    const kind = classifyComponentKind(edge, surface);
+    const semantics = classifyEdgeSemanticsV3(edge);
+    const surface = semantics.routeSurface;
+    const kind = semantics.componentKind;
     const accumulator = components.get(kind) ?? createAccumulator(kind);
     const distanceFromStartKm = estimateEdgeDistanceFromStart(edge, distancesFromStart, graph);
 
@@ -66,19 +42,14 @@ export function buildTerrainSnapshotV3FromGraph(graph: EnrichedGraph): TerrainSn
     if (surface === 'paved') {
       pavedKm += lengthKm;
       accumulator.pavedKm += lengthKm;
-    } else if (surface === 'natural') {
-      nonPavedKm += lengthKm;
-      accumulator.nonPavedKm += lengthKm;
     } else {
-      unknownSurfaceKm += lengthKm;
-      // Unknown scenic/path edges remain ambiguous: count half as non-paved for route potential,
-      // but record a warning so V3 does not pretend the surface is proven trail.
-      const inferredNonPavedKm = lengthKm * 0.5;
-      const inferredPavedKm = lengthKm - inferredNonPavedKm;
-      pavedKm += inferredPavedKm;
-      nonPavedKm += inferredNonPavedKm;
-      accumulator.pavedKm += inferredPavedKm;
-      accumulator.nonPavedKm += inferredNonPavedKm;
+      const pavedEquivalentKm = lengthKm * semantics.pavedEquivalentWeight;
+      const nonPavedEquivalentKm = lengthKm - pavedEquivalentKm;
+      if (surface === 'mixed') unknownSurfaceKm += lengthKm;
+      pavedKm += pavedEquivalentKm;
+      nonPavedKm += nonPavedEquivalentKm;
+      accumulator.pavedKm += pavedEquivalentKm;
+      accumulator.nonPavedKm += nonPavedEquivalentKm;
     }
 
     components.set(kind, accumulator);
@@ -162,29 +133,6 @@ function estimateEdgeDistanceFromStart(edge: EnrichedEdge, distances: Map<string
     .filter((node): node is NonNullable<typeof node> => Boolean(node))
     .map((node) => haversineKm(graph.center, { lat: node.lat, lng: node.lng }));
   return round(Math.min(...distancesToCenter));
-}
-
-function classifySurface(edge: EnrichedEdge): 'paved' | 'natural' | 'unknown' {
-  const surface = edge.surface?.toLowerCase();
-  if (surface && PAVED_SURFACES.has(surface)) return 'paved';
-  if (surface && NATURAL_SURFACES.has(surface)) return 'natural';
-  return 'unknown';
-}
-
-function classifyComponentKind(edge: EnrichedEdge, surface: 'paved' | 'natural' | 'unknown'): TerrainComponentKindV3 {
-  const landcover = edge.terrainContext?.landcoverClass;
-  const highway = edge.highway.toLowerCase();
-
-  if (surface === 'paved' && edge.scenic && ROAD_LIKE_HIGHWAYS.has(highway)) return 'scenic_paved';
-  if (landcover === 'forest') return 'forest';
-  if (landcover === 'park') return 'park';
-  if (landcover === 'water_corridor') return 'river_corridor';
-  if (landcover === 'urban') return edge.scenic ? 'urban_green' : 'residential';
-  if (surface === 'paved' && edge.scenic) return 'scenic_paved';
-  if (surface === 'natural' && PATH_LIKE_HIGHWAYS.has(highway)) return edge.scenic ? 'forest' : 'field_paths';
-  if (edge.scenic) return 'urban_green';
-  if (ROAD_LIKE_HIGHWAYS.has(highway)) return 'residential';
-  return 'field_paths';
 }
 
 function createAccumulator(kind: TerrainComponentKindV3): ComponentAccumulator {

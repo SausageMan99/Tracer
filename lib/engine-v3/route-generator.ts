@@ -3,10 +3,15 @@ import { assembleGraphRouteV3 } from './graph-route-assembler';
 import { assembleMissionV3 } from './assemblers/mission-dispatcher';
 import { buildCorridorMissionV3 } from './corridor-anchor-builder';
 import { buildMissionContractV3 } from './mission-contract-builder';
+import {
+  buildForestLoopRouteContractV3,
+  precheckForestLoopRouteContractV3,
+} from './contracts/route-contract';
 import { assembledRouteFromMissionCandidateV3 } from './mission-candidate-route-adapter';
 import { decideOutcomeV3 } from './outcome-decider';
 import { planRouteIntentV3 } from './route-intent-planner';
 import { buildTerrainSnapshotV3FromGraph } from './terrain-snapshot-builder';
+import { buildTerrainInventoryV3 } from './assemblers/terrain-inventory';
 import type { EnrichedGraph } from '../types';
 import type {
   AssembledRouteV3,
@@ -48,6 +53,26 @@ export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: Enr
       })
     : assembleGraphRouteV3(intent, mission, graph);
   const outcome = decideOutcomeV3(intent, route);
+  const diagnostics = buildDiagnostics('graph_adapter', intent, mission, route, outcome);
+  if (request.mode === 'trail' && (process.env.TRAILFORGE_V3_TERRAIN_INVENTORY === '1' || process.env.TRAILFORGE_V3_ROUTE_CONTRACT === '1')) {
+    const terrainInventory = buildTerrainInventoryV3({
+      graph,
+      startNodeId: route.nodeIds[0] ?? closestNodeId(graph, request.start) ?? firstNodeId(graph) ?? '',
+      targetComponentIds: inventoryTargetComponentIds(intent.constraints.targetComponents),
+    });
+    if (process.env.TRAILFORGE_V3_TERRAIN_INVENTORY === '1') {
+      diagnostics.terrainInventory = terrainInventory;
+    }
+    if (process.env.TRAILFORGE_V3_ROUTE_CONTRACT === '1') {
+      diagnostics.routeContractPrecheck = precheckForestLoopRouteContractV3({
+        contract: buildForestLoopRouteContractV3({
+          requestedDistanceKm: request.targetDistanceKm,
+          targetComponentIds: inventoryTargetComponentIds(intent.constraints.targetComponents),
+        }),
+        inventory: terrainInventory,
+      });
+    }
+  }
 
   return {
     engine: 'v3-clean-room',
@@ -55,7 +80,7 @@ export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: Enr
     mission,
     route,
     outcome,
-    diagnostics: buildDiagnostics('graph_adapter', intent, mission, route, outcome),
+    diagnostics,
   };
 }
 
@@ -123,4 +148,22 @@ function reasonsOrCompromises(outcome: RouteOutcomeV3): string[] {
 
 function unique(values: string[]): string[] {
   return Array.from(new Set(values));
+}
+
+function closestNodeId(graph: EnrichedGraph, point: { lat: number; lng: number }): string | null {
+  let best: { id: string; distance: number } | null = null;
+  for (const node of Array.from(graph.nodes.values())) {
+    const distance = Math.hypot(node.lat - point.lat, node.lng - point.lng);
+    if (!best || distance < best.distance) best = { id: node.id, distance };
+  }
+  return best?.id ?? null;
+}
+
+function firstNodeId(graph: EnrichedGraph): string | null {
+  return Array.from(graph.nodes.keys())[0] ?? null;
+}
+
+function inventoryTargetComponentIds(componentIds: RouteIntentV3['constraints']['targetComponents']): RouteIntentV3['constraints']['targetComponents'] {
+  const defaults: RouteIntentV3['constraints']['targetComponents'] = ['forest', 'field_paths'];
+  return Array.from(new Set([...componentIds, ...defaults]));
 }

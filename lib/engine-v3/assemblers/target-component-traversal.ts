@@ -1,10 +1,6 @@
 import type { EnrichedEdge, EnrichedGraph } from '../../types';
+import { classifyEdgeSemanticsV3 } from '../edge-semantics';
 import type { RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
-
-const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
-const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
-const ROAD_LIKE_HIGHWAYS = new Set(['secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service']);
-const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian']);
 
 interface DirectedTraversalEdgeV3 {
   edge: EnrichedEdge;
@@ -57,6 +53,12 @@ export interface TargetComponentTraversalDiagnosticsV3 {
   maxDistanceKm: number;
   blocker: 'no_reachable_target_component' | 'branch_repeat_limited' | 'insufficient_clean_capacity' | 'no_clean_closure';
   bestPartialDistanceKm: number;
+  enteredTargetComponent: boolean;
+  failureStage: 'targetTraversal' | 'closure' | 'distance' | null;
+  targetComponentDwellKm: number;
+  targetRepeatKm: number;
+  connectorRepeatKm: number;
+  exploitedOpportunityRatio: number;
 }
 
 export type TargetComponentTraversalResultV3 = TargetComponentTraversalSuccessV3 | TargetComponentTraversalFailureV3;
@@ -70,7 +72,7 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
   const adjacency = buildAdjacency(input.graph);
   const targetComponents = new Set(input.targetComponentIds);
   const targetEdges = uniqueUndirectedTargetEdges(adjacency, targetComponents);
-  const reachableComponent = reachableTargetComponent(input.entryNodeId, adjacency, targetComponents);
+  const reachableComponent = reachableTargetComponent(input.entryNodeId, adjacency, targetComponents, input.startNodeId);
 
   if (reachableComponent.edgeIds.size === 0) {
     return {
@@ -85,6 +87,12 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
         maxDistanceKm: round(maxDistanceKm),
         blocker: 'no_reachable_target_component',
         bestPartialDistanceKm: 0,
+        enteredTargetComponent: false,
+        failureStage: 'targetTraversal',
+        targetComponentDwellKm: 0,
+        targetRepeatKm: 0,
+        connectorRepeatKm: 0,
+        exploitedOpportunityRatio: 0,
       },
     };
   }
@@ -112,11 +120,24 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
     ? totalDistanceKm
     : longestCleanTargetPathKm(input.entryNodeId, adjacency, targetComponents, Math.min(96, reachableComponent.edgeIds.size));
   const bestPartialDistanceKm = round(fallbackPartialDistanceKm);
+  const closureConnectorRepeatKm = closure
+    .filter((edge) => !targetComponents.has(edge.kind) && usedEdgeKeys.has(edge.edge.id))
+    .reduce((sum, edge) => sum + edgeLength(edge), 0);
+  const closureTargetRepeatKm = closure
+    .filter((edge) => targetComponents.has(edge.kind))
+    .reduce((sum, edge) => sum + edgeLength(edge), 0);
   const blocker = exploitableTargetKm + 0.001 < reachableTargetKm && exploitableTargetKm < minDistanceKm
     ? 'branch_repeat_limited'
     : closure.length === 0
       ? 'no_clean_closure'
       : 'insufficient_clean_capacity';
+  const failureStage: TargetComponentTraversalDiagnosticsV3['failureStage'] = targetTraversal.length === 0 || repeatedTargetKm > 0
+    ? 'targetTraversal'
+    : closure.length === 0
+      ? 'closure'
+      : totalDistanceKm + 0.001 < minDistanceKm || totalDistanceKm > maxDistanceKm + 0.001
+        ? 'distance'
+        : null;
   const diagnostics: TargetComponentTraversalDiagnosticsV3 = {
     reachableTargetKm: round(reachableTargetKm),
     exploitableTargetKm: round(exploitableTargetKm),
@@ -127,6 +148,12 @@ export function buildTargetComponentTraversal(input: TargetComponentTraversalInp
     maxDistanceKm: round(maxDistanceKm),
     blocker,
     bestPartialDistanceKm,
+    enteredTargetComponent: targetTraversal.length > 0,
+    failureStage,
+    targetComponentDwellKm: round(targetDistanceKm),
+    targetRepeatKm: round(repeatedTargetKm + closureTargetRepeatKm),
+    connectorRepeatKm: round(closureConnectorRepeatKm),
+    exploitedOpportunityRatio: round(reachableTargetKm > 0 ? targetDistanceKm / reachableTargetKm : 0),
   };
 
   if (
@@ -173,7 +200,15 @@ function buildCleanTargetWalk(
   while (usedCoreCount(used, coreEdgeIds) < coreEdgeIds.size) {
     const next = (adjacency.get(current) ?? [])
       .filter((edge) => coreEdgeIds.has(edge.edge.id) && !used.has(edge.edge.id) && targetComponents.has(edge.kind))
-      .sort((a, b) => edgeLength(b) - edgeLength(a))[0];
+      .map((edge) => {
+        const usedWithEdge = new Set(used);
+        usedWithEdge.add(edge.edge.id);
+        return {
+          edge,
+          scoreKm: edgeLength(edge) + longestUnusedCorePathKm(edge.to, usedWithEdge, coreEdgeIds, adjacency, targetComponents),
+        };
+      })
+      .sort((a, b) => b.scoreKm - a.scoreKm || edgeLength(b.edge) - edgeLength(a.edge))[0]?.edge;
     if (next) {
       traversal.push(next);
       used.add(next.edge.id);
@@ -309,6 +344,7 @@ function reachableTargetComponent(
   entryNodeId: string,
   adjacency: Map<string, DirectedTraversalEdgeV3[]>,
   targetComponents: Set<TerrainComponentKindV3>,
+  blockedTransitNodeId?: string,
 ): { nodeIds: Set<string>; edgeIds: Set<string> } {
   const nodeIds = new Set<string>();
   const edgeIds = new Set<string>();
@@ -318,6 +354,7 @@ function reachableTargetComponent(
     if (!current || nodeIds.has(current)) continue;
     nodeIds.add(current);
     for (const edge of adjacency.get(current) ?? []) {
+      if (edge.to === blockedTransitNodeId && edge.to !== entryNodeId) continue;
       if (!targetComponents.has(edge.kind) || edge.surface === 'paved') continue;
       edgeIds.add(edge.edge.id);
       if (!nodeIds.has(edge.to)) pending.push(edge.to);
@@ -360,10 +397,13 @@ function longestCleanTargetPathKm(
   maxSteps: number,
 ): number {
   let best = 0;
+  let expansions = 0;
+  const maxExpansions = 5_000;
   const stack: Array<{ nodeId: string; distanceKm: number; usedEdgeIds: Set<string> }> = [
     { nodeId: entryNodeId, distanceKm: 0, usedEdgeIds: new Set() },
   ];
-  while (stack.length > 0) {
+  while (stack.length > 0 && expansions < maxExpansions) {
+    expansions += 1;
     const current = stack.pop();
     if (!current) break;
     best = Math.max(best, current.distanceKm);
@@ -375,6 +415,39 @@ function longestCleanTargetPathKm(
       stack.push({ nodeId: edge.to, distanceKm: current.distanceKm + edgeLength(edge), usedEdgeIds });
     }
   }
+  return best;
+}
+
+function longestUnusedCorePathKm(
+  startNodeId: string,
+  used: Set<string>,
+  coreEdgeIds: Set<string>,
+  adjacency: Map<string, DirectedTraversalEdgeV3[]>,
+  targetComponents: Set<TerrainComponentKindV3>,
+): number {
+  let best = 0;
+  const maxSteps = Math.min(96, coreEdgeIds.size);
+  let expansions = 0;
+  const maxExpansions = 5_000;
+  const stack: Array<{ nodeId: string; distanceKm: number; usedEdgeIds: Set<string> }> = [
+    { nodeId: startNodeId, distanceKm: 0, usedEdgeIds: new Set(used) },
+  ];
+
+  while (stack.length > 0 && expansions < maxExpansions) {
+    expansions += 1;
+    const current = stack.pop();
+    if (!current) break;
+    best = Math.max(best, current.distanceKm);
+    if (current.usedEdgeIds.size - used.size >= maxSteps) continue;
+
+    for (const edge of adjacency.get(current.nodeId) ?? []) {
+      if (!coreEdgeIds.has(edge.edge.id) || !targetComponents.has(edge.kind) || current.usedEdgeIds.has(edge.edge.id)) continue;
+      const usedEdgeIds = new Set(current.usedEdgeIds);
+      usedEdgeIds.add(edge.edge.id);
+      stack.push({ nodeId: edge.to, distanceKm: current.distanceKm + edgeLength(edge), usedEdgeIds });
+    }
+  }
+
   return best;
 }
 
@@ -463,8 +536,9 @@ function nodesFromTraversal(startNodeId: string, traversal: DirectedTraversalEdg
 function buildAdjacency(graph: EnrichedGraph): Map<string, DirectedTraversalEdgeV3[]> {
   const adjacency = new Map<string, DirectedTraversalEdgeV3[]>();
   for (const edge of Array.from(graph.edges.values())) {
-    const surface = classifySurface(edge);
-    const kind = classifyComponentKind(edge, surface);
+    const semantics = classifyEdgeSemanticsV3(edge);
+    const surface = semantics.routeSurface;
+    const kind = semantics.componentKind;
     pushAdjacency(adjacency, edge.from, { edge, from: edge.from, to: edge.to, kind, surface });
     pushAdjacency(adjacency, edge.to, { edge, from: edge.to, to: edge.from, kind, surface });
   }
@@ -475,29 +549,6 @@ function pushAdjacency(adjacency: Map<string, DirectedTraversalEdgeV3[]>, nodeId
   const edges = adjacency.get(nodeId) ?? [];
   edges.push(edge);
   adjacency.set(nodeId, edges);
-}
-
-function classifySurface(edge: EnrichedEdge): RouteSurfaceV3 {
-  const surface = edge.surface?.toLowerCase();
-  if (surface && PAVED_SURFACES.has(surface)) return 'paved';
-  if (surface && NATURAL_SURFACES.has(surface)) return 'natural';
-  return 'mixed';
-}
-
-function classifyComponentKind(edge: EnrichedEdge, surface: RouteSurfaceV3): TerrainComponentKindV3 {
-  const landcover = edge.terrainContext?.landcoverClass;
-  const highway = edge.highway.toLowerCase();
-
-  if (surface === 'paved' && edge.scenic && ROAD_LIKE_HIGHWAYS.has(highway)) return 'scenic_paved';
-  if (landcover === 'forest') return 'forest';
-  if (landcover === 'park') return 'park';
-  if (landcover === 'water_corridor') return 'river_corridor';
-  if (landcover === 'urban') return edge.scenic ? 'urban_green' : 'residential';
-  if (surface === 'paved' && edge.scenic) return 'scenic_paved';
-  if (surface === 'natural' && PATH_LIKE_HIGHWAYS.has(highway)) return edge.scenic ? 'forest' : 'field_paths';
-  if (edge.scenic) return 'urban_green';
-  if (ROAD_LIKE_HIGHWAYS.has(highway)) return 'residential';
-  return 'field_paths';
 }
 
 function round(value: number): number {

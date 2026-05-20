@@ -1,13 +1,11 @@
 import type { EnrichedEdge, EnrichedGraph } from '../../types';
+import { classifyEdgeSemanticsV3 } from '../edge-semantics';
 import type { RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
 import type { NaturalCycleCandidateV3, NaturalGraphContractionResultV3 } from './natural-graph-contraction';
 import { planMultiCycleDwellV3 } from './multi-cycle-dwell-planner';
 import type { MultiCycleDwellDiagnosticsV3 } from './multi-cycle-dwell-planner';
-
-const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
-const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
-const ROAD_LIKE_HIGHWAYS = new Set(['secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service']);
-const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian']);
+import { selectTrailSpinesV3 } from './trail-spine-selector';
+import type { TrailSpineSelectorDiagnosticsV3 } from './trail-spine-selector';
 
 interface DirectedOrderedCycleEdgeV3 {
   edge: EnrichedEdge;
@@ -60,6 +58,7 @@ export interface OrderedCycleExpansionDiagnosticsV3 {
   metrics: OrderedCycleExpansionMetricsV3;
   rankedNaturalCycles?: NaturalGraphContractionResultV3['diagnostics']['rankedNaturalCycles'];
   multiCycleDwell?: MultiCycleDwellDiagnosticsV3;
+  trailSpine?: TrailSpineSelectorDiagnosticsV3;
 }
 
 export interface OrderedCycleExpansionInputV3 {
@@ -103,13 +102,23 @@ const EMPTY_VALIDATION: OrderedCycleExpansionValidationV3 = {
 export function buildOrderedCycleExpansionV3(input: OrderedCycleExpansionInputV3): OrderedCycleExpansionResultV3 {
   const adjacency = buildAdjacency(input.graph);
   const rejectedCycles: Array<{ id: string; reason: OrderedCycleExpansionFailureReasonV3 }> = [];
+  const trailSpines = selectTrailSpinesV3({
+    graph: input.graph,
+    startNodeId: input.startNodeId,
+    targetComponentIds: input.targetComponentIds,
+    minDistanceKm: Math.max(1.2, input.targetDistanceKm * 0.12),
+  });
   const multiCycle = planMultiCycleDwellV3({
     graph: input.graph,
     startNodeId: input.startNodeId,
     contraction: input.contraction,
     targetComponentIds: input.targetComponentIds,
     targetDistanceKm: input.targetDistanceKm,
-    requestedNaturalDwellKm: Math.max(2.5, input.targetDistanceKm * 0.55),
+    // Search threshold, not product promise: credible path/track candidates may be assembled
+    // as adjusted evidence, while outcome gates still expose strict-vs-unverified metrics.
+    requestedNaturalDwellKm: Math.max(2.5, input.targetDistanceKm * 0.38),
+    maxDistanceKm: input.targetDistanceKm * 1.15,
+    trailSpines: trailSpines.candidates,
   });
   if (multiCycle.status === 'success') {
     const metrics = metricsFromMultiCycle(multiCycle.metrics);
@@ -130,8 +139,36 @@ export function buildOrderedCycleExpansionV3(input: OrderedCycleExpansionInputV3
       metrics,
       rankedNaturalCycles: input.contraction.diagnostics.rankedNaturalCycles,
       multiCycleDwell: multiCycle.diagnostics,
+      trailSpine: trailSpines.diagnostics,
     };
     return { status: 'success', edgeIds: multiCycle.edgeIds, nodeIds: multiCycle.nodeIds, core, metrics, validation, diagnostics };
+  }
+  if (multiCycle.edgeIds.length > 0 && multiCycle.diagnostics.candidateCount > 16 && multiCycle.diagnostics.failedPhase === 'finalGate' && multiCycle.diagnostics.multiCycleDwellCandidates.inEnvelopeCount > 0) {
+    const directed = edgeIdsToDirectedTraversal(input.startNodeId, multiCycle.edgeIds, input.graph, adjacency);
+    const nodeIds = multiCycle.nodeIds.length > 1
+      ? multiCycle.nodeIds
+      : nodesFromDirectedEdges(input.startNodeId, directed);
+    const validation = validateOrderedCycle(input.graph, directed, nodeIds);
+    const metrics = metricsFromMultiCycle(multiCycle.metrics);
+    const diagnostics = {
+      candidateCount: input.contraction.cycleCandidates.length,
+      selectedCycleId: null,
+      rejectedCycles,
+      validation,
+      metrics,
+      rankedNaturalCycles: input.contraction.diagnostics.rankedNaturalCycles,
+      multiCycleDwell: multiCycle.diagnostics,
+      trailSpine: trailSpines.diagnostics,
+    };
+    return {
+      status: 'failure',
+      reason: 'invalid_cycle_expansion',
+      edgeIds: multiCycle.edgeIds,
+      nodeIds,
+      metrics,
+      validation,
+      diagnostics,
+    };
   }
   const candidates = [...input.contraction.cycleCandidates]
     .sort((a, b) => cycleScore(b, input) - cycleScore(a, input));
@@ -188,6 +225,7 @@ export function buildOrderedCycleExpansionV3(input: OrderedCycleExpansionInputV3
       metrics,
       rankedNaturalCycles: input.contraction.diagnostics.rankedNaturalCycles,
       multiCycleDwell: multiCycle.diagnostics,
+      trailSpine: trailSpines.diagnostics,
     };
     return { status: 'success', edgeIds, nodeIds, core, metrics, validation, diagnostics };
   }
@@ -202,6 +240,7 @@ export function buildOrderedCycleExpansionV3(input: OrderedCycleExpansionInputV3
     metrics,
     rankedNaturalCycles: input.contraction.diagnostics.rankedNaturalCycles,
     multiCycleDwell: multiCycle.diagnostics,
+    trailSpine: trailSpines.diagnostics,
   };
   return { status: 'failure', reason, edgeIds: [], nodeIds: [input.startNodeId], metrics, validation: EMPTY_VALIDATION, diagnostics };
 }
@@ -438,7 +477,7 @@ function metricsFromPhases(
     distanceKm: round(sumDirectedLengths(all)),
     accessKm: round(sumDirectedLengths(access)),
     cycleKm: round(sumDirectedLengths(cycle)),
-    naturalCycleKm: round(sumDirectedLengths(cycle.filter((edge) => targetComponents.has(edge.kind) && edge.surface !== 'paved'))),
+    naturalCycleKm: round(sumNaturalEquivalent(cycle.filter((edge) => targetComponents.has(edge.kind)))),
     closureKm: round(sumDirectedLengths(closure)),
     pavedKm: round(sumPaved(all)),
     repeatEdgeKm: round(repeatEdgeKm),
@@ -474,7 +513,11 @@ function sumDirectedLengths(edges: DirectedOrderedCycleEdgeV3[]): number {
 }
 
 function sumPaved(edges: DirectedOrderedCycleEdgeV3[]): number {
-  return edges.filter((edge) => edge.surface === 'paved').reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0);
+  return edges.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm) * classifyEdgeSemanticsV3(edge.edge).pavedEquivalentWeight, 0);
+}
+
+function sumNaturalEquivalent(edges: DirectedOrderedCycleEdgeV3[]): number {
+  return edges.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm) * classifyEdgeSemanticsV3(edge.edge).candidateNaturalWeight, 0);
 }
 
 function emptyMetrics(): OrderedCycleExpansionMetricsV3 {
@@ -482,29 +525,11 @@ function emptyMetrics(): OrderedCycleExpansionMetricsV3 {
 }
 
 function routeSurface(edge: EnrichedEdge): RouteSurfaceV3 {
-  const surface = (edge.surface ?? '').toLowerCase();
-  if (PAVED_SURFACES.has(surface)) return 'paved';
-  if (NATURAL_SURFACES.has(surface)) return 'natural';
-  if (edge.terrainContext?.landcoverClass === 'forest') return 'natural';
-  if (ROAD_LIKE_HIGHWAYS.has((edge.highway ?? '').toLowerCase())) return 'paved';
-  return 'mixed';
+  return classifyEdgeSemanticsV3(edge).routeSurface;
 }
 
 function componentKind(edge: EnrichedEdge): TerrainComponentKindV3 {
-  const surface = routeSurface(edge);
-  const highway = (edge.highway ?? '').toLowerCase();
-  const landcover = edge.terrainContext?.landcoverClass;
-
-  if (surface === 'paved' && edge.scenic && ROAD_LIKE_HIGHWAYS.has(highway)) return 'scenic_paved';
-  if (landcover === 'forest') return 'forest';
-  if (landcover === 'park') return 'park';
-  if (landcover === 'water_corridor') return 'river_corridor';
-  if (landcover === 'urban') return edge.scenic ? 'urban_green' : 'residential';
-  if (surface === 'paved' && edge.scenic) return 'scenic_paved';
-  if (surface === 'natural' && PATH_LIKE_HIGHWAYS.has(highway)) return edge.scenic ? 'forest' : 'field_paths';
-  if (edge.scenic) return 'urban_green';
-  if (ROAD_LIKE_HIGHWAYS.has(highway)) return 'residential';
-  return 'field_paths';
+  return classifyEdgeSemanticsV3(edge).componentKind;
 }
 
 function round(value: number): number {

@@ -22,6 +22,18 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
   const details = diagnostics(intent, route);
   const distanceRatio = ratio(route.metrics.distanceProducedKm, intent.constraints.targetDistanceKm);
   const severeDistanceGap = distanceRatio < STRICT_OUTCOME_RULES.refusedDistanceRatio;
+  if (route.assemblyDiagnostics?.assemblyTimeout) {
+    const timeout = route.assemblyDiagnostics.assemblyTimeout;
+    return {
+      type: 'refused',
+      reason: 'assembly timeout: V3 graph assembly exceeded its bounded diagnostic budget',
+      details: [
+        `stage ${timeout.stage} stopped after ${timeout.iterations}/${timeout.maxIterations} iteration budget and ${timeout.elapsedMs}/${timeout.maxMs}ms`,
+        `lastProgress ${timeout.lastProgress}; candidates ${timeout.candidateCount}; frontier ${timeout.frontierSize}; cycles ${timeout.cycleCount}`,
+        ...details,
+      ],
+    };
+  }
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
 
   if (hardRefusals.length > 0 || severeDistanceGap) {

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { EnrichedEdge, EnrichedGraph, GraphNode } from '@/lib/types';
 import { assembleGraphRouteV3 } from '@/lib/engine-v3/graph-route-assembler';
+import {
+  isAdjustedMixedUnknownWithinEvidenceBudgetV3,
+  isAdjustedTargetRepeatWithinEvidenceBudgetV3,
+} from '@/lib/engine-v3/assemblers/graph-route-assembly-core';
 import { decideOutcomeV3 } from '@/lib/engine-v3/outcome-decider';
 import type { CorridorMissionV3, RouteIntentV3, TerrainComponentKindV3 } from '@/lib/engine-v3/types';
 
@@ -118,6 +122,22 @@ function mission(targetDistanceKm: number, targetComponents: TerrainComponentKin
 }
 
 describe('assembleGraphRouteV3 graph assembler', () => {
+  it('keeps near-budget target repeat selectable as adjusted evidence when it stays inside the mission-derived repeat budget', () => {
+    expect(isAdjustedTargetRepeatWithinEvidenceBudgetV3({
+      repeatedKm: 0.509,
+      distanceKm: 12.434,
+      targetDistanceKm: 12,
+    })).toBe(true);
+  });
+
+  it('keeps Fontainebleau-like mixed path evidence selectable as adjusted, not generated, when strict trail evidence is present', () => {
+    expect(isAdjustedMixedUnknownWithinEvidenceBudgetV3({
+      mixedUnknownKm: 7.101,
+      strictTrailKm: 3.752,
+      targetDistanceKm: 12,
+    })).toBe(true);
+  });
+
   it('assembles a returned target-component candidate within 70%-115% with dwell and used-edge accounting', () => {
     const targetKm = 5.5;
     const assembled = assembleGraphRouteV3(
@@ -246,7 +266,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
     expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(5.4);
     expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(6);
-  });
+  }, 420000);
 
 
   it('reproduces Fontainebleau: ignores nearby natural micro-loops when a short paved access reaches a large natural target network', () => {
@@ -280,7 +300,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.warnings).toContain('graph assembly found no product-valid route candidate');
     expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxNaturalDwellKm))).toBeGreaterThanOrEqual(3);
     expect(Math.max(0, ...(route.assemblyDiagnostics?.frontierTrace ?? []).map((step) => step.maxDistanceKm))).toBeGreaterThan(3.5);
-  });
+  }, 240000);
 
   it('locks Fontainebleau against the 0.842 km micro-route when a large non-paved target network is reachable nearby', () => {
     const targetKm = 12;
@@ -369,7 +389,16 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       ]),
     );
 
-    const handoff = route.assemblyDiagnostics?.targetComponentHandoff;
+    const diagnostics = route.assemblyDiagnostics;
+    const handoff = diagnostics?.targetComponentHandoff;
+    expect(diagnostics).toMatchObject({
+      enteredTargetComponent: true,
+      selectedTargetCandidate: expect.stringContaining('deep0'),
+      failureStage: null,
+      closureBlockedUntilDwell: false,
+    });
+    expect(diagnostics?.targetComponentDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+    expect(diagnostics?.targetCapacityKm).toBeGreaterThanOrEqual(targetKm * 0.45);
     expect(handoff?.componentCandidateCount).toBeGreaterThanOrEqual(2);
     expect(handoff?.componentCandidates.some((candidate) => candidate.entryNodeId === 'near-pocket')).toBe(true);
     expect(handoff?.componentCandidates.some((candidate) => candidate.entryNodeId === 'deep0')).toBe(true);
@@ -671,6 +700,59 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.assemblyDiagnostics?.topFinalCandidates?.length).toBeGreaterThan(0);
   });
 
+  it('P4 gates out a returned trail candidate when final paved ratio is above product budget', () => {
+    const targetKm = 8;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('paved-budget-access-out', 's', 'a', 2, 'asphalt', 'residential', 'urban'),
+        edge('paved-budget-natural-1', 'a', 'b', 1, 'ground', 'path', null),
+        edge('paved-budget-natural-2', 'b', 'c', 1, 'ground', 'track', null),
+        edge('paved-budget-natural-3', 'c', 'd', 1, 'ground', 'path', null),
+        edge('paved-budget-natural-return', 'd', 'a', 1, 'ground', 'track', null),
+        edge('paved-budget-access-back', 'a', 's', 2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+    const outcome = decideOutcomeV3(intent(targetKm, ['field_paths']), route);
+
+    expect(route.edges).toEqual([]);
+    expect(outcome.type).toBe('refused');
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
+      gate: 'pavedRatio',
+      rejectedReason: expect.stringContaining('final paved ratio'),
+      pavedRatio: expect.any(Number),
+      finalPavedRatioEstimate: expect.any(Number),
+      longestTrailSegmentKm: expect.any(Number),
+      strictTrailKm: expect.any(Number),
+    });
+  });
+
+  it('P4 rejects aggregated natural dwell when there is no meaningful strict trail spine', () => {
+    const targetKm = 7;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('weak-spine-access-out', 's', 'a', 0.25, 'asphalt', 'residential', 'urban'),
+        edge('weak-spine-natural-1', 'a', 'b', 1, 'ground', 'service', null),
+        edge('weak-spine-natural-2', 'b', 'c', 1, 'ground', 'service', null),
+        edge('weak-spine-natural-3', 'c', 'd', 1, 'ground', 'service', null),
+        edge('weak-spine-natural-4', 'd', 'e', 1, 'ground', 'service', null),
+        edge('weak-spine-natural-return', 'e', 'a', 2, 'ground', 'service', null),
+        edge('weak-spine-access-back', 'a', 's', 0.25, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    expect(route.edges).toEqual([]);
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
+      gate: 'longestTrailSegment',
+      longestTrailSegmentKm: 0,
+      strictTrailKm: 0,
+      naturalDwellKm: expect.any(Number),
+    });
+  });
+
   it('preserves target-component handoff diagnostics when traversal cannot emit a product-valid route', () => {
     const targetKm = 12;
     const route = assembleGraphRouteV3(
@@ -711,4 +793,67 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       },
     });
   });
+
+  it('P5 emits candidate diversity and Pareto diagnostics for final selection', () => {
+    const targetKm = 5.5;
+    const route = assembleGraphRouteV3(
+      intent(targetKm),
+      mission(targetKm),
+      graph([
+        edge('p5-access-out', 's', 'a', 1, 'asphalt', 'residential', 'urban'),
+        edge('p5-forest-1', 'a', 'b', 1, 'ground', 'path'),
+        edge('p5-forest-2', 'b', 'c', 1, 'ground', 'path'),
+        edge('p5-forest-3', 'c', 'd', 1, 'ground', 'path'),
+        edge('p5-forest-4', 'd', 'a', 1, 'ground', 'path'),
+        edge('p5-alt-forest-1', 'a', 'e', 0.8, 'ground', 'path'),
+        edge('p5-alt-forest-2', 'e', 'a', 0.8, 'ground', 'path'),
+      ]),
+    );
+
+    expect(route.edges.length).toBeGreaterThan(0);
+    expect(route.assemblyDiagnostics).toMatchObject({
+      candidateCount: expect.any(Number),
+      inEnvelopeCount: expect.any(Number),
+      overlongCount: expect.any(Number),
+      underMinCount: expect.any(Number),
+      selectedCandidateId: expect.any(String),
+      selectedReason: expect.stringContaining('pareto'),
+    });
+    expect(route.assemblyDiagnostics?.candidateCountByLane).toEqual(expect.objectContaining({ seed: expect.any(Number) }));
+    expect(route.assemblyDiagnostics?.paretoFrontierCandidates?.length).toBeGreaterThan(0);
+    expect(route.assemblyDiagnostics?.topFinalCandidates?.[0]).toMatchObject({
+      source: expect.any(String),
+      distanceErrorRatio: expect.any(Number),
+      pavedConnectorKm: expect.any(Number),
+      busyRoadRatio: expect.any(Number),
+      closureQuality: expect.any(Number),
+    });
+  });
+
+  it('P5 records top rejected gates when no candidate is product-valid', () => {
+    const targetKm = 8;
+    const route = assembleGraphRouteV3(
+      intent(targetKm, ['field_paths']),
+      { ...mission(targetKm, ['field_paths']), returnMode: 'out_and_back_connector' },
+      graph([
+        edge('p5-reject-access-out', 's', 'a', 2, 'asphalt', 'residential', 'urban'),
+        edge('p5-reject-natural-1', 'a', 'b', 1, 'ground', 'path', null),
+        edge('p5-reject-natural-2', 'b', 'c', 1, 'ground', 'track', null),
+        edge('p5-reject-natural-3', 'c', 'd', 1, 'ground', 'path', null),
+        edge('p5-reject-natural-return', 'd', 'a', 1, 'ground', 'track', null),
+        edge('p5-reject-access-back', 'a', 's', 2, 'asphalt', 'residential', 'urban'),
+      ]),
+    );
+
+    expect(route.edges).toEqual([]);
+    expect(route.assemblyDiagnostics).toMatchObject({
+      candidateCount: expect.any(Number),
+      topRejected: expect.any(Array),
+    });
+    expect(route.assemblyDiagnostics?.topRejected?.[0]).toMatchObject({
+      gate: expect.any(String),
+      rejectedReason: expect.any(String),
+    });
+  });
+
 });

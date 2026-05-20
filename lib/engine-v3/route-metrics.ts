@@ -1,6 +1,6 @@
+import { classifyEdgeSemanticsV3 } from './edge-semantics';
 import type { RouteEdgeV3, RouteGeometryV3, RouteMetricsV3, TerrainComponentKindV3 } from './types';
 
-const TRAIL_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian', 'steps']);
 const BUSY_ROAD_HIGHWAYS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
 
 export interface ComputeRouteMetricsV3Input {
@@ -21,6 +21,13 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
   let pavedKm = 0;
   let nonPavedKm = 0;
   let trailKm = 0;
+  let explicitNaturalKm = 0;
+  let explicitPavedKm = 0;
+  let roadLikeUnknownKm = 0;
+  let pathTrackUnknownKm = 0;
+  let candidateNaturalKm = 0;
+  let trailCandidateKm = 0;
+  let unverifiedTrailCandidateKm = 0;
   let naturalDwellKm = 0;
   let repeatEdgeKm = 0;
   let targetRepeatKm = 0;
@@ -45,16 +52,18 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
     }
     traversalsByUndirectedPair.set(pairKey, previousTraversals + 1);
 
-    if (edge.surface === 'paved') {
-      pavedKm += lengthKm;
-    } else if (edge.surface === 'natural') {
-      nonPavedKm += lengthKm;
-    } else {
-      pavedKm += lengthKm * 0.5;
-      nonPavedKm += lengthKm * 0.5;
-    }
+    const semantics = classifyEdgeSemanticsV3(edge);
+    pavedKm += lengthKm * semantics.pavedEquivalentWeight;
+    nonPavedKm += lengthKm * (1 - semantics.pavedEquivalentWeight);
+    candidateNaturalKm += lengthKm * semantics.candidateNaturalWeight;
+    if (semantics.isTrailCandidate) trailCandidateKm += lengthKm;
+    if (semantics.isUnverifiedTrailCandidate) unverifiedTrailCandidateKm += lengthKm;
+    if (semantics.surfaceEvidence === 'explicit_natural') explicitNaturalKm += lengthKm;
+    if (semantics.surfaceEvidence === 'explicit_paved') explicitPavedKm += lengthKm;
+    if (semantics.surfaceEvidence === 'road_like_unknown') roadLikeUnknownKm += lengthKm;
+    if (semantics.surfaceEvidence === 'path_track_unknown') pathTrackUnknownKm += lengthKm;
 
-    if (isTrailEdge(edge)) {
+    if (semantics.isStrictTrailLike) {
       trailKm += lengthKm;
       currentTrailSegmentKm += lengthKm;
       longestTrailSegmentKm = Math.max(longestTrailSegmentKm, currentTrailSegmentKm);
@@ -62,8 +71,8 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
       currentTrailSegmentKm = 0;
     }
 
-    if (targetComponents.has(edge.componentKind) && edge.surface !== 'paved') {
-      naturalDwellKm += edge.surface === 'mixed' ? lengthKm * 0.5 : lengthKm;
+    if (targetComponents.has(edge.componentKind) && semantics.routeSurface !== 'paved') {
+      naturalDwellKm += lengthKm * semantics.candidateNaturalWeight;
     }
 
     if (isBusyRoadEdge(edge)) busyRoadKm += lengthKm;
@@ -74,6 +83,14 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
   return {
     targetDistanceKm: input.targetDistanceKm,
     distanceProducedKm: totalKm,
+    strictTrailKm: round(trailKm),
+    explicitNaturalKm: round(explicitNaturalKm),
+    explicitPavedKm: round(explicitPavedKm),
+    roadLikeUnknownKm: round(roadLikeUnknownKm),
+    pathTrackUnknownKm: round(pathTrackUnknownKm),
+    candidateNaturalKm: round(candidateNaturalKm),
+    trailCandidateKm: round(trailCandidateKm),
+    unverifiedTrailCandidateKm: round(unverifiedTrailCandidateKm),
     trailRatio: ratio(trailKm, totalKm),
     naturalWayRatio: ratio(nonPavedKm, totalKm),
     pavedRatio: ratio(pavedKm, totalKm),
@@ -96,6 +113,14 @@ export function createEmptyRouteMetricsV3(targetDistanceKm: number, geometry: Ro
   return {
     targetDistanceKm,
     distanceProducedKm: 0,
+    strictTrailKm: 0,
+    explicitNaturalKm: 0,
+    explicitPavedKm: 0,
+    roadLikeUnknownKm: 0,
+    pathTrackUnknownKm: 0,
+    candidateNaturalKm: 0,
+    trailCandidateKm: 0,
+    unverifiedTrailCandidateKm: 0,
     trailRatio: 0,
     naturalWayRatio: 0,
     pavedRatio: 1,
@@ -112,11 +137,6 @@ export function createEmptyRouteMetricsV3(targetDistanceKm: number, geometry: Ro
     loopClosureKm: computeLoopClosureKm(geometry),
     longestTrailSegmentKm: 0,
   };
-}
-
-function isTrailEdge(edge: RouteEdgeV3): boolean {
-  const highway = edge.highway.toLowerCase();
-  return edge.surface === 'natural' && TRAIL_HIGHWAYS.has(highway);
 }
 
 function isBusyRoadEdge(edge: RouteEdgeV3): boolean {

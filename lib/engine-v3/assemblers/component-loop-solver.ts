@@ -1,15 +1,15 @@
 import type { EnrichedEdge, EnrichedGraph } from '../../types';
+import { classifyEdgeSemanticsV3 } from '../edge-semantics';
 import type { RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
 import { buildTargetComponentTraversal } from './target-component-traversal';
 import { contractNaturalGraphV3 } from './natural-graph-contraction';
 import type { NaturalGraphContractionDiagnosticsV3 } from './natural-graph-contraction';
 import { buildOrderedCycleExpansionV3 } from './ordered-cycle-expansion';
 import type { OrderedCycleExpansionDiagnosticsV3 } from './ordered-cycle-expansion';
+import { selectTrailSpinesV3 } from './trail-spine-selector';
+import type { TrailSpineSelectorDiagnosticsV3, TrailSpineCandidateV3 } from './trail-spine-selector';
 
-const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
-const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
-const ROAD_LIKE_HIGHWAYS = new Set(['secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service']);
-const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian']);
+const COMPONENT_LOOP_GRAPH_FALLBACK_EDGE_THRESHOLD = 2_000;
 
 interface DirectedComponentLoopEdgeV3 {
   edge: EnrichedEdge;
@@ -67,6 +67,7 @@ export interface ComponentLoopSolverDiagnosticsV3 {
   topComponentLoopCandidates: ComponentLoopCandidateSummaryV3[];
   naturalGraphContraction: NaturalGraphContractionDiagnosticsV3;
   orderedCycleExpansion?: OrderedCycleExpansionDiagnosticsV3;
+  trailSpine?: TrailSpineSelectorDiagnosticsV3;
 }
 
 export interface ComponentLoopSolverMetricsV3 {
@@ -127,11 +128,16 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
   const maxDistanceRatio = input.maxDistanceRatio ?? 1.15;
   const allowConnectorRepeatClosure = input.allowConnectorRepeatClosure ?? true;
   const adjacency = buildAdjacency(input.graph);
+  debugComponentLoopStage('adjacency', { nodes: adjacency.size });
   const naturalGraphContraction = contractNaturalGraphV3({
     graph: input.graph,
     targetComponentIds: input.targetComponentIds,
     startNodeId: input.startNodeId,
     minUsefulCycleKm: Math.max(1.5, input.requestedNaturalDwellKm * 0.45),
+  });
+  debugComponentLoopStage('contraction', {
+    candidates: naturalGraphContraction.cycleCandidates.length,
+    runtimeMs: naturalGraphContraction.diagnostics.rankedNaturalCycles?.runtimeMs ?? null,
   });
   const orderedCycleExpansion = buildOrderedCycleExpansionV3({
     graph: input.graph,
@@ -140,6 +146,89 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
     targetComponentIds: input.targetComponentIds,
     targetDistanceKm: input.targetDistanceKm,
   });
+  debugComponentLoopStage('ordered-cycle', {
+    status: orderedCycleExpansion.status,
+    reason: orderedCycleExpansion.status === 'failure' ? orderedCycleExpansion.reason : null,
+    assemblyTimeout: orderedCycleExpansion.diagnostics.multiCycleDwell?.assemblyTimeout ?? null,
+  });
+  const earlyOrderedCycleSummary = orderedCycleExpansion.status === 'success'
+    ? summaryFromOrderedCycle(orderedCycleExpansion.metrics)
+    : null;
+  const earlyOrderedCycleQualifies = orderedCycleExpansion.status === 'success'
+    && orderedCycleExpansion.metrics.naturalCycleKm + 0.001 >= input.requestedNaturalDwellKm * 0.8
+    && orderedCycleExpansion.metrics.distanceKm + 0.001 >= input.targetDistanceKm * minDistanceRatio
+    && orderedCycleExpansion.metrics.distanceKm <= input.targetDistanceKm * Math.max(maxDistanceRatio, 1.4) + 0.001
+    && orderedCycleExpansion.metrics.targetRepeatKm <= 0.001;
+  if (isLargeGraphForComponentLoopFallback(input.graph) && earlyOrderedCycleQualifies && earlyOrderedCycleSummary) {
+    return {
+      status: 'success',
+      edgeIds: orderedCycleExpansion.edgeIds,
+      nodeIds: orderedCycleExpansion.nodeIds,
+      metrics: metricsFromOrderedCycle(orderedCycleExpansion.metrics),
+      diagnostics: {
+        selectedComponentId: 'ordered-cycle-core',
+        componentReachableTargetKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        componentCleanExploitableKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        accessCandidates: { count: 1, top: [earlyOrderedCycleSummary] },
+        dwellCandidates: { count: 1, top: [earlyOrderedCycleSummary] },
+        closureCandidates: { count: 1, top: [earlyOrderedCycleSummary] },
+        failedPhase: null,
+        topComponentLoopCandidates: [earlyOrderedCycleSummary],
+        naturalGraphContraction: naturalGraphContraction.diagnostics,
+        orderedCycleExpansion: orderedCycleExpansion.diagnostics,
+      },
+    };
+  }
+  if (isLargeGraphForComponentLoopFallback(input.graph) && earlyOrderedCycleSummary) {
+    return {
+      status: 'failure',
+      reason: 'insufficient_distance_after_dwell',
+      edgeIds: orderedCycleExpansion.edgeIds,
+      nodeIds: orderedCycleExpansion.nodeIds,
+      metrics: metricsFromOrderedCycle(orderedCycleExpansion.metrics),
+      diagnostics: {
+        selectedComponentId: 'ordered-cycle-core',
+        componentReachableTargetKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        componentCleanExploitableKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        accessCandidates: { count: 1, top: [earlyOrderedCycleSummary] },
+        dwellCandidates: { count: orderedCycleExpansion.metrics.naturalCycleKm + 0.001 >= input.requestedNaturalDwellKm ? 1 : 0, top: [earlyOrderedCycleSummary] },
+        closureCandidates: { count: orderedCycleExpansion.edgeIds.length > 0 ? 1 : 0, top: [earlyOrderedCycleSummary] },
+        failedPhase: 'finalGate',
+        topComponentLoopCandidates: [earlyOrderedCycleSummary],
+        naturalGraphContraction: naturalGraphContraction.diagnostics,
+        orderedCycleExpansion: orderedCycleExpansion.diagnostics,
+      },
+    };
+  }
+  if (isLargeGraphForComponentLoopFallback(input.graph) && orderedCycleExpansion.status === 'failure') {
+    const failedOrderedCycleSummary = summaryFromOrderedCycle(orderedCycleExpansion.metrics);
+    return {
+      status: 'failure',
+      reason: 'insufficient_distance_after_dwell',
+      edgeIds: orderedCycleExpansion.edgeIds,
+      nodeIds: orderedCycleExpansion.nodeIds,
+      metrics: metricsFromOrderedCycle(orderedCycleExpansion.metrics),
+      diagnostics: {
+        selectedComponentId: 'ordered-cycle-core',
+        componentReachableTargetKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        componentCleanExploitableKm: orderedCycleExpansion.metrics.naturalCycleKm,
+        accessCandidates: { count: 1, top: [failedOrderedCycleSummary] },
+        dwellCandidates: { count: 0, top: [failedOrderedCycleSummary] },
+        closureCandidates: { count: 0, top: [failedOrderedCycleSummary] },
+        failedPhase: 'finalGate',
+        topComponentLoopCandidates: [failedOrderedCycleSummary],
+        naturalGraphContraction: naturalGraphContraction.diagnostics,
+        orderedCycleExpansion: orderedCycleExpansion.diagnostics,
+      },
+    };
+  }
+  const trailSpines = selectTrailSpinesV3({
+    graph: input.graph,
+    startNodeId: input.startNodeId,
+    targetComponentIds: input.targetComponentIds,
+    minDistanceKm: Math.max(1.2, input.targetDistanceKm * 0.12),
+  });
+  debugComponentLoopStage('trail-spines', { candidates: trailSpines.candidates.length });
   const components = targetComponentsFromGraph(adjacency, input.targetComponentIds);
   const accessCandidates = components
     .map((component) => {
@@ -155,7 +244,7 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
 
   const evaluated = accessCandidates
     .map(({ component, accessTraversal, entryNodeId }) => evaluateCandidate(input, component, accessTraversal, entryNodeId, minDistanceRatio, maxDistanceRatio))
-    .sort((a, b) => candidateScore(b, input) - candidateScore(a, input));
+    .sort((a, b) => candidateScore(b, input, trailSpines.candidates) - candidateScore(a, input, trailSpines.candidates));
 
   const selected = evaluated[0] ?? null;
   const successful = evaluated.find((candidate) =>
@@ -191,12 +280,13 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
     topComponentLoopCandidates: [...(preferOrderedCycle && orderedCycleSummary ? [orderedCycleSummary] : []), ...evaluated.map((candidate) => candidate.summary), ...(!preferOrderedCycle && orderedCycleSummary ? [orderedCycleSummary] : [])].slice(0, 12),
     naturalGraphContraction: naturalGraphContraction.diagnostics,
     orderedCycleExpansion: orderedCycleExpansion.diagnostics,
+    trailSpine: trailSpines.diagnostics,
   });
 
   const orderedCycleQualifies = orderedCycleExpansion.status === 'success'
-    && orderedCycleExpansion.metrics.naturalCycleKm + 0.001 >= input.requestedNaturalDwellKm
+    && orderedCycleExpansion.metrics.naturalCycleKm + 0.001 >= input.requestedNaturalDwellKm * 0.8
     && orderedCycleExpansion.metrics.distanceKm + 0.001 >= input.targetDistanceKm * minDistanceRatio
-    && orderedCycleExpansion.metrics.distanceKm <= input.targetDistanceKm * maxDistanceRatio + 0.001
+    && orderedCycleExpansion.metrics.distanceKm <= input.targetDistanceKm * Math.max(maxDistanceRatio, 1.4) + 0.001
     && orderedCycleExpansion.metrics.targetRepeatKm <= 0.001;
   const orderedCycleMateriallyImproves = orderedCycleExpansion.status === 'success' && (!successful
     || orderedCycleExpansion.metrics.naturalCycleKm > successful.metrics.naturalDwellKm + 0.25
@@ -210,6 +300,21 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
       nodeIds: orderedCycleExpansion.nodeIds,
       metrics: metricsFromOrderedCycle(orderedCycleExpansion.metrics),
       diagnostics: diagnosticsFor(null, true),
+    };
+  }
+
+  const orderedCycleDiagnosticEvidence = orderedCycleExpansion.edgeIds.length > 0
+    && orderedCycleExpansion.metrics.distanceKm + 0.001 >= input.targetDistanceKm * minDistanceRatio
+    && orderedCycleExpansion.metrics.distanceKm <= input.targetDistanceKm * maxDistanceRatio + 0.001
+    && orderedCycleExpansion.metrics.naturalCycleKm + 0.001 >= input.requestedNaturalDwellKm * 0.8;
+  if (!successful && orderedCycleDiagnosticEvidence) {
+    return {
+      status: 'failure',
+      reason: 'insufficient_distance_after_dwell',
+      edgeIds: orderedCycleExpansion.edgeIds,
+      nodeIds: orderedCycleExpansion.nodeIds,
+      metrics: metricsFromOrderedCycle(orderedCycleExpansion.metrics),
+      diagnostics: diagnosticsFor('finalGate', true),
     };
   }
 
@@ -232,6 +337,15 @@ export function solveComponentLoopV3(input: ComponentLoopSolverInputV3): Compone
     metrics: selected?.metrics ?? emptyMetrics(),
     diagnostics: diagnosticsFor(failedPhase(reason)),
   };
+}
+
+function isLargeGraphForComponentLoopFallback(graph: EnrichedGraph): boolean {
+  return graph.edges.size > COMPONENT_LOOP_GRAPH_FALLBACK_EDGE_THRESHOLD;
+}
+
+function debugComponentLoopStage(stage: string, data: Record<string, unknown>): void {
+  if (process.env.TRAILFORGE_V3_ASSEMBLY_DEBUG !== '1') return;
+  console.error(`[engine-v3:component-loop] ${stage} ${JSON.stringify(data)}`);
 }
 
 function evaluateCandidate(
@@ -287,17 +401,27 @@ function evaluateCandidate(
   return { component, accessTraversal, entryNodeId, traversal, componentStatus, componentReason: reason, summary, edgeIds, nodeIds, metrics };
 }
 
-function candidateScore(candidate: EvaluatedComponentLoopCandidateV3, input: ComponentLoopSolverInputV3): number {
+function candidateScore(candidate: EvaluatedComponentLoopCandidateV3, input: ComponentLoopSolverInputV3, trailSpines: TrailSpineCandidateV3[]): number {
   const minDistanceKm = input.targetDistanceKm * 0.7;
   const successBonus = candidate.componentStatus === 'success' ? 10_000 : 0;
   const distanceProgress = Math.min(candidate.metrics.distanceKm, minDistanceKm) * 140;
   const dwellProgress = Math.min(candidate.metrics.naturalDwellKm, input.requestedNaturalDwellKm) * 160;
   const closureBonus = candidate.metrics.closureKm > 0 ? 250 : 0;
   const capacityBonus = Math.min(candidate.traversal.diagnostics.exploitableTargetKm, input.targetDistanceKm * 2) * 3;
+  const spineBonus = trailSpineOverlapScore(candidate.component.edgeIds, trailSpines);
   const repeatPenalty = candidate.metrics.targetRepeatKm * 300 + candidate.metrics.connectorRepeatKm * 30;
   const pavedPenalty = (candidate.metrics.accessPavedKm + candidate.metrics.closurePavedKm) * 12;
   const accessPenalty = candidate.metrics.accessKm * 8;
-  return successBonus + distanceProgress + dwellProgress + closureBonus + capacityBonus - repeatPenalty - pavedPenalty - accessPenalty;
+  return successBonus + distanceProgress + dwellProgress + closureBonus + capacityBonus + spineBonus - repeatPenalty - pavedPenalty - accessPenalty;
+}
+
+function trailSpineOverlapScore(componentEdgeIds: Set<string>, trailSpines: TrailSpineCandidateV3[]): number {
+  return trailSpines.reduce((best, spine) => {
+    const overlapCount = spine.edgeIds.filter((edgeId) => componentEdgeIds.has(edgeId)).length;
+    const overlapRatio = spine.edgeIds.length > 0 ? overlapCount / spine.edgeIds.length : 0;
+    const score = overlapRatio * 600 + spine.longestStrictTrailSegmentKm * 90 + spine.trailConfidence * 120 - spine.pavedKm * 80;
+    return Math.max(best, score);
+  }, 0);
 }
 
 function summaryFromOrderedCycle(metrics: ReturnType<typeof buildOrderedCycleExpansionV3>['metrics']): ComponentLoopCandidateSummaryV3 {
@@ -537,7 +661,7 @@ function metricsFromPhases(
     accessKm: round(sumDirectedLengths(access)),
     accessPavedKm: round(sumPaved(access)),
     internalDistanceKm: round(sumDirectedLengths(internal)),
-    naturalDwellKm: round(sumDirectedLengths([...internal, ...closure].filter((edge) => targetComponents.has(edge.kind) && edge.surface !== 'paved'))),
+    naturalDwellKm: round(sumNaturalEquivalent([...internal, ...closure].filter((edge) => targetComponents.has(edge.kind)))),
     recoveryKm: 0,
     closureKm: round(sumDirectedLengths(closure)),
     closurePavedKm: round(sumPaved(closure)),
@@ -668,7 +792,7 @@ function metricsFromDirectedEdges(
     accessKm: round(sumDirectedLengths(accessEdges)),
     accessPavedKm: round(sumPaved(accessEdges)),
     internalDistanceKm: round(sumDirectedLengths(internalEdges)),
-    naturalDwellKm: round(sumDirectedLengths(internalEdges.filter((edge) => edge.surface === 'natural')) || traversal.diagnostics.targetDistanceKm),
+    naturalDwellKm: round(sumNaturalEquivalent(internalEdges) || traversal.diagnostics.targetDistanceKm),
     recoveryKm: 0,
     closureKm: round(sumDirectedLengths(closureEdges)),
     closurePavedKm: round(sumPaved(closureEdges)),
@@ -705,33 +829,19 @@ function sumDirectedLengths(edges: DirectedComponentLoopEdgeV3[]): number {
 }
 
 function sumPaved(edges: DirectedComponentLoopEdgeV3[]): number {
-  return edges.filter((edge) => edge.surface === 'paved').reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm), 0);
+  return edges.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm) * classifyEdgeSemanticsV3(edge.edge).pavedEquivalentWeight, 0);
+}
+
+function sumNaturalEquivalent(edges: DirectedComponentLoopEdgeV3[]): number {
+  return edges.reduce((sum, edge) => sum + Math.max(0, edge.edge.lengthKm) * classifyEdgeSemanticsV3(edge.edge).candidateNaturalWeight, 0);
 }
 
 function routeSurface(edge: EnrichedEdge): RouteSurfaceV3 {
-  const surface = (edge.surface ?? '').toLowerCase();
-  if (PAVED_SURFACES.has(surface)) return 'paved';
-  if (NATURAL_SURFACES.has(surface)) return 'natural';
-  if (edge.terrainContext?.landcoverClass === 'forest') return 'natural';
-  if (ROAD_LIKE_HIGHWAYS.has((edge.highway ?? '').toLowerCase())) return 'paved';
-  return 'mixed';
+  return classifyEdgeSemanticsV3(edge).routeSurface;
 }
 
 function componentKind(edge: EnrichedEdge): TerrainComponentKindV3 {
-  const surface = routeSurface(edge);
-  const highway = (edge.highway ?? '').toLowerCase();
-  const landcover = edge.terrainContext?.landcoverClass;
-
-  if (surface === 'paved' && edge.scenic && ROAD_LIKE_HIGHWAYS.has(highway)) return 'scenic_paved';
-  if (landcover === 'forest') return 'forest';
-  if (landcover === 'park') return 'park';
-  if (landcover === 'water_corridor') return 'river_corridor';
-  if (landcover === 'urban') return edge.scenic ? 'urban_green' : 'residential';
-  if (surface === 'paved' && edge.scenic) return 'scenic_paved';
-  if (surface === 'natural' && PATH_LIKE_HIGHWAYS.has(highway)) return edge.scenic ? 'forest' : 'field_paths';
-  if (edge.scenic) return 'urban_green';
-  if (ROAD_LIKE_HIGHWAYS.has(highway)) return 'residential';
-  return 'field_paths';
+  return classifyEdgeSemanticsV3(edge).componentKind;
 }
 
 function round(value: number): number {

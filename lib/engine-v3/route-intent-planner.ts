@@ -57,12 +57,21 @@ export function planRouteIntentV3(request: UserRouteRequestV3, snapshot: Terrain
   }
 
   const reachableWoods = nearestUseful(snapshot.components, ['forest', 'field_paths'], 1.5);
-  if (reachableWoods && reachableWoods.nonPavedRatio >= 0.45) {
+  const largeMixedWoodsOpportunity = strongestAbsoluteNonPavedOpportunity(
+    snapshot.components,
+    ['forest', 'field_paths'],
+    1.5,
+    accepted.targetDistanceKm * 0.45,
+  );
+  const transitionTarget = reachableWoods && reachableWoods.nonPavedRatio >= 0.45
+    ? reachableWoods
+    : largeMixedWoodsOpportunity;
+  if (transitionTarget) {
     return buildIntent({
       strategy: 'transition_to_woods',
       request: accepted,
       snapshot,
-      constraints: constraints(accepted, [reachableWoods.kind], 0.45, 'prefer', 0.45),
+      constraints: constraints(accepted, [transitionTarget.kind], 0.45, 'prefer', 0.45),
       outcome: {
         type: 'adjusted',
         summary: 'Start is not fully trail-like; route should transition honestly toward nearby woods or field paths.',
@@ -190,6 +199,22 @@ function nearestUseful(
   return components
     .filter((component) => kinds.includes(component.kind) && component.distanceFromStartKm <= maxDistanceKm)
     .sort((a, b) => a.distanceFromStartKm - b.distanceFromStartKm || b.nonPavedRatio - a.nonPavedRatio)[0];
+}
+
+function strongestAbsoluteNonPavedOpportunity(
+  components: TerrainComponentV3[],
+  kinds: TerrainComponentKindV3[],
+  maxDistanceKm: number,
+  minNonPavedKm: number,
+): TerrainComponentV3 | undefined {
+  return components
+    .filter((component) => kinds.includes(component.kind) && component.distanceFromStartKm <= maxDistanceKm)
+    .filter((component) => nonPavedOpportunityKm(component) + 0.001 >= minNonPavedKm)
+    .sort((a, b) => nonPavedOpportunityKm(b) - nonPavedOpportunityKm(a) || a.distanceFromStartKm - b.distanceFromStartKm)[0];
+}
+
+function nonPavedOpportunityKm(component: TerrainComponentV3): number {
+  return component.totalLengthKm * component.nonPavedRatio;
 }
 
 function urbanTargets(components: TerrainComponentV3[]): TerrainComponentKindV3[] {

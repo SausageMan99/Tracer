@@ -1,12 +1,8 @@
 import type { EnrichedEdge, EnrichedGraph } from '../../types';
+import { classifyEdgeSemanticsV3 } from '../edge-semantics';
 import type { RouteSurfaceV3, TerrainComponentKindV3 } from '../types';
 import { extractRankedNaturalCyclesV3 } from './ranked-natural-cycle-extractor';
 import type { RankedNaturalCyclesDiagnosticsV3 } from './ranked-natural-cycle-extractor';
-
-const PAVED_SURFACES = new Set(['asphalt', 'concrete', 'paved', 'paving_stones', 'sett', 'cobblestone', 'compacted']);
-const NATURAL_SURFACES = new Set(['dirt', 'earth', 'grass', 'ground', 'gravel', 'mud', 'sand', 'soil', 'unpaved', 'woodchips']);
-const ROAD_LIKE_HIGHWAYS = new Set(['secondary', 'tertiary', 'unclassified', 'residential', 'living_street', 'service']);
-const PATH_LIKE_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian']);
 
 interface DirectedNaturalEdgeV3 {
   edge: EnrichedEdge;
@@ -357,29 +353,11 @@ function uniqueIncidentEdgeCount(edges: DirectedNaturalEdgeV3[]): number {
 }
 
 function routeSurface(edge: EnrichedEdge): RouteSurfaceV3 {
-  const surface = (edge.surface ?? '').toLowerCase();
-  if (PAVED_SURFACES.has(surface)) return 'paved';
-  if (NATURAL_SURFACES.has(surface)) return 'natural';
-  if (edge.terrainContext?.landcoverClass === 'forest') return 'natural';
-  if (ROAD_LIKE_HIGHWAYS.has((edge.highway ?? '').toLowerCase())) return 'paved';
-  return 'mixed';
+  return classifyEdgeSemanticsV3(edge).routeSurface;
 }
 
 function componentKind(edge: EnrichedEdge): TerrainComponentKindV3 {
-  const surface = routeSurface(edge);
-  const highway = (edge.highway ?? '').toLowerCase();
-  const landcover = edge.terrainContext?.landcoverClass;
-
-  if (surface === 'paved' && edge.scenic && ROAD_LIKE_HIGHWAYS.has(highway)) return 'scenic_paved';
-  if (landcover === 'forest') return 'forest';
-  if (landcover === 'park') return 'park';
-  if (landcover === 'water_corridor') return 'river_corridor';
-  if (landcover === 'urban') return edge.scenic ? 'urban_green' : 'residential';
-  if (surface === 'paved' && edge.scenic) return 'scenic_paved';
-  if (surface === 'natural' && PATH_LIKE_HIGHWAYS.has(highway)) return edge.scenic ? 'forest' : 'field_paths';
-  if (edge.scenic) return 'urban_green';
-  if (ROAD_LIKE_HIGHWAYS.has(highway)) return 'residential';
-  return 'field_paths';
+  return classifyEdgeSemanticsV3(edge).componentKind;
 }
 
 function round(value: number): number {

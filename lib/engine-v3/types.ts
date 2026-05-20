@@ -174,6 +174,41 @@ export interface RouteAssemblyDiagnosticsV3 {
   frontierTrace?: RouteAssemblyFrontierStepDiagnosticsV3[];
   topFinalCandidates?: RouteAssemblyFinalCandidateDiagnosticsV3[];
   targetComponentHandoff?: RouteAssemblyTargetComponentHandoffDiagnosticsV3;
+  candidateCount?: number;
+  inEnvelopeCount?: number;
+  overlongCount?: number;
+  underMinCount?: number;
+  candidateCountByLane?: Record<string, number>;
+  paretoFrontierCandidates?: RouteAssemblyFinalCandidateDiagnosticsV3[];
+  selectedCandidateId?: string | null;
+  selectedReason?: string | null;
+  rejectedDominatedCandidates?: string[];
+  topRejected?: RouteAssemblyFinalCandidateDiagnosticsV3[];
+  closureAttemptCount?: number;
+  returnedClosureCount?: number;
+  closureRejectedReasons?: Record<string, number>;
+  recoveryExpansionKm?: number;
+  recoveryBudgetKm?: number;
+  firstDropStage?: string | null;
+  enteredTargetComponent?: boolean;
+  targetComponentDwellKm?: number;
+  targetCapacityKm?: number;
+  closureBlockedUntilDwell?: boolean;
+  selectedTargetCandidate?: string | null;
+  failureStage?: string | null;
+  assemblyTimeout?: {
+    stage: string;
+    reason: 'iteration_budget_exceeded' | 'time_budget_exceeded';
+    iterations: number;
+    maxIterations: number;
+    elapsedMs: number;
+    maxMs: number;
+    candidateCount: number;
+    frontierSize: number;
+    cycleCount: number;
+    depth: number | null;
+    lastProgress: string;
+  };
 }
 
 export interface RouteAssemblyTargetComponentHandoffDiagnosticsV3 {
@@ -222,15 +257,29 @@ export interface RouteAssemblyFinalCandidateDiagnosticsV3 {
   rank: number;
   selected: boolean;
   inSelectionPool: boolean;
+  rejectedReason: string | null;
+  gate: string | null;
   distanceKm: number;
   naturalDwellKm: number;
   pavedKm: number;
+  pavedRatio: number;
+  finalPavedRatioEstimate: number;
+  mixedUnknownKm: number;
+  strictTrailKm: number;
+  longestTrailSegmentKm: number;
   repeatKm: number;
   targetRepeatKm: number;
   connectorRepeatKm: number;
   returned: boolean;
   scoreComplete: number;
   scoreProgress: number;
+  source?: string;
+  distanceErrorRatio?: number;
+  pavedConnectorKm?: number;
+  busyRoadRatio?: number;
+  closureQuality?: number;
+  selectedReason?: string | null;
+  dominatedBy?: string | null;
 }
 
 export interface RouteAssemblyFrontierStepDiagnosticsV3 {
@@ -276,5 +325,7 @@ export interface RouteGenerationDiagnosticsV3 {
   warnings: string[];
   metrics: RouteMetricsV3;
   assemblyDiagnostics?: RouteAssemblyDiagnosticsV3;
+  terrainInventory?: import('./assemblers/terrain-inventory').TerrainInventoryV3;
+  routeContractPrecheck?: import('./contracts/route-contract').RouteContractPrecheckV3;
   outcomeEvidence: RouteOutcomeEvidenceV3;
 }
