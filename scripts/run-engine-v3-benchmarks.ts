@@ -6,10 +6,25 @@ const DEFAULT_ARTIFACT_DIR = 'artifacts/engine-v3-benchmarks/latest-routes';
 
 interface CliOptions {
   caseIds: string[];
+  panelId: string | null;
   output: string;
   artifactDir: string;
   help: boolean;
 }
+
+const ENGINE_V3_BENCHMARK_PANELS = {
+  'readiness-two-case': DEFAULT_CASE_IDS,
+  'beta-multiterrain': [
+    'tourville-pommiers-trail-8k',
+    'tourville-pommiers-trail-12k',
+    'caen-colline-aux-oiseaux-6k-soft',
+    'caen-prairie-8k-mixed',
+    'fontainebleau-trail-15k',
+    'meudon-forest-trail-10k',
+    'paris-19-canal-running',
+    'osm-poor-rural-trail-8k',
+  ],
+} as const;
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
@@ -19,7 +34,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const cases = selectCases(options.caseIds);
+  const cases = selectCases(resolveCaseIds(options));
   const report = await runEngineV3BenchmarkPanel({
     cases,
     reportPath: options.output,
@@ -44,6 +59,7 @@ async function main(): Promise<void> {
 
 export function parseArgs(args: string[]): CliOptions {
   const caseIds: string[] = [];
+  let panelId: string | null = null;
   let output = DEFAULT_OUTPUT;
   let artifactDir = DEFAULT_ARTIFACT_DIR;
   let help = false;
@@ -54,6 +70,9 @@ export function parseArgs(args: string[]): CliOptions {
       help = true;
     } else if (arg === '--case') {
       caseIds.push(requireValue(args, index, '--case'));
+      index += 1;
+    } else if (arg === '--panel') {
+      panelId = requireValue(args, index, '--panel');
       index += 1;
     } else if (arg === '--output') {
       output = requireValue(args, index, '--output');
@@ -67,11 +86,29 @@ export function parseArgs(args: string[]): CliOptions {
   }
 
   return {
-    caseIds: caseIds.length > 0 ? caseIds : [...DEFAULT_CASE_IDS],
+    caseIds,
+    panelId,
     output,
     artifactDir,
     help,
   };
+}
+
+function resolveCaseIds(options: CliOptions): string[] {
+  if (options.caseIds.length > 0) {
+    return options.caseIds;
+  }
+
+  if (!options.panelId) {
+    return [...DEFAULT_CASE_IDS];
+  }
+
+  const panelCaseIds = ENGINE_V3_BENCHMARK_PANELS[options.panelId as keyof typeof ENGINE_V3_BENCHMARK_PANELS];
+  if (!panelCaseIds) {
+    throw new Error(`Unknown Engine V3 benchmark panel: ${options.panelId}`);
+  }
+
+  return [...panelCaseIds];
 }
 
 function selectCases(caseIds: string[]): EngineV3BenchmarkCase[] {
@@ -93,7 +130,7 @@ function requireValue(args: string[], index: number, flag: string): string {
 }
 
 function usage(): string {
-  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-trail-12k. Outcomes may be generated, adjusted, refused, or errored; the command writes JSON, GeoJSON, and GPX artifacts for each case.\n`;
+  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--panel <panel-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-trail-12k. Use --panel beta-multiterrain for the explicit eight-case short beta panel. Outcomes may be generated, adjusted, refused, or errored; the command writes an aggregate JSON plus JSON, GeoJSON, and GPX artifacts for each case.\n`;
 }
 
 main().catch((error: unknown) => {
