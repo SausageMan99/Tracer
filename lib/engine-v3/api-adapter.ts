@@ -2,7 +2,8 @@ import { buildGraph } from "../engine/graph-builder";
 import { geocodeAddress } from "../route-generator-legacy";
 import type { RouteRequest } from "../types";
 import { planRouteIntentV3 } from "./route-intent-planner";
-import { generateRouteV3FromGraph } from "./route-generator";
+import { generateRouteV3FromGraph, type GeneratedRouteV3 } from "./route-generator";
+import { validateRouteV3ExportConsistency } from "./route-export";
 import { buildTerrainSnapshotV3FromGraph } from "./terrain-snapshot-builder";
 import { routeV3WarningCopy } from "./product-copy";
 import type { ProductOutcomeLabelV3, RouteMetricsV3, RouteModeV3, RouteOutcomeV3, RouteStrategyV3, TerrainComponentV3, TerrainSnapshotV3 } from "./types";
@@ -97,11 +98,29 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
     loop: true,
   }, graph);
 
+  return buildGenerateRouteV3ApiResponseFromGenerated(generated);
+}
+
+export function buildGenerateRouteV3ApiResponseFromGenerated(generated: GeneratedRouteV3): GenerateRouteV3ApiResponse {
   const betaOutcome = generated.outcome.type;
   const betaOutcomeLabel = generated.outcome.productLabel ?? fallbackProductLabel(betaOutcome);
   const coordinates = generated.route.geometry.coordinates;
+  const polyline = coordinates.map(([lng, lat]) => ({ lat, lng }));
   const hasGeometry = betaOutcome !== "refused" && coordinates.length >= 2;
-  const routeGeoJson = hasGeometry
+  const exportValidation = hasGeometry
+    ? validateRouteV3ExportConsistency({
+      polyline,
+      metricDistanceKm: generated.route.metrics.distanceProducedKm,
+      loop: true,
+    })
+    : null;
+  const exportValid = exportValidation?.valid ?? false;
+  const effectiveOutcome = hasGeometry && !exportValid ? "refused" : betaOutcome;
+  const effectiveLabel = hasGeometry && !exportValid ? "refused_other" : betaOutcomeLabel;
+  const exportWarnings = exportValidation && !exportValidation.valid
+    ? [`V3 export geometry invalid: ${exportValidation.reasons.join('; ')}`]
+    : [];
+  const routeGeoJson = hasGeometry && exportValid
     ? {
       type: "Feature" as const,
       geometry: {
@@ -117,24 +136,25 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
       },
     }
     : null;
+  const warnings = unique([
+    ...generated.diagnostics.warnings,
+    ...generated.diagnostics.limitations,
+    ...exportWarnings,
+  ]);
 
   return {
     engine: generated.engine,
-    betaOutcome,
-    betaOutcomeLabel,
-    productLabel: betaOutcomeLabel,
+    betaOutcome: effectiveOutcome,
+    betaOutcomeLabel: effectiveLabel,
+    productLabel: effectiveLabel,
     metrics: generated.route.metrics,
-    reason: reasonForOutcome(generated.outcome),
-    warnings: unique([
-      ...generated.diagnostics.warnings,
-      ...generated.diagnostics.limitations,
-    ]),
-    userWarnings: unique([
-      ...generated.diagnostics.warnings,
-      ...generated.diagnostics.limitations,
-    ].map(routeV3WarningCopy)),
+    reason: exportValidation && !exportValidation.valid
+      ? `EXPORT_GEOMETRY_INVALID — ${exportValidation.reasons.join(' — ')}`
+      : reasonForOutcome(generated.outcome),
+    warnings,
+    userWarnings: warnings.map(routeV3WarningCopy),
     routeGeoJson,
-    gpxAvailable: routeGeoJson != null,
+    gpxAvailable: routeGeoJson != null && exportValid,
   };
 }
 

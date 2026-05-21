@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRouteV3ExportBundle,
   calculatePolylineDistanceKm,
+  validateRouteV3ExportConsistency,
   type RouteV3PolylinePoint,
 } from "@/lib/engine-v3/route-export";
 
@@ -50,5 +51,27 @@ describe("buildRouteV3ExportBundle", () => {
     expect(gpxCoordinates.at(-1)).toEqual(expectedCoordinates.at(-1));
     expect(geojsonCoordinates).toEqual(expectedCoordinates);
     expect(gpxCoordinates).toEqual(expectedCoordinates);
+  });
+
+  it("rejects a discontinuous V3 polyline before GPX is exposed", () => {
+    const discontinuousPolyline: RouteV3PolylinePoint[] = [
+      { lat: 48.6901, lng: 2.4921 },
+      { lat: 48.6902, lng: 2.4924 },
+      { lat: 48.7082, lng: 2.5288 },
+      { lat: 48.6901, lng: 2.4921 },
+    ];
+
+    const validation = validateRouteV3ExportConsistency({
+      polyline: discontinuousPolyline,
+      metricDistanceKm: 8.11,
+      loop: true,
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.maxSegmentKm).toBeGreaterThan(0.2);
+    expect(validation.reasons).toEqual(expect.arrayContaining([
+      expect.stringContaining("max segment jump"),
+      expect.stringContaining("distance mismatch"),
+    ]));
   });
 });

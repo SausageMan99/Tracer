@@ -655,7 +655,7 @@ function selectUrbanParkRouteEdges(
       .sort((left, right) => scoreUrbanParkStep(right, startNodeId, distanceKm, minDistanceKm) - scoreUrbanParkStep(left, startNodeId, distanceKm, minDistanceKm));
     const next = choices[0];
     if (!next) break;
-    selected.push(next.edge);
+    selected.push(orientEdge(next.edge, current, next.to));
     used.add(next.edge.id);
     distanceKm += Math.max(0, next.edge.lengthKm);
     current = next.to;

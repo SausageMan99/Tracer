@@ -478,6 +478,75 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     }));
   });
 
+  it('keeps urban-nature park edge traversal orientation in candidate nodeIds', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(5, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(5, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(5, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('urban-park-forward', 'a', 'b', 1.9, 'grass', 'path', 'park'),
+        edge('urban-park-reverse', 'c', 'b', 1.8, 'grass', 'path', 'park'),
+        edge('urban-park-return', 'c', 'a', 1.7, 'grass', 'path', 'park'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.edgeIds).toEqual([
+      'urban-park-forward',
+      'urban-park-reverse',
+      'urban-park-return',
+    ]);
+    expect(result.selectedCandidate?.nodeIds).toEqual(['a', 'b', 'c', 'a']);
+    expect(result.selectedCandidate?.geometry.coordinates).toHaveLength(4);
+  });
+
+  it('keeps component-capacity urban-nature fallback geometry continuous instead of concatenating raw edge order', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(7, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(7, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(7, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.35 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const testGraph = graph([
+      { ...edge('paved-safe-1', 's', 'p1', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+      { ...edge('paved-safe-2', 'p1', 'p2', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+      { ...edge('paved-safe-3', 'p2', 'p3', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+      { ...edge('paved-safe-return', 'p3', 's', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+      { ...edge('urban-nature-access', 's', 'a', 0.1, 'asphalt', 'footway', 'urban'), scenic: true },
+      edge('soft-ab', 'a', 'b', 1, 'grass', 'path', 'park'),
+      edge('soft-ba', 'b', 'a', 1, 'grass', 'path', 'park'),
+      edge('soft-bc', 'b', 'c', 1, 'grass', 'path', 'park'),
+      edge('soft-cb', 'c', 'b', 1, 'grass', 'path', 'park'),
+    ]);
+    const result = assembleUrbanNatureLoopMissionV3(
+      testGraph,
+      contract,
+    );
+
+    const nodeIds = result.selectedCandidate?.nodeIds ?? [];
+    expect(result.selectedCandidate?.source).toBe('urban_corridor');
+    expect(nodeIds.length).toBeGreaterThan(3);
+    for (let index = 0; index < nodeIds.length - 1; index += 1) {
+      const from = nodeIds[index];
+      const to = nodeIds[index + 1];
+      const edgeId = result.selectedCandidate?.edgeIds[index];
+      const rawEdge = edgeId ? testGraph.edges.get(edgeId) : undefined;
+      expect(rawEdge, `missing edge ${edgeId}`).toBeDefined();
+      expect(rawEdge, `edge ${edgeId} must connect ${from}->${to}`).toSatisfy((candidate: EnrichedEdge) =>
+        (candidate.from === from && candidate.to === to) || (candidate.from === to && candidate.to === from),
+      );
+    }
+  });
+
   it('dispatches urban_nature_loop through an explicit targetOpportunity contract instead of a generic park candidate', () => {
     const urbanIntent: RouteIntentV3 = {
       ...intent(6, []),
