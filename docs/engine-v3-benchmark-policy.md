@@ -139,7 +139,19 @@ Le moteur échoue alors que le terrain semble exploitable, timeoute, perd les ex
 
 Le moteur annonce `generated` ou `adjusted` alors que la trace est sous-distance, non fermée, trop pavée pour la promesse, sans dwell terrain réel, trop répétée, visuellement absurde, ou classifie du paved/scenic paved comme trail. C'est pire qu'un refus.
 
-## 7. Décision opérationnelle
+## 7. Gates rapides vs benchmarks live
+
+`npm run test:run` reste la gate rapide/déterministe: elle vérifie les contrats, fixtures synthétiques et wiring CLI sans lancer Overpass en live. Les validations OSM réelles sont séparées dans les scripts benchmark dédiés, avec artifacts inspectables.
+
+Commandes live V3:
+
+- `npm run benchmark:engine-v3`: panel readiness RAM-safe à deux cas, artifacts sous `artifacts/engine-v3-benchmarks/latest-*` par défaut.
+- `npm run benchmark:v3-golden`: panel ASM golden à 7 cas (`paris-buttes-chaumont-urban-nature`, `paris-19-canal-running`, `caen-colline-aux-oiseaux-6k-soft`, `tourville-pommiers-trail-8k`, `tourville-pommiers-trail-12k`, `fontainebleau-croix-augas-trail-12k`, `osm-poor-rural-trail-8k`) avec aggregate `/tmp/trailforge-v3-asm-3z-latest.json` et routes `/tmp/trailforge-v3-asm-3z-routes`.
+- `npm run benchmark:engine-v3:beta-multiterrain`: panel beta court à 8 cas, plus large que la golden gate ASM.
+
+Ces commandes peuvent être longues et dépendre d’Overpass; leur succès technique signifie seulement que le harness a produit des artifacts, pas que les routes sont produit-ready.
+
+## 8. Décision opérationnelle
 
 Tant que le panel reste à 8/8 `refused`, V3 est observability-only et non beta-ready.
 

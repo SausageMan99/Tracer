@@ -32,6 +32,15 @@ const ENGINE_V3_BENCHMARK_PANELS = {
     'paris-19-canal-running',
     'osm-poor-rural-trail-8k',
   ],
+  'asm-3-golden': [
+    'paris-buttes-chaumont-urban-nature',
+    'paris-19-canal-running',
+    'caen-colline-aux-oiseaux-6k-soft',
+    'tourville-pommiers-trail-8k',
+    'tourville-pommiers-trail-12k',
+    'fontainebleau-croix-augas-trail-12k',
+    'osm-poor-rural-trail-8k',
+  ],
 } as const;
 
 async function main(): Promise<void> {
@@ -138,7 +147,7 @@ function requireValue(args: string[], index: number, flag: string): string {
 }
 
 function usage(): string {
-  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--panel <panel-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-croix-augas-trail-12k. Use --panel beta-multiterrain for the explicit eight-case short beta panel, or --panel asm-3i-fontainebleau-contract for the Fontainebleau contract split regression panel. Outcomes may be generated, adjusted, refused, or errored; the command writes an aggregate JSON plus JSON, GeoJSON, and GPX artifacts for each case.\n`;
+  return `Usage: npm run benchmark:engine-v3 -- [--case <case-id>] [--panel <panel-id>] [--output <path>] [--artifact-dir <dir>]\n\nRuns the Engine V3 real OSM/Overpass benchmark harness. By default it uses the RAM-safe two-case readiness panel: tourville-trail-8k and fontainebleau-croix-augas-trail-12k. Use --panel beta-multiterrain for the explicit eight-case short beta panel, --panel asm-3-golden for the seven-case ASM golden product-label gate, or --panel asm-3i-fontainebleau-contract for the Fontainebleau contract split regression panel. Outcomes may be generated, adjusted, refused, or errored; the command writes an aggregate JSON plus JSON, GeoJSON, and GPX artifacts for each case.\n`;
 }
 
 main().catch((error: unknown) => {

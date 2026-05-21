@@ -15,6 +15,9 @@ describe('Engine V3 real OSM benchmark CLI wiring', () => {
     expect(packageJson.scripts['benchmark:engine-v3:asm-3i-fontainebleau-contract']).toBe(
       'node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts --panel asm-3i-fontainebleau-contract --output /tmp/trailforge-v3-asm-3i-fontainebleau-contract-latest.json --artifact-dir /tmp/trailforge-v3-asm-3i-fontainebleau-contract-routes',
     );
+    expect(packageJson.scripts['benchmark:v3-golden']).toBe(
+      'node --experimental-strip-types --loader ./scripts/engine-v3-ts-loader.mjs scripts/run-engine-v3-benchmarks.ts --panel asm-3-golden --output /tmp/trailforge-v3-asm-3z-latest.json --artifact-dir /tmp/trailforge-v3-asm-3z-routes',
+    );
   });
 
   it('defaults to the two-case readiness panel requested by the autonomous board', () => {
@@ -85,6 +88,24 @@ describe('Engine V3 real OSM benchmark CLI wiring', () => {
     ];
 
     expect(source).toContain('asm-3i-fontainebleau-contract');
+    for (const caseId of requiredIds) {
+      expect(source).toContain(`'${caseId}'`);
+    }
+  });
+
+  it('documents the explicit ASM-3 golden V3 panel as a seven-case live benchmark gate', () => {
+    const source = readFileSync('scripts/run-engine-v3-benchmarks.ts', 'utf8');
+    const requiredIds = [
+      'paris-buttes-chaumont-urban-nature',
+      'paris-19-canal-running',
+      'caen-colline-aux-oiseaux-6k-soft',
+      'tourville-pommiers-trail-8k',
+      'tourville-pommiers-trail-12k',
+      'fontainebleau-croix-augas-trail-12k',
+      'osm-poor-rural-trail-8k',
+    ];
+
+    expect(source).toContain('asm-3-golden');
     for (const caseId of requiredIds) {
       expect(source).toContain(`'${caseId}'`);
     }
