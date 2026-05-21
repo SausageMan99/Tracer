@@ -588,6 +588,73 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     });
   });
 
+  it('expands a short urban river-corridor seed into a returned loop through quiet routable connectors', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(8, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(8, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(8, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('short-seed-out', 's', 'seed-a', 0.2, 'asphalt', 'footway', 'water_corridor'),
+        edge('short-seed-back', 'seed-a', 's', 0.2, 'asphalt', 'footway', 'water_corridor'),
+        edge('quiet-access', 's', 'r1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('quiet-access-2', 'r1', 'w1', 0.4, 'asphalt', 'living_street', 'urban'),
+        edge('river-soft-1', 'w1', 'w2', 1.3, '', 'path', 'water_corridor'),
+        edge('river-soft-2', 'w2', 'w3', 1.3, '', 'path', 'water_corridor'),
+        { ...edge('urban-green-1', 'w3', 'g1', 1.2, 'grass', 'path', 'urban'), scenic: true },
+        { ...edge('urban-green-2', 'g1', 'g2', 1.2, 'grass', 'path', 'urban'), scenic: true },
+        edge('quiet-closure-1', 'g2', 'r2', 0.7, 'asphalt', 'residential', 'urban'),
+        edge('quiet-closure-2', 'r2', 's', 0.8, 'asphalt', 'living_street', 'urban'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.source).toBe('urban_corridor');
+    expect(result.selectedCandidate?.nodeIds[0]).toBe('s');
+    expect(result.selectedCandidate?.nodeIds.at(-1)).toBe('s');
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeGreaterThanOrEqual(7.3);
+    expect(result.selectedCandidate?.metrics.visitedComponents).toEqual(expect.arrayContaining(['river_corridor', 'urban_green']));
+    expect(result.selectedCandidate?.metrics.naturalDwellKm).toBeGreaterThanOrEqual(3.3);
+    expect(result.selectedCandidate?.metrics.pavedRatio).toBeGreaterThan(0.2);
+    expect(result.selectedCandidate?.metrics.strictTrailKm).toBeGreaterThan(0);
+  });
+
+  it('refuses an uncloseable urban-nature corridor with stable closure diagnostics instead of fabricating a chord', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('quiet-access', 's', 'w1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('river-soft-1', 'w1', 'w2', 1.2, '', 'path', 'water_corridor'),
+        edge('river-soft-2', 'w2', 'w3', 1.2, '', 'path', 'water_corridor'),
+        edge('river-soft-3', 'w3', 'w4', 1.2, '', 'path', 'water_corridor'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate).toBeNull();
+    expect(result.phaseDiagnostics.closure.status).toBe('failure');
+    expect(result.phaseDiagnostics.closure.closureRejectedReasons).toMatchObject({
+      no_routable_connector_to_start: expect.any(Number),
+    });
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      returnedClosureCount: 0,
+      closureRejectedReasons: expect.objectContaining({ no_routable_connector_to_start: expect.any(Number) }),
+    });
+  });
+
   it('refuses disconnected urban-nature fragments instead of stitching them with implicit chords', () => {
     const urbanIntent: RouteIntentV3 = {
       ...intent(6, []),

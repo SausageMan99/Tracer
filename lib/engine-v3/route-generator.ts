@@ -17,6 +17,7 @@ import type {
   AssembledRouteV3,
   CorridorMissionV3,
   RouteGenerationDiagnosticsV3,
+  RouteAssemblyDiagnosticsV3,
   RouteIntentV3,
   RouteOutcomeV3,
   TerrainSnapshotSourceV3,
@@ -51,7 +52,7 @@ export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: Enr
         assemblerResult: missionResult,
         candidate: missionResult.selectedCandidate,
       })
-    : assembleGraphRouteV3(intent, mission, graph);
+    : withMissionCandidateProductionDiagnostics(assembleGraphRouteV3(intent, mission, graph), missionResult);
   const outcome = decideOutcomeV3(intent, route);
   const diagnostics = buildDiagnostics('graph_adapter', intent, mission, route, outcome);
   if (request.mode === 'trail' && (process.env.TRAILFORGE_V3_TERRAIN_INVENTORY === '1' || process.env.TRAILFORGE_V3_ROUTE_CONTRACT === '1')) {
@@ -82,6 +83,39 @@ export function generateRouteV3FromGraph(request: UserRouteRequestV3, graph: Enr
     outcome,
     diagnostics,
   };
+}
+
+function withMissionCandidateProductionDiagnostics(
+  route: AssembledRouteV3,
+  missionResult: ReturnType<typeof assembleMissionV3> | null,
+): AssembledRouteV3 {
+  if (!missionResult || Object.keys(missionResult.diagnostics.observationOnly).length === 0) return route;
+  const observation = missionResult.diagnostics.observationOnly;
+  const assemblyDiagnostics: RouteAssemblyDiagnosticsV3 = route.assemblyDiagnostics ?? {
+    startNodeId: null,
+    distanceToFirstNonPavedTargetKm: null,
+    reachableNonPavedTargetEdgeCount: 0,
+    reachableNonPavedTargetKm: 0,
+  };
+  return {
+    ...route,
+    assemblyDiagnostics: {
+      ...assemblyDiagnostics,
+      candidateProductionDiagnostics: observation,
+      returnedClosureCount: typeof observation.returnedClosureCount === 'number'
+        ? observation.returnedClosureCount
+        : assemblyDiagnostics.returnedClosureCount,
+      closureRejectedReasons: isRecord(observation.closureRejectedReasons)
+        ? observation.closureRejectedReasons as Record<string, number>
+        : assemblyDiagnostics.closureRejectedReasons,
+      firstDropStage: assemblyDiagnostics.firstDropStage ?? missionResult.diagnostics.firstDropStage,
+    },
+    warnings: unique([...route.warnings, ...missionResult.warnings]),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function generateRouteV3WithSnapshotSource(

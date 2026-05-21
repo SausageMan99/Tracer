@@ -50,7 +50,7 @@ function assembleParkLikeMissionV3(
     : 'park_capacity_below_requested_distance';
   const relaxationAllowed = mission.relaxations.some((relaxation) => relaxation.allowed && relaxation.id === 'adjust_to_park_capacity');
 
-  if (parkCapacityKm < mission.request.minDistanceKm && !relaxationAllowed) {
+  if (parkCapacityKm < mission.request.minDistanceKm && !relaxationAllowed && assemblerMode !== 'urban_nature_loop') {
     return createNoCandidateAssemblerResultV3(mission, blocker);
   }
 
@@ -61,13 +61,25 @@ function assembleParkLikeMissionV3(
   const legacySelectedEdges = selectUrbanParkRouteEdges(graph, mission, parkEdges);
   const legacyMetrics = metricsFromEdges(legacySelectedEdges, mission.request.targetDistanceKm);
   const legacyStartsAtStart = routeStartsAtClosestNode(graph, mission, legacySelectedEdges);
+  const legacyNodeIds = nodeIdsFromContinuousEdges(legacySelectedEdges);
+  const legacyReturned = Boolean(legacyNodeIds && legacyNodeIds.length > 1 && legacyNodeIds[0] === legacyNodeIds.at(-1));
   let selectedEdges = legacySelectedEdges;
   let selectedByComponentFirst = false;
-  if (assemblerMode === 'urban_nature_loop' && (!legacyStartsAtStart || legacyMetrics.naturalDwellKm < mission.target.minNaturalDwellKm)) {
-    const componentFirstEdges = selectUrbanNatureComponentRouteEdges(graph, mission, urbanNatureConnectorEdges(graph));
-    if (componentFirstEdges) {
-      selectedEdges = componentFirstEdges;
-      selectedByComponentFirst = true;
+  let componentFirstDiagnostics: UrbanNatureClosureSearchDiagnostics = emptyUrbanNatureClosureSearchDiagnostics();
+  if (assemblerMode === 'urban_nature_loop') {
+    const componentFirst = selectUrbanNatureComponentRouteEdges(graph, mission, urbanNatureConnectorEdges(graph));
+    componentFirstDiagnostics = componentFirst.diagnostics;
+    if (componentFirst.edges) {
+      const componentMetrics = metricsFromEdges(componentFirst.edges, mission.request.targetDistanceKm);
+      if (
+        !legacyStartsAtStart
+        || !legacyReturned
+        || legacyMetrics.distanceProducedKm < mission.request.minDistanceKm
+        || componentMetrics.naturalDwellKm > legacyMetrics.naturalDwellKm + 1
+      ) {
+        selectedEdges = componentFirst.edges;
+        selectedByComponentFirst = true;
+      }
     }
   }
   const opportunityDiagnostics = buildUrbanParkOpportunityDiagnostics(graph, mission, parkEdges, selectedEdges, selectedByComponentFirst);
@@ -88,6 +100,15 @@ function assembleParkLikeMissionV3(
       availableOpportunity: opportunityDiagnostics.availableOpportunity,
       nearestNonPavedAllowedEdges: opportunityDiagnostics.nearestNonPavedAllowedEdges,
       urbanNatureOpportunityComponents: opportunityDiagnostics.urbanNatureOpportunityComponents,
+      returnedClosureCount: componentFirstDiagnostics.returnedClosureCount,
+      closureRejectedReasons: componentFirstDiagnostics.closureRejectedReasons,
+      bestReturnedCandidate: componentFirstDiagnostics.bestReturnedCandidate,
+      bestNonReturnedCandidate: componentFirstDiagnostics.bestNonReturnedCandidate,
+    };
+    noCandidate.phaseDiagnostics.closure = {
+      ...noCandidate.phaseDiagnostics.closure,
+      status: assemblerMode === 'urban_nature_loop' && componentFirstDiagnostics.attemptedClosureCount > 0 ? 'failure' : noCandidate.phaseDiagnostics.closure.status,
+      closureRejectedReasons: componentFirstDiagnostics.closureRejectedReasons,
     };
     return noCandidate;
   }
@@ -128,6 +149,10 @@ function assembleParkLikeMissionV3(
         availableOpportunity: opportunityDiagnostics.availableOpportunity,
         nearestNonPavedAllowedEdges: opportunityDiagnostics.nearestNonPavedAllowedEdges,
         urbanNatureOpportunityComponents: opportunityDiagnostics.urbanNatureOpportunityComponents,
+        returnedClosureCount: componentFirstDiagnostics.returnedClosureCount,
+        closureRejectedReasons: componentFirstDiagnostics.closureRejectedReasons,
+        bestReturnedCandidate: componentFirstDiagnostics.bestReturnedCandidate,
+        bestNonReturnedCandidate: componentFirstDiagnostics.bestNonReturnedCandidate,
       },
     },
     warnings: [
@@ -330,6 +355,22 @@ interface UrbanNatureTargetOpportunityDiagnostic {
   closurePossible: boolean;
   selected: boolean;
   rejectedReason: string | null;
+}
+
+interface UrbanNatureClosureSearchDiagnostics {
+  attemptedClosureCount: number;
+  returnedClosureCount: number;
+  closureRejectedReasons: Record<string, number>;
+  bestReturnedCandidate: UrbanNatureClosureCandidateDiagnostic | null;
+  bestNonReturnedCandidate: UrbanNatureClosureCandidateDiagnostic | null;
+}
+
+interface UrbanNatureClosureCandidateDiagnostic {
+  distanceKm: number;
+  naturalDwellKm: number;
+  pavedRatio: number;
+  returned: boolean;
+  reason: string | null;
 }
 
 function selectUrbanNatureTargetOpportunity(
@@ -567,23 +608,6 @@ function shortestGeometricDistanceFromStartKm(
   return best;
 }
 
-function closestComponentNodeIdToStart(
-  graph: EnrichedGraph,
-  mission: MissionContractV3,
-  edges: EnrichedEdge[],
-): string {
-  let best: { nodeId: string; distanceKm: number } | null = null;
-  for (const edge of edges) {
-    for (const nodeId of [edge.from, edge.to]) {
-      const node = graph.nodes.get(nodeId);
-      if (!node) continue;
-      const distanceKm = haversineKm(mission.request.start.lat, mission.request.start.lng, node.lat, node.lng);
-      if (!best || distanceKm < best.distanceKm) best = { nodeId, distanceKm };
-    }
-  }
-  return best?.nodeId ?? edges[0]?.from ?? closestNodeId(graph, mission.request.start) ?? '';
-}
-
 function hasComponentCycle(edges: EnrichedEdge[]): boolean {
   const nodes = new Set(edges.flatMap((edge) => [edge.from, edge.to]));
   return edges.length >= nodes.size;
@@ -635,22 +659,23 @@ function selectUrbanNatureComponentRouteEdges(
   graph: EnrichedGraph,
   mission: MissionContractV3,
   edges: EnrichedEdge[],
-): EnrichedEdge[] | null {
+): { edges: EnrichedEdge[] | null; diagnostics: UrbanNatureClosureSearchDiagnostics } {
+  const diagnostics = emptyUrbanNatureClosureSearchDiagnostics();
   const startNodeId = closestNodeId(graph, mission.request.start) ?? edges[0]?.from ?? null;
-  if (!startNodeId) return null;
+  if (!startNodeId) return { edges: null, diagnostics };
 
   const components = connectedCandidateComponents(edges.filter(isUrbanNatureOpportunityEdge))
-    .filter((component) => hasComponentCycle(component) && sumCandidateNaturalKm(component) > 0)
+    .filter((component) => sumCandidateNaturalKm(component) > 0)
     .sort((left, right) => sumCandidateNaturalKm(right) - sumCandidateNaturalKm(left) || sumLengthKm(right) - sumLengthKm(left));
 
+  let best: { edges: EnrichedEdge[]; metrics: RouteMetricsV3 } | null = null;
   for (const component of components) {
     const componentNodeIds = new Set(component.flatMap((edge) => [edge.from, edge.to]));
-    const access = shortestPathToAnyNode(edges, startNodeId, componentNodeIds)
-      ?? {
-        edges: [],
-        endNodeId: closestComponentNodeIdToStart(graph, mission, component),
-        distanceKm: shortestGeometricDistanceFromStartKm(graph, mission, component) ?? 0,
-      };
+    const access = shortestPathToAnyNode(edges, startNodeId, componentNodeIds);
+    if (!access) {
+      incrementReason(diagnostics.closureRejectedReasons, 'no_routable_access_to_target');
+      continue;
+    }
 
     const minimumDwellKm = Math.min(
       sumCandidateNaturalKm(component),
@@ -659,20 +684,49 @@ function selectUrbanNatureComponentRouteEdges(
     const componentBudgetKm = Math.max(0, mission.request.maxDistanceKm - access.distanceKm);
     let dwell = walkComponentOpportunity(component, access.endNodeId, componentBudgetKm, minimumDwellKm);
     if (!dwell || metricsFromEdges(dwell.edges, mission.request.targetDistanceKm).naturalDwellKm < minimumDwellKm * 0.8) {
-      dwell = selectComponentCapacityEdges(component, componentBudgetKm, minimumDwellKm);
+      dwell = walkComponentDwellPath(component, access.endNodeId, componentBudgetKm, minimumDwellKm)
+        ?? selectComponentCapacityEdges(component, componentBudgetKm, minimumDwellKm);
     }
-    if (!dwell || dwell.edges.length === 0) continue;
+    if (!dwell || dwell.edges.length === 0) {
+      incrementReason(diagnostics.closureRejectedReasons, 'insufficient_target_dwell_path');
+      continue;
+    }
 
-    const returnPath = shortestPathBetweenNodes(edges, dwell.endNodeId, startNodeId);
-    const candidate = [...access.edges, ...dwell.edges, ...(returnPath?.edges ?? [])];
+    diagnostics.attemptedClosureCount += 1;
+    const returnPath = shortestPathBetweenNodes(
+      edges,
+      dwell.endNodeId,
+      startNodeId,
+      new Set(dwell.edges.map((edge) => edge.id)),
+    );
+    if (!returnPath) {
+      const partialMetrics = metricsFromEdges([...access.edges, ...dwell.edges], mission.request.targetDistanceKm);
+      recordClosureCandidateDiagnostic(diagnostics, partialMetrics, false, 'no_routable_connector_to_start');
+      incrementReason(diagnostics.closureRejectedReasons, 'no_routable_connector_to_start');
+      continue;
+    }
+
+    const candidate = [...access.edges, ...dwell.edges, ...returnPath.edges];
     const metrics = metricsFromEdges(candidate, mission.request.targetDistanceKm);
     const minimumAcceptedDwellKm = Math.min(sumCandidateNaturalKm(component), mission.target.minNaturalDwellKm * 0.8);
-    if (metrics.naturalDwellKm < minimumAcceptedDwellKm) continue;
-    if (metrics.distanceProducedKm > mission.request.maxDistanceKm + 0.001) continue;
-    return candidate;
+    if (metrics.naturalDwellKm < minimumAcceptedDwellKm) {
+      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'natural_dwell_below_contract');
+      incrementReason(diagnostics.closureRejectedReasons, 'natural_dwell_below_contract');
+      continue;
+    }
+    if (metrics.distanceProducedKm > mission.request.maxDistanceKm + 0.001) {
+      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'distance_above_max_contract');
+      incrementReason(diagnostics.closureRejectedReasons, 'distance_above_max_contract');
+      continue;
+    }
+    diagnostics.returnedClosureCount += 1;
+    recordClosureCandidateDiagnostic(diagnostics, metrics, true, null);
+    if (!best || scoreUrbanNatureRouteMetrics(metrics) > scoreUrbanNatureRouteMetrics(best.metrics)) {
+      best = { edges: candidate, metrics };
+    }
   }
 
-  return null;
+  return { edges: best?.edges ?? null, diagnostics };
 }
 
 function selectUrbanParkRouteEdges(
@@ -766,8 +820,92 @@ function shortestPathBetweenNodes(
   edges: EnrichedEdge[],
   startNodeId: string,
   targetNodeId: string,
+  excludedEdgeIds: ReadonlySet<string> = new Set(),
 ): { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number } | null {
-  return shortestPathToAnyNode(edges, startNodeId, new Set([targetNodeId]));
+  return shortestPathToAnyNode(edges.filter((edge) => !excludedEdgeIds.has(edge.id)), startNodeId, new Set([targetNodeId]));
+}
+
+function emptyUrbanNatureClosureSearchDiagnostics(): UrbanNatureClosureSearchDiagnostics {
+  return {
+    attemptedClosureCount: 0,
+    returnedClosureCount: 0,
+    closureRejectedReasons: {},
+    bestReturnedCandidate: null,
+    bestNonReturnedCandidate: null,
+  };
+}
+
+function incrementReason(reasons: Record<string, number>, reason: string): void {
+  reasons[reason] = (reasons[reason] ?? 0) + 1;
+}
+
+function recordClosureCandidateDiagnostic(
+  diagnostics: UrbanNatureClosureSearchDiagnostics,
+  metrics: RouteMetricsV3,
+  returned: boolean,
+  reason: string | null,
+): void {
+  const candidate: UrbanNatureClosureCandidateDiagnostic = {
+    distanceKm: round3(metrics.distanceProducedKm),
+    naturalDwellKm: round3(metrics.naturalDwellKm),
+    pavedRatio: round3(metrics.pavedRatio),
+    returned,
+    reason,
+  };
+  if (returned) {
+    if (!diagnostics.bestReturnedCandidate || candidate.distanceKm > diagnostics.bestReturnedCandidate.distanceKm) {
+      diagnostics.bestReturnedCandidate = candidate;
+    }
+  } else if (!diagnostics.bestNonReturnedCandidate || candidate.distanceKm > diagnostics.bestNonReturnedCandidate.distanceKm) {
+    diagnostics.bestNonReturnedCandidate = candidate;
+  }
+}
+
+function scoreUrbanNatureRouteMetrics(metrics: RouteMetricsV3): number {
+  return metrics.distanceProducedKm + metrics.naturalDwellKm * 2 - metrics.pavedRatio;
+}
+
+function walkComponentDwellPath(
+  componentEdges: EnrichedEdge[],
+  entryNodeId: string,
+  budgetKm: number,
+  minimumDwellKm: number,
+): { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number } | null {
+  const adjacency = buildAllowedAdjacency(componentEdges);
+  const queue: Array<{ nodeId: string; edges: EnrichedEdge[]; distanceKm: number; dwellKm: number; used: Set<string> }> = [
+    { nodeId: entryNodeId, edges: [], distanceKm: 0, dwellKm: 0, used: new Set() },
+  ];
+  let best: { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number; dwellKm: number } | null = null;
+
+  for (let step = 0; step < 20_000 && queue.length > 0; step += 1) {
+    queue.sort((left, right) => right.dwellKm - left.dwellKm || right.distanceKm - left.distanceKm);
+    const current = queue.shift();
+    if (!current) break;
+    if (!best || current.dwellKm > best.dwellKm || (current.dwellKm === best.dwellKm && current.distanceKm > best.distanceKm)) {
+      best = { edges: current.edges, endNodeId: current.nodeId, distanceKm: current.distanceKm, dwellKm: current.dwellKm };
+    }
+    if (current.dwellKm >= minimumDwellKm && current.distanceKm >= minimumDwellKm) return best;
+
+    for (const next of adjacency.get(current.nodeId) ?? []) {
+      if (current.used.has(next.edge.id)) continue;
+      const distanceKm = current.distanceKm + Math.max(0, next.edge.lengthKm);
+      if (distanceKm > budgetKm + 0.001) continue;
+      const used = new Set(current.used);
+      used.add(next.edge.id);
+      queue.push({
+        nodeId: next.to,
+        edges: [...current.edges, orientEdge(next.edge, current.nodeId, next.to)],
+        distanceKm,
+        dwellKm: current.dwellKm + Math.max(0, next.edge.lengthKm) * classifyEdgeSemanticsV3(next.edge).candidateNaturalWeight,
+        used,
+      });
+    }
+  }
+
+  if (best && best.dwellKm >= minimumDwellKm * 0.8) {
+    return { edges: best.edges, endNodeId: best.endNodeId, distanceKm: best.distanceKm };
+  }
+  return null;
 }
 
 function selectComponentCapacityEdges(

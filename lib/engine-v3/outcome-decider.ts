@@ -76,6 +76,11 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
 function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, distanceRatio: number): string[] {
   const reasons: string[] = [];
 
+  const urbanClosureReason = urbanNatureClosureDiagnosticReason(intent, route);
+  if (urbanClosureReason) {
+    reasons.push(urbanClosureReason);
+  }
+
   if ((route.segments.length === 0 && route.edges.length === 0) || poorGraph(intent)) {
     reasons.push(noAssemblyEvidenceReason(intent));
   }
@@ -228,6 +233,20 @@ function noAssemblyEvidenceReason(intent: RouteIntentV3): string {
   if (intent.strategy === 'urban_nature_loop') return 'urban-nature route refused: no assembled route can support the urban corridor promise';
   if (intent.strategy === 'simple_quiet_loop' || intent.strategy === 'low_trail_potential') return 'quiet loop refused: no assembled route can support the requested loop';
   return 'poor graph evidence: no assembled route can support the requested trail promise';
+}
+
+function urbanNatureClosureDiagnosticReason(intent: RouteIntentV3, route: AssembledRouteV3): string | null {
+  if (!isUrbanNaturePromise(intent)) return null;
+  if (route.edges.length > 0 || route.segments.length > 0) return null;
+  const diagnostics = route.assemblyDiagnostics?.candidateProductionDiagnostics;
+  if (!diagnostics || typeof diagnostics !== 'object' || Array.isArray(diagnostics)) return null;
+  const closureRejectedReasons = (diagnostics as Record<string, unknown>).closureRejectedReasons;
+  if (!closureRejectedReasons || typeof closureRejectedReasons !== 'object' || Array.isArray(closureRejectedReasons)) return null;
+  const reasonEntries = Object.entries(closureRejectedReasons as Record<string, unknown>)
+    .filter(([, count]) => typeof count === 'number' && count > 0)
+    .map(([reason, count]) => `${reason}:${count}`);
+  if (reasonEntries.length === 0) return null;
+  return `urban-nature topology refused: target opportunity not loopable under closure contract (${reasonEntries.join(', ')})`;
 }
 
 function roadLikeUnknownDominates(route: AssembledRouteV3): boolean {
@@ -437,6 +456,7 @@ function refusedProductLabel(outcome: Extract<RouteOutcomeV3, { type: 'refused' 
   const evidence = [outcome.reason, ...(outcome.details ?? [])].join(' ').toLowerCase();
   if (evidence.includes('assembly timeout')) return 'refused_assembly_timeout';
   if (evidence.includes('repeat') || evidence.includes('overlap') || evidence.includes('long_dirty')) return 'refused_repeat_overlap';
+  if (evidence.includes('target opportunity not loopable') || evidence.includes('closure contract')) return 'refused_topology';
   if (evidence.includes('poor graph') || evidence.includes('no assembled route evidence')) return 'refused_poor_graph';
   if (evidence.includes('gps geometry')) return 'refused_no_geometry';
   if (evidence.includes('too short') || evidence.includes('distanceproduced')) return 'refused_topology';
