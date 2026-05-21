@@ -3,6 +3,7 @@ import type { OutcomeEvidenceV3, ProductVerdictV3, RouteCandidateV3 } from './co
 
 const STRICT_OUTCOME_RULES = {
   minimumGeneratedDistanceRatio: 1,
+  adjustedShortDistanceRatio: 0.9,
   refusedDistanceRatio: 0.7,
   repeatAdjustRatio: 0.2,
   repeatRefuseRatio: 0.35,
@@ -107,6 +108,11 @@ function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, dist
     reasons.push('park route refused: a small park cannot honestly satisfy the requested trail distance');
   }
 
+  const missingUrbanNatureOpportunity = missingUrbanNatureOpportunityReason(intent, route);
+  if (missingUrbanNatureOpportunity) {
+    reasons.push(missingUrbanNatureOpportunity);
+  }
+
   return unique(reasons);
 }
 
@@ -200,6 +206,10 @@ function diagnostics(intent: RouteIntentV3, route: AssembledRouteV3): string[] {
   if (isSmallParkOverclaim(intent, route)) {
     details.push(`park capacity cannot support ${targetDistanceKm}km trail request without fabricating distance`);
   }
+  const missingUrbanNatureOpportunity = missingUrbanNatureOpportunityReason(intent, route);
+  if (missingUrbanNatureOpportunity) {
+    details.push(`${missingUrbanNatureOpportunity}; selectedReason ${route.assemblyDiagnostics?.selectedReason ?? 'none'}; visitedComponents ${route.metrics.visitedComponents.join(',') || 'none'}; naturalDwell ${round(route.metrics.naturalDwellKm)}km; pathTrackUnknown ${round(route.metrics.pathTrackUnknownKm ?? 0)}km`);
+  }
   if (details.length === 0) details.push('minor assembly compromises');
   return details;
 }
@@ -247,6 +257,32 @@ function isSmallParkOverclaim(intent: RouteIntentV3, route: AssembledRouteV3): b
   const distanceWasReduced = route.metrics.distanceProducedKm < intent.constraints.targetDistanceKm;
 
   return !distanceWasReduced && parkCapacityKm < intent.constraints.targetDistanceKm;
+}
+
+function missingUrbanNatureOpportunityReason(intent: RouteIntentV3, route: AssembledRouteV3): string | null {
+  if (!isUrbanNaturePromise(intent)) return null;
+  if (route.edges.length === 0 && route.segments.length === 0) return null;
+  if (hasUrbanNatureOpportunityEvidence(intent, route)) return null;
+  return 'urban-nature opportunity refused: no selected park/corridor/green/scenic opportunity evidence supports the adjusted route';
+}
+
+function hasUrbanNatureOpportunityEvidence(intent: RouteIntentV3, route: AssembledRouteV3): boolean {
+  const selectedReason = route.assemblyDiagnostics?.selectedReason ?? '';
+  if (selectedReason === 'urban_nature_target_opportunity_selected' || selectedReason === 'selected_by_component_first_lane') return true;
+
+  const visited = new Set(route.metrics.visitedComponents);
+  if (visited.has('urban_green') || visited.has('river_corridor') || visited.has('scenic_paved')) return true;
+
+  const selectedTargetCandidate = route.assemblyDiagnostics?.selectedTargetCandidate ?? null;
+  if (selectedTargetCandidate) return true;
+
+  const pathTrackUnknownKm = route.metrics.pathTrackUnknownKm ?? 0;
+  const candidateNaturalKm = route.metrics.candidateNaturalKm ?? 0;
+  const requiredUrbanDwellKm = Math.max(0.5, intent.constraints.targetDistanceKm * intent.constraints.minNaturalDwellRatio);
+  if (visited.has('park') && route.metrics.naturalDwellKm + 0.001 >= requiredUrbanDwellKm) return true;
+  if (visited.has('park') && pathTrackUnknownKm >= 0.5 && candidateNaturalKm >= requiredUrbanDwellKm) return true;
+
+  return false;
 }
 
 function transitionTopologyLimitedTargetRepeat(intent: RouteIntentV3, route: AssembledRouteV3): string | null {
@@ -390,10 +426,10 @@ function productLabelForOutcome(outcome: RouteOutcomeV3, intent: RouteIntentV3, 
     return isUrbanNaturePromise(intent) ? 'generated_urban_nature' : 'generated_trail';
   }
 
+  if (distanceRatio < STRICT_OUTCOME_RULES.adjustedShortDistanceRatio) return 'adjusted_short';
   if (isStrongTrailEvidence(intent, route, distanceRatio)) return 'generated_trail';
   if (isUrbanNaturePromise(intent) || isUrbanNatureEvidence(route)) return 'adjusted_urban_nature';
   if (isPavedScenicEvidence(route)) return 'adjusted_paved_scenic';
-  if (distanceRatio < STRICT_OUTCOME_RULES.minimumGeneratedDistanceRatio) return 'adjusted_short';
   return 'adjusted_trail';
 }
 

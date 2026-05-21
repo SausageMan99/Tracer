@@ -181,4 +181,90 @@ describe('V3 product outcome labels', () => {
     expect(outcome.type).toBe('refused');
     expect(outcome.productLabel).toBe('refused_repeat_overlap');
   });
+
+  it('refuses generic paved park-only urban loops with no selected urban-nature opportunity', () => {
+    const outcome = decideOutcomeV3(intent({
+      mode: 'nature_urbaine',
+      strategy: 'urban_nature_loop',
+      targetComponents: ['urban_green'],
+      targetDistanceKm: 6,
+      maxPavedRatio: 0.9,
+      minNaturalDwellRatio: 0.1,
+    }), route({
+      targetDistanceKm: 6,
+      distanceProducedKm: 5.8,
+      strictTrailKm: 0,
+      naturalDwellKm: 0,
+      naturalWayRatio: 0,
+      trailRatio: 0,
+      pavedRatio: 0.83,
+      pavedKm: 4.814,
+      nonPavedKm: 0.986,
+      pathTrackUnknownKm: 0,
+      candidateNaturalKm: 0,
+      visitedComponents: ['residential'],
+    }, { strategy: 'urban_nature_loop', components: ['residential'], selectedReason: 'mission-driven:paved-safe' }));
+
+    expect(outcome.type).toBe('refused');
+    expect(outcome.productLabel).toBe('refused_topology');
+    if (outcome.type !== 'refused') throw new Error('expected refusal for generic paved urban loop');
+    expect(outcome.reason).toContain('urban-nature opportunity');
+    expect(outcome.details?.join(' ')).toContain('selectedReason mission-driven:paved-safe');
+  });
+
+  it('keeps valid selected urban-nature opportunity as adjusted urban nature', () => {
+    const outcome = decideOutcomeV3(intent({
+      mode: 'nature_urbaine',
+      strategy: 'urban_nature_loop',
+      targetComponents: ['urban_green'],
+      targetDistanceKm: 6,
+      maxPavedRatio: 0.9,
+      minNaturalDwellRatio: 0.1,
+      outcome: { type: 'adjusted', summary: 'Urban nature compromise selected.', compromises: ['paved connectors remain paved'] },
+    }), route({
+      targetDistanceKm: 6,
+      distanceProducedKm: 5.8,
+      strictTrailKm: 0,
+      naturalDwellKm: 2.4,
+      naturalWayRatio: 0.414,
+      trailRatio: 0,
+      pavedRatio: 0.21,
+      pavedKm: 1.218,
+      pathTrackUnknownKm: 2.4,
+      candidateNaturalKm: 2.4,
+      visitedComponents: ['urban_green'],
+    }, { strategy: 'urban_nature_loop', components: ['urban_green'], selectedReason: 'urban_nature_target_opportunity_selected' }));
+
+    expect(outcome.type).toBe('adjusted');
+    expect(outcome.productLabel).toBe('adjusted_urban_nature');
+  });
+
+  it('labels under-distance urban nature compromises explicitly as adjusted_short', () => {
+    const outcome = decideOutcomeV3(intent({
+      mode: 'nature_urbaine',
+      strategy: 'urban_nature_loop',
+      targetComponents: ['urban_green'],
+      targetDistanceKm: 10,
+      maxPavedRatio: 0.9,
+      minNaturalDwellRatio: 0.1,
+      outcome: { type: 'adjusted', summary: 'Urban nature route is shorter than requested.', compromises: ['shorter-than-requested urban nature route'] },
+    }), route({
+      targetDistanceKm: 10,
+      distanceProducedKm: 8.4,
+      strictTrailKm: 0,
+      naturalDwellKm: 2.2,
+      naturalWayRatio: 0.262,
+      trailRatio: 0,
+      pavedRatio: 0.42,
+      pavedKm: 3.528,
+      pathTrackUnknownKm: 2.2,
+      candidateNaturalKm: 2.2,
+      visitedComponents: ['urban_green'],
+    }, { strategy: 'urban_nature_loop', components: ['urban_green'], selectedReason: 'urban_nature_target_opportunity_selected' }));
+
+    expect(outcome.type).toBe('adjusted');
+    expect(outcome.productLabel).toBe('adjusted_short');
+    if (outcome.type !== 'adjusted') throw new Error('expected adjusted short urban nature route');
+    expect(outcome.compromises.join(' ')).toContain('distanceProduced 8.4km below target 10km');
+  });
 });
