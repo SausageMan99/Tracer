@@ -36,7 +36,7 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
   }
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
   const topologyLimitedRepeat = transitionTopologyLimitedTargetRepeat(intent, route);
-  if (topologyLimitedRepeat) {
+  if (topologyLimitedRepeat && !isModerateTransitionRepeatWithUsefulEvidence(intent, route, distanceRatio)) {
     return withProductLabel({
       type: 'refused',
       reason: 'trail topology insufficient: clean target traversal cannot support the requested distance without excessive repeat',
@@ -269,6 +269,19 @@ function transitionTopologyLimitedTargetRepeat(intent: RouteIntentV3, route: Ass
     cleanDwellDetail,
     `targetRepeat ${round(route.metrics.targetRepeatKm)}km and repeatRatio ${round(route.metrics.repeatRatio)} exceed clean trail tolerance`,
   ].join('; ');
+}
+
+function isModerateTransitionRepeatWithUsefulEvidence(intent: RouteIntentV3, route: AssembledRouteV3, distanceRatio: number): boolean {
+  if (intent.strategy !== 'transition_to_woods') return false;
+  if (!isTrailRequest(intent)) return false;
+  if (route.assemblyDiagnostics?.selectedReason !== 'mission-driven:long_dirty') return false;
+  if (route.metrics.repeatRatio >= STRICT_OUTCOME_RULES.repeatRefuseRatio) return false;
+  if (route.metrics.overlapRatio >= STRICT_OUTCOME_RULES.overlapRefuseRatio) return false;
+  if (distanceRatio < STRICT_OUTCOME_RULES.minimumGeneratedDistanceRatio) return false;
+  if (route.metrics.pavedRatio > intent.constraints.maxPavedRatio) return false;
+  const requiredDwellKm = intent.constraints.targetDistanceKm * intent.constraints.minNaturalDwellRatio;
+  return route.metrics.naturalDwellKm + 0.001 >= requiredDwellKm
+    && route.metrics.longestTrailSegmentKm + 0.001 >= requiredDwellKm;
 }
 
 function recordField(value: unknown, key: string): Record<string, unknown> | null {

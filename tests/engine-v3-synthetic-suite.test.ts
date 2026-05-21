@@ -280,6 +280,40 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(result.portfolio.candidates.map((candidate) => candidate.selectedReason)).toEqual(expect.arrayContaining(['clean_short', 'long_dirty']));
   });
 
+  it('transition_to_woods surfaces moderate repeated-target truth as adjusted instead of refusing useful route evidence', () => {
+    const graph = makeGraph([
+      makeEdge({ id: 'long-access-1', from: 'start', to: 'access-mid', lengthKm: 1.05, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'long-access-2', from: 'access-mid', to: 'woods-entry', lengthKm: 1.05, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'useful-branch-1', from: 'woods-entry', to: 'branch-a', lengthKm: 1.65, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'useful-branch-2', from: 'branch-a', to: 'dead-end', lengthKm: 1.65, surface: 'dirt', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-transition-moderate-repeat-adjusted',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'trail', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 2.2 },
+      target: { componentIds: ['field-core'], componentKinds: ['field_paths', 'forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 3.6, minContinuousTrailKm: 1.5 },
+      budgets: { maxPavedKm: 4.4, maxPavedRatio: 0.45, maxBusyRoadRatio: 0.08, maxRepeatKm: 6, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 4.4, maxOverlapRatio: 0.2, maxAccessPavedKm: 2.2, maxClosurePavedKm: 2.2, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+    const generated = generateRouteV3FromGraph(
+      { start: mission.request.start, targetDistanceKm: mission.request.targetDistanceKm, mode: 'trail', sport: 'running', loop: true },
+      graph,
+    );
+
+    expect(result.selectedCandidate?.selectedReason).toBe('long_dirty');
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeGreaterThanOrEqual(mission.request.minDistanceKm);
+    expect(result.selectedCandidate?.metrics.repeatRatio).toBeGreaterThan(0.2);
+    expect(result.selectedCandidate?.metrics.repeatRatio).toBeLessThan(0.35);
+    expect(result.selectedCandidate?.metrics.naturalDwellKm).toBeGreaterThanOrEqual(mission.target.minNaturalDwellKm);
+    expect(generated.outcome.type).toBe('adjusted');
+    expect(generated.outcome.type === 'adjusted' ? generated.outcome.compromises : []).toEqual(expect.arrayContaining([
+      expect.stringContaining('repeatRatio'),
+    ]));
+  });
+
   it('transition_to_woods rejects clean_short lateral fallback when the route is far below useful distance', () => {
     const graph = makeGraph([
       makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.4, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
