@@ -621,6 +621,7 @@ function isEligibleTransitionPlan(plan: TransitionRoutePlan, mission: MissionCon
 function isCleanShortLateralEvidencePlan(plan: TransitionRoutePlan, mission: MissionContractV3): boolean {
   const distanceKm = sumLengthKm([...plan.accessPath.edges, ...plan.targetRoute.edges, ...plan.closurePath.edges]);
   return plan.productionSource === 'target_lateral'
+    && planReturnsToStart(plan)
     && topologyLaneFromPlan(plan, mission) === 'clean_short'
     && plan.targetRoute.naturalDwellKm >= mission.target.minNaturalDwellKm * 0.9
     && distanceKm >= mission.request.minDistanceKm * 0.75;

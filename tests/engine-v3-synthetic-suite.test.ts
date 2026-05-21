@@ -306,6 +306,32 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'clean_short')?.metrics.distanceProducedKm ?? 0).toBeLessThan(mission.request.minDistanceKm * 0.8);
   });
 
+  it('transition_to_woods does not select open clean_short lateral evidence as the product route', () => {
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 2.0, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'open-clean-lateral-1', from: 'woods-entry', to: 'lateral-a', lengthKm: 1.65, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'open-clean-lateral-2', from: 'lateral-a', to: 'open-exit', lengthKm: 1.65, surface: 'dirt', highway: 'path', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'dirty-target-spur-1', from: 'woods-entry', to: 'dirty-a', lengthKm: 3.6, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'dirty-target-spur-2', from: 'dirty-a', to: 'dirty-dead', lengthKm: 3.6, surface: 'dirt', highway: 'path', componentKind: 'forest', landcoverClass: 'forest' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-transition-open-clean-short-evidence',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'trail', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 1.2 },
+      target: { componentIds: ['field-core', 'forest-core'], componentKinds: ['field_paths', 'forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 3.6, minContinuousTrailKm: 1.5 },
+      budgets: { maxPavedKm: 2.4, maxPavedRatio: 0.32, maxBusyRoadRatio: 0.08, maxRepeatKm: 8, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 2.1, maxOverlapRatio: 0.18, maxAccessPavedKm: 2.1, maxClosurePavedKm: 1.2, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    expect(result.selectedCandidate?.selectedReason).toBe('long_dirty');
+    expect(result.selectedCandidate?.returned).toBe(true);
+    expect(result.selectedCandidate?.metrics.targetRepeatKm).toBeGreaterThan(0);
+    expect(result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'clean_short')?.returned).toBe(false);
+  });
+
   it('transition_to_woods chains multiple clean target cycles before connector closure', () => {
     const graph = makeGraph([
       makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.5, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),

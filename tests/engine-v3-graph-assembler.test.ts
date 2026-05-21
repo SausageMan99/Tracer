@@ -757,7 +757,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
   });
 
-  it('prefers clean short transition evidence over a returned long-dirty target repeat loop', () => {
+  it('does not expose open clean short transition evidence as the selected product route', () => {
     const targetKm = 8;
     const routeIntent = intent(targetKm, ['field_paths']);
     const contract = buildMissionContractV3(routeIntent);
@@ -774,11 +774,11 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       contract,
     );
 
-    expect(result.selectedCandidate?.selectedReason).toBe('clean_short');
-    expect(result.selectedCandidate?.selectedReason).not.toBe('long_dirty');
-    expect(result.selectedCandidate?.metrics.targetRepeatKm).toBe(0);
-    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeLessThan(targetKm * 0.85);
-    expect(result.selectedCandidate?.returned).toBe(false);
+    expect(result.selectedCandidate?.selectedReason).toBe('long_dirty');
+    expect(result.selectedCandidate?.selectedReason).not.toBe('clean_short');
+    expect(result.selectedCandidate?.metrics.targetRepeatKm).toBeGreaterThan(0);
+    expect(result.selectedCandidate?.returned).toBe(true);
+    expect(result.portfolio.candidates.find((candidate) => candidate.selectedReason === 'clean_short')?.returned).toBe(false);
   });
 
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
