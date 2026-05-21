@@ -374,6 +374,13 @@ interface UrbanNatureClosureCandidateDiagnostic {
   pavedRatio: number;
   returned: boolean;
   reason: string | null;
+  endNodeId?: string;
+  endNodeDistanceToStartKm?: number | null;
+  nearestConnectorDistanceKm?: number | null;
+  connectorKm?: number | null;
+  connectorEdgeIds?: string[];
+  connectorRepeatKm?: number;
+  targetRepeatKm?: number;
 }
 
 function selectUrbanNatureTargetOpportunity(
@@ -697,34 +704,70 @@ function selectUrbanNatureComponentRouteEdges(
     }
 
     diagnostics.attemptedClosureCount += 1;
-    const returnPath = shortestPathBetweenNodes(
+    const dwellEdgeIds = new Set(dwell.edges.map((edge) => edge.id));
+    let returnPath = shortestPathBetweenNodes(
       edges,
       dwell.endNodeId,
       startNodeId,
-      new Set(dwell.edges.map((edge) => edge.id)),
+      dwellEdgeIds,
     );
+    let relaxedConnectorAudit: ConnectorRepeatAudit | null = null;
     if (!returnPath) {
-      const partialMetrics = metricsFromEdges([...access.edges, ...dwell.edges], mission.request.targetDistanceKm);
-      recordClosureCandidateDiagnostic(diagnostics, partialMetrics, false, 'no_routable_connector_to_start');
-      incrementReason(diagnostics.closureRejectedReasons, 'no_routable_connector_to_start');
-      continue;
+      const relaxedReturnPath = shortestPathBetweenNodes(edges, dwell.endNodeId, startNodeId);
+      relaxedConnectorAudit = relaxedReturnPath
+        ? auditConnectorRepeat(relaxedReturnPath.edges, dwellEdgeIds)
+        : null;
+      if (relaxedReturnPath && relaxedConnectorAudit && relaxedConnectorAudit.targetRepeatKm <= 0.001) {
+        returnPath = relaxedReturnPath;
+      } else {
+        const partialEdges = [...access.edges, ...dwell.edges];
+        const partialMetrics = metricsFromEdges(partialEdges, mission.request.targetDistanceKm);
+        const reason = 'no_routable_connector_to_start';
+        recordClosureCandidateDiagnostic(diagnostics, partialMetrics, false, reason, {
+          graph,
+          startNodeId,
+          endNodeId: dwell.endNodeId,
+          connector: relaxedReturnPath,
+          connectorAudit: relaxedConnectorAudit,
+        });
+        incrementReason(diagnostics.closureRejectedReasons, reason);
+        continue;
+      }
     }
 
     const candidate = [...access.edges, ...dwell.edges, ...returnPath.edges];
     const metrics = metricsFromEdges(candidate, mission.request.targetDistanceKm);
     const minimumAcceptedDwellKm = Math.min(sumCandidateNaturalKm(component), mission.target.minNaturalDwellKm * 0.8);
     if (metrics.naturalDwellKm < minimumAcceptedDwellKm) {
-      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'natural_dwell_below_contract');
+      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'natural_dwell_below_contract', {
+        graph,
+        startNodeId,
+        endNodeId: dwell.endNodeId,
+        connector: returnPath,
+        connectorAudit: relaxedConnectorAudit ?? auditConnectorRepeat(returnPath.edges, dwellEdgeIds),
+      });
       incrementReason(diagnostics.closureRejectedReasons, 'natural_dwell_below_contract');
       continue;
     }
     if (metrics.distanceProducedKm > mission.request.maxDistanceKm + 0.001) {
-      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'distance_above_max_contract');
+      recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'distance_above_max_contract', {
+        graph,
+        startNodeId,
+        endNodeId: dwell.endNodeId,
+        connector: returnPath,
+        connectorAudit: relaxedConnectorAudit ?? auditConnectorRepeat(returnPath.edges, dwellEdgeIds),
+      });
       incrementReason(diagnostics.closureRejectedReasons, 'distance_above_max_contract');
       continue;
     }
     diagnostics.returnedClosureCount += 1;
-    recordClosureCandidateDiagnostic(diagnostics, metrics, true, null);
+    recordClosureCandidateDiagnostic(diagnostics, metrics, true, null, {
+      graph,
+      startNodeId,
+      endNodeId: dwell.endNodeId,
+      connector: returnPath,
+      connectorAudit: relaxedConnectorAudit ?? auditConnectorRepeat(returnPath.edges, dwellEdgeIds),
+    });
     if (!best || scoreUrbanNatureRouteMetrics(metrics) > scoreUrbanNatureRouteMetrics(best.metrics)) {
       best = { edges: candidate, metrics };
     }
@@ -844,11 +887,26 @@ function incrementReason(reasons: Record<string, number>, reason: string): void 
   reasons[reason] = (reasons[reason] ?? 0) + 1;
 }
 
+interface ClosureCandidateDiagnosticContext {
+  graph: EnrichedGraph;
+  startNodeId: string;
+  endNodeId: string;
+  connector: { edges: EnrichedEdge[]; distanceKm: number } | null;
+  connectorAudit: ConnectorRepeatAudit | null;
+}
+
+interface ConnectorRepeatAudit {
+  connectorRepeatKm: number;
+  targetRepeatKm: number;
+  repeatedEdgeIds: string[];
+}
+
 function recordClosureCandidateDiagnostic(
   diagnostics: UrbanNatureClosureSearchDiagnostics,
   metrics: RouteMetricsV3,
   returned: boolean,
   reason: string | null,
+  context?: ClosureCandidateDiagnosticContext,
 ): void {
   const candidate: UrbanNatureClosureCandidateDiagnostic = {
     distanceKm: round3(metrics.distanceProducedKm),
@@ -856,6 +914,7 @@ function recordClosureCandidateDiagnostic(
     pavedRatio: round3(metrics.pavedRatio),
     returned,
     reason,
+    ...(context ? closureEndpointDiagnostic(context) : {}),
   };
   if (returned) {
     if (!diagnostics.bestReturnedCandidate || candidate.distanceKm > diagnostics.bestReturnedCandidate.distanceKm) {
@@ -870,6 +929,43 @@ function recordClosureCandidateDiagnostic(
       || left.distanceKm - right.distanceKm
       || (left.reason ?? '').localeCompare(right.reason ?? '')
   ));
+}
+
+function closureEndpointDiagnostic(context: ClosureCandidateDiagnosticContext): Partial<UrbanNatureClosureCandidateDiagnostic> {
+  return {
+    endNodeId: context.endNodeId,
+    endNodeDistanceToStartKm: distanceBetweenGraphNodesKm(context.graph, context.endNodeId, context.startNodeId),
+    nearestConnectorDistanceKm: context.connector ? round3(context.connector.distanceKm) : null,
+    connectorKm: context.connector ? round3(context.connector.distanceKm) : null,
+    connectorEdgeIds: context.connector?.edges.map((edge) => edge.id) ?? [],
+    connectorRepeatKm: round3(context.connectorAudit?.connectorRepeatKm ?? 0),
+    targetRepeatKm: round3(context.connectorAudit?.targetRepeatKm ?? 0),
+  };
+}
+
+function auditConnectorRepeat(returnEdges: EnrichedEdge[], blockedEdgeIds: ReadonlySet<string>): ConnectorRepeatAudit {
+  let connectorRepeatKm = 0;
+  let targetRepeatKm = 0;
+  const repeatedEdgeIds: string[] = [];
+  for (const edge of returnEdges) {
+    if (!blockedEdgeIds.has(edge.id)) continue;
+    repeatedEdgeIds.push(edge.id);
+    const lengthKm = Math.max(0, edge.lengthKm);
+    const semantics = classifyEdgeSemanticsV3(edge);
+    if (semantics.isConnectorLike || semantics.surfaceEvidence === 'explicit_paved' || semantics.surfaceEvidence === 'road_like_unknown') {
+      connectorRepeatKm += lengthKm;
+    } else {
+      targetRepeatKm += lengthKm;
+    }
+  }
+  return { connectorRepeatKm, targetRepeatKm, repeatedEdgeIds };
+}
+
+function distanceBetweenGraphNodesKm(graph: EnrichedGraph, fromNodeId: string, toNodeId: string): number | null {
+  const from = graph.nodes.get(fromNodeId);
+  const to = graph.nodes.get(toNodeId);
+  if (!from || !to) return null;
+  return round3(haversineKm(from.lat, from.lng, to.lat, to.lng));
 }
 
 function scoreUrbanNatureRouteMetrics(metrics: RouteMetricsV3): number {
@@ -1058,6 +1154,7 @@ function closestNodeId(graph: EnrichedGraph, point: { lat: number; lng: number }
 
 function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): RouteMetricsV3 {
   const distanceProducedKm = sumLengthKm(edges);
+  const seenEdgeIds = new Set<string>();
   let strictTrailKm = 0;
   let explicitPavedKm = 0;
   let explicitNaturalKm = 0;
@@ -1065,12 +1162,25 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): Rout
   let pathTrackUnknownKm = 0;
   let candidateNaturalKm = 0;
   let unverifiedTrailCandidateKm = 0;
+  let repeatEdgeKm = 0;
+  let targetRepeatKm = 0;
+  let connectorRepeatKm = 0;
   const visitedComponents = new Set<TerrainComponentKindV3>();
 
   for (const edge of edges) {
     const lengthKm = Math.max(0, edge.lengthKm);
     const semantics = classifyEdgeSemanticsV3(edge);
     visitedComponents.add(semantics.componentKind);
+    if (seenEdgeIds.has(edge.id)) {
+      repeatEdgeKm += lengthKm;
+      if (semantics.isConnectorLike || semantics.surfaceEvidence === 'explicit_paved' || semantics.surfaceEvidence === 'road_like_unknown') {
+        connectorRepeatKm += lengthKm;
+      } else {
+        targetRepeatKm += lengthKm;
+      }
+    } else {
+      seenEdgeIds.add(edge.id);
+    }
     if (semantics.isStrictTrailLike) strictTrailKm += lengthKm;
     if (semantics.surfaceEvidence === 'explicit_paved') explicitPavedKm += lengthKm;
     if (semantics.surfaceEvidence === 'explicit_natural') explicitNaturalKm += lengthKm;
@@ -1098,11 +1208,11 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): Rout
     pavedKm: explicitPavedKm + roadLikeUnknownKm,
     nonPavedKm: Math.max(0, distanceProducedKm - explicitPavedKm - roadLikeUnknownKm),
     naturalDwellKm,
-    repeatEdgeKm: 0,
-    targetRepeatKm: 0,
-    connectorRepeatKm: 0,
+    repeatEdgeKm,
+    targetRepeatKm,
+    connectorRepeatKm,
     visitedComponents: Array.from(visitedComponents),
-    repeatRatio: 0,
+    repeatRatio: ratio(targetRepeatKm, distanceProducedKm),
     overlapRatio: 0,
     busyRoadRatio: 0,
     loopClosureKm: 0,
