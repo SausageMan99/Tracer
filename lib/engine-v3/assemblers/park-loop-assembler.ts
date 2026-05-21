@@ -42,7 +42,9 @@ export function assembleParkLoopMissionV3(
     return createNoCandidateAssemblerResultV3(mission, blocker);
   }
 
-  const adjustableCandidate = createParkCandidate(graph, mission, selectUrbanParkRouteEdges(graph, mission, parkEdges), blocker);
+  const selectedEdges = selectUrbanParkRouteEdges(graph, mission, parkEdges);
+  const opportunityDiagnostics = buildUrbanParkOpportunityDiagnostics(graph, mission, parkEdges, selectedEdges);
+  const adjustableCandidate = createParkCandidate(graph, mission, selectedEdges, blocker);
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
     candidates: [adjustableCandidate],
@@ -75,6 +77,9 @@ export function assembleParkLoopMissionV3(
         parkCapacityKm,
         requestedMinDistanceKm: mission.request.minDistanceKm,
         compromise: mission.relaxations.find((relaxation) => relaxation.allowed)?.userFacingCompromise ?? null,
+        selectedOpportunity: opportunityDiagnostics.selectedOpportunity,
+        availableOpportunity: opportunityDiagnostics.availableOpportunity,
+        nearestNonPavedAllowedEdges: opportunityDiagnostics.nearestNonPavedAllowedEdges,
       },
     },
     warnings: [
@@ -172,6 +177,160 @@ function createParkPhaseDiagnostics(
 function routeableUrbanParkEdges(graph: EnrichedGraph, mission: MissionContractV3): EnrichedEdge[] {
   const allowedKinds = allowedUrbanParkComponentKinds(mission);
   return Array.from(graph.edges.values()).filter((edge) => allowedKinds.has(classifyEdgeSemanticsV3(edge).componentKind));
+}
+
+function buildUrbanParkOpportunityDiagnostics(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  allowedEdges: EnrichedEdge[],
+  selectedEdges: EnrichedEdge[],
+): {
+  selectedOpportunity: EdgeOpportunitySummary;
+  availableOpportunity: EdgeOpportunitySummary;
+  nearestNonPavedAllowedEdges: NearestOpportunityEdge[];
+} {
+  return {
+    selectedOpportunity: summarizeEdgeOpportunity(selectedEdges),
+    availableOpportunity: summarizeEdgeOpportunity(allowedEdges),
+    nearestNonPavedAllowedEdges: nearestNonPavedAllowedEdges(graph, mission, allowedEdges),
+  };
+}
+
+interface EdgeOpportunitySummary {
+  edgeCount: number;
+  totalKm: number;
+  explicitPavedKm: number;
+  roadLikeUnknownKm: number;
+  explicitNaturalKm: number;
+  pathTrackUnknownKm: number;
+  contextualNaturalUnknownKm: number;
+  candidateNaturalKm: number;
+  componentKindKm: Record<string, number>;
+  highwayKm: Record<string, number>;
+}
+
+interface NearestOpportunityEdge {
+  edgeId: string;
+  distanceFromStartKm: number;
+  lengthKm: number;
+  highway: string;
+  surface: string | null;
+  componentKind: TerrainComponentKindV3;
+  surfaceEvidence: string;
+  candidateNaturalWeight: number;
+}
+
+function summarizeEdgeOpportunity(edges: EnrichedEdge[]): EdgeOpportunitySummary {
+  const summary: EdgeOpportunitySummary = {
+    edgeCount: edges.length,
+    totalKm: 0,
+    explicitPavedKm: 0,
+    roadLikeUnknownKm: 0,
+    explicitNaturalKm: 0,
+    pathTrackUnknownKm: 0,
+    contextualNaturalUnknownKm: 0,
+    candidateNaturalKm: 0,
+    componentKindKm: {},
+    highwayKm: {},
+  };
+
+  for (const edge of edges) {
+    const lengthKm = Math.max(0, edge.lengthKm);
+    const semantics = classifyEdgeSemanticsV3(edge);
+    summary.totalKm += lengthKm;
+    summary.candidateNaturalKm += lengthKm * semantics.candidateNaturalWeight;
+    if (semantics.surfaceEvidence === 'explicit_paved') summary.explicitPavedKm += lengthKm;
+    if (semantics.surfaceEvidence === 'road_like_unknown') summary.roadLikeUnknownKm += lengthKm;
+    if (semantics.surfaceEvidence === 'explicit_natural') summary.explicitNaturalKm += lengthKm;
+    if (semantics.surfaceEvidence === 'path_track_unknown') summary.pathTrackUnknownKm += lengthKm;
+    if (semantics.surfaceEvidence === 'contextual_natural_unknown') summary.contextualNaturalUnknownKm += lengthKm;
+    summary.componentKindKm[semantics.componentKind] = (summary.componentKindKm[semantics.componentKind] ?? 0) + lengthKm;
+    summary.highwayKm[edge.highway] = (summary.highwayKm[edge.highway] ?? 0) + lengthKm;
+  }
+
+  return {
+    ...summary,
+    totalKm: round3(summary.totalKm),
+    explicitPavedKm: round3(summary.explicitPavedKm),
+    roadLikeUnknownKm: round3(summary.roadLikeUnknownKm),
+    explicitNaturalKm: round3(summary.explicitNaturalKm),
+    pathTrackUnknownKm: round3(summary.pathTrackUnknownKm),
+    contextualNaturalUnknownKm: round3(summary.contextualNaturalUnknownKm),
+    candidateNaturalKm: round3(summary.candidateNaturalKm),
+    componentKindKm: roundRecord(summary.componentKindKm),
+    highwayKm: roundRecord(summary.highwayKm),
+  };
+}
+
+function nearestNonPavedAllowedEdges(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  allowedEdges: EnrichedEdge[],
+): NearestOpportunityEdge[] {
+  const start = mission.request.start;
+  const opportunities: NearestOpportunityEdge[] = [];
+
+  for (const edge of allowedEdges) {
+    const semantics = classifyEdgeSemanticsV3(edge);
+    if (semantics.surfaceEvidence === 'explicit_paved' || semantics.surfaceEvidence === 'road_like_unknown') continue;
+    if (semantics.candidateNaturalWeight <= 0) continue;
+    const distanceFromStartKm = edgeDistanceFromStartKm(graph, edge, start);
+    if (distanceFromStartKm === null) continue;
+    opportunities.push({
+      edgeId: edge.id,
+      distanceFromStartKm,
+      lengthKm: edge.lengthKm,
+      highway: edge.highway,
+      surface: edge.surface ?? null,
+      componentKind: semantics.componentKind,
+      surfaceEvidence: semantics.surfaceEvidence,
+      candidateNaturalWeight: semantics.candidateNaturalWeight,
+    });
+  }
+
+  return opportunities
+    .sort((left, right) => left.distanceFromStartKm - right.distanceFromStartKm)
+    .slice(0, 8)
+    .map((edge) => ({
+      ...edge,
+      distanceFromStartKm: round3(edge.distanceFromStartKm),
+      lengthKm: round3(edge.lengthKm),
+    }));
+}
+
+function edgeDistanceFromStartKm(
+  graph: EnrichedGraph,
+  edge: EnrichedEdge,
+  start: { lat: number; lng: number },
+): number | null {
+  const from = graph.nodes.get(edge.from);
+  const to = graph.nodes.get(edge.to);
+  const distances = [from, to]
+    .filter((node): node is NonNullable<typeof node> => node !== undefined)
+    .map((node) => haversineKm(start.lat, start.lng, node.lat, node.lng));
+  if (distances.length === 0) return null;
+  return Math.min(...distances);
+}
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const earthRadiusKm = 6371;
+  const dLat = toRadians(lat2 - lat1);
+  const dLng = toRadians(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * earthRadiusKm * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function roundRecord(values: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(values).map(([key, value]) => [key, round3(value)]));
+}
+
+function round3(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
 
 function allowedUrbanParkComponentKinds(mission: MissionContractV3): ReadonlySet<TerrainComponentKindV3> {

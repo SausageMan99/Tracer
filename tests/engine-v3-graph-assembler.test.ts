@@ -330,6 +330,35 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(generated.route.metrics.pavedKm).toBeLessThanOrEqual(3.2);
   });
 
+  it('prefers mixed park opportunity over an equally long paved park loop for urban nature candidates', () => {
+    const parkIntent: RouteIntentV3 = {
+      ...intent(5, ['park']),
+      strategy: 'park_loop',
+      request: { ...intent(5, ['park']).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(5, ['park']).constraints, targetComponents: ['park'], maxPavedRatio: 0.7, minNaturalDwellRatio: 0.25 },
+    };
+    const contract = buildMissionContractV3(parkIntent);
+    if (!contract) throw new Error('expected park mission contract');
+
+    const result = assembleParkLoopMissionV3(
+      graph([
+        edge('paved-park-loop-1', 'a', 'b', 1.3, 'asphalt', 'footway', 'park'),
+        edge('paved-park-loop-2', 'b', 'c', 1.3, 'asphalt', 'footway', 'park'),
+        edge('paved-park-loop-3', 'c', 'd', 1.3, 'asphalt', 'footway', 'park'),
+        edge('paved-park-loop-4', 'd', 'a', 1.2, 'asphalt', 'footway', 'park'),
+        edge('mixed-park-loop-1', 'a', 'x', 1.3, '', 'path', 'park'),
+        edge('mixed-park-loop-2', 'x', 'y', 1.3, '', 'path', 'park'),
+        edge('mixed-park-loop-3', 'y', 'z', 1.3, '', 'footway', 'park'),
+        edge('mixed-park-loop-4', 'z', 'a', 1.2, '', 'path', 'park'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.metrics.pathTrackUnknownKm).toBeGreaterThanOrEqual(5);
+    expect(result.selectedCandidate?.metrics.candidateNaturalKm).toBeGreaterThan(4);
+    expect(result.selectedCandidate?.metrics.pavedKm).toBe(0);
+  });
+
   it('reports mixed park-loop candidate metrics as corridor opportunity evidence before route adaptation', () => {
     const parkIntent: RouteIntentV3 = {
       ...intent(5, ['park']),
@@ -355,6 +384,19 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(result.selectedCandidate?.metrics.unverifiedTrailCandidateKm).toBeGreaterThanOrEqual(4.8);
     expect(result.selectedCandidate?.metrics.explicitNaturalKm).toBe(0);
     expect(result.selectedCandidate?.metrics.pavedKm).toBe(0);
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      selectedOpportunity: {
+        pathTrackUnknownKm: expect.any(Number),
+        candidateNaturalKm: expect.any(Number),
+      },
+      availableOpportunity: {
+        pathTrackUnknownKm: expect.any(Number),
+        candidateNaturalKm: expect.any(Number),
+      },
+      nearestNonPavedAllowedEdges: expect.arrayContaining([
+        expect.objectContaining({ edgeId: 'park-mixed-path-1', surfaceEvidence: 'path_track_unknown' }),
+      ]),
+    });
   });
 
   it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {
