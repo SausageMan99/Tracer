@@ -1,4 +1,4 @@
-import type { GeneratedRoute, RoutePoint, Sport } from "./types";
+import type { GeneratedRoute, GenerateRouteV3Feature, RoutePoint, Sport } from "./types";
 
 export interface GpxPolylineMetadata {
   name: string;
@@ -154,6 +154,30 @@ export function downloadGPX(route: GeneratedRoute): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = `tracer-${route.profile.id}-${Date.now()}.gpx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export function generateGPXFromV3GeoJson(
+  routeGeoJson: GenerateRouteV3Feature,
+  metadata: GpxPolylineMetadata,
+): string {
+  const polyline = routeGeoJson.geometry.coordinates.map(([lng, lat]) => ({ lat, lng }));
+  return generateGPXFromPolyline(polyline, metadata);
+}
+
+export function downloadV3GPX(
+  routeGeoJson: GenerateRouteV3Feature,
+  metadata: GpxPolylineMetadata,
+): void {
+  const gpx = generateGPXFromV3GeoJson(routeGeoJson, metadata);
+  const blob = new Blob([gpx], { type: "application/gpx+xml" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `trailforge-v3-${Date.now()}.gpx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

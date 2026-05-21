@@ -4,6 +4,7 @@ import type { RouteRequest } from "../types";
 import { planRouteIntentV3 } from "./route-intent-planner";
 import { generateRouteV3FromGraph } from "./route-generator";
 import { buildTerrainSnapshotV3FromGraph } from "./terrain-snapshot-builder";
+import { routeV3WarningCopy } from "./product-copy";
 import type { ProductOutcomeLabelV3, RouteMetricsV3, RouteModeV3, RouteOutcomeV3, RouteStrategyV3, TerrainComponentV3, TerrainSnapshotV3 } from "./types";
 
 export type GenerateRouteV3ApiOutcome = "generated" | "adjusted" | "refused";
@@ -12,9 +13,11 @@ export interface GenerateRouteV3ApiResponse {
   engine: "v3-clean-room";
   betaOutcome: GenerateRouteV3ApiOutcome;
   betaOutcomeLabel: ProductOutcomeLabelV3;
+  productLabel: ProductOutcomeLabelV3;
   metrics: RouteMetricsV3 | null;
   reason: string;
   warnings: string[];
+  userWarnings: string[];
   routeGeoJson: {
     type: "Feature";
     geometry: {
@@ -26,6 +29,7 @@ export interface GenerateRouteV3ApiResponse {
       strategy: string;
       betaOutcome: GenerateRouteV3ApiOutcome;
       betaOutcomeLabel: ProductOutcomeLabelV3;
+      productLabel: ProductOutcomeLabelV3;
     };
   } | null;
   gpxAvailable: boolean;
@@ -109,6 +113,7 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
         strategy: generated.intent.strategy,
         betaOutcome,
         betaOutcomeLabel,
+        productLabel: betaOutcomeLabel,
       },
     }
     : null;
@@ -117,12 +122,17 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
     engine: generated.engine,
     betaOutcome,
     betaOutcomeLabel,
+    productLabel: betaOutcomeLabel,
     metrics: generated.route.metrics,
     reason: reasonForOutcome(generated.outcome),
     warnings: unique([
       ...generated.diagnostics.warnings,
       ...generated.diagnostics.limitations,
     ]),
+    userWarnings: unique([
+      ...generated.diagnostics.warnings,
+      ...generated.diagnostics.limitations,
+    ].map(routeV3WarningCopy)),
     routeGeoJson,
     gpxAvailable: routeGeoJson != null,
   };
@@ -205,9 +215,11 @@ function refusedContract(reason: string, warnings: string[]): GenerateRouteV3Api
     engine: "v3-clean-room",
     betaOutcome: "refused",
     betaOutcomeLabel: "refused_topology",
+    productLabel: "refused_topology",
     metrics: null,
     reason,
     warnings,
+    userWarnings: warnings.map(routeV3WarningCopy),
     routeGeoJson: null,
     gpxAvailable: false,
   };

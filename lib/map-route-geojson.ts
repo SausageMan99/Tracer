@@ -96,3 +96,22 @@ export function buildSegmentCollection(candidate: RouteCandidate): GeoJSON.Featu
 
   return { type: "FeatureCollection", features };
 }
+
+export function buildLineSegmentCollection(
+  coordinates: readonly number[][],
+  slope = 0,
+): GeoJSON.FeatureCollection {
+  if (coordinates.length < 2) return EMPTY_COLLECTION;
+
+  return {
+    type: "FeatureCollection",
+    features: coordinates.slice(0, -1).map((a, i) => ({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: [a, coordinates[i + 1]],
+      },
+      properties: { slope },
+    })),
+  };
+}

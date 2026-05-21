@@ -4,8 +4,8 @@ import { useEffect, useRef, type RefObject } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { useAppStore } from "@/lib/store";
-import { buildSegmentCollection, EMPTY_COLLECTION } from "@/lib/map-route-geojson";
-import type { GeneratedRoute } from "@/lib/types";
+import { buildLineSegmentCollection, buildSegmentCollection, EMPTY_COLLECTION } from "@/lib/map-route-geojson";
+import type { GeneratedRoute, GenerateRouteV3Response } from "@/lib/types";
 
 mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? "";
 
@@ -225,6 +225,7 @@ function applyRoute(
   markerRef: React.MutableRefObject<mapboxgl.Marker | null>,
   rafRef: React.MutableRefObject<number>,
   currentRoute: GeneratedRoute | null,
+  currentRouteV3: GenerateRouteV3Response | null,
   scenicMode: boolean
 ) {
   if (!map.isStyleLoaded()) return;
@@ -244,7 +245,10 @@ function applyRoute(
   markerRef.current?.remove();
   markerRef.current = null;
 
-  if (!currentRoute) {
+  const v3Coordinates = currentRouteV3?.routeGeoJson?.geometry.coordinates ?? null;
+  const hasV3Geometry = v3Coordinates != null && v3Coordinates.length >= 2;
+
+  if (!currentRoute && !hasV3Geometry) {
     routeSource?.setData(EMPTY_COLLECTION);
     arrowSource?.setData(EMPTY_LINESTRING);
     fullSource?.setData(EMPTY_LINESTRING);
@@ -267,12 +271,43 @@ function applyRoute(
   map.setLayoutProperty("route-full-base", "visibility", "none");
   map.setLayoutProperty("route-arrows", "visibility", "visible");
 
+  if (hasV3Geometry && v3Coordinates) {
+    const lineFeature: GeoJSON.Feature<GeoJSON.LineString> = {
+      type: "Feature",
+      geometry: { type: "LineString", coordinates: v3Coordinates },
+      properties: currentRouteV3?.routeGeoJson?.properties ?? {},
+    };
+    const segCollection = buildLineSegmentCollection(v3Coordinates);
+
+    fullSource?.setData(lineFeature);
+    routeSource?.setData(segCollection);
+    arrowSource?.setData(lineFeature);
+    animateDraw(map, segCollection, v3Coordinates as [number, number][], rafRef);
+
+    const markerColor = scenicMode ? "#A8D672" : "#7FB08A";
+    const start = v3Coordinates[0] as [number, number];
+    markerRef.current = new mapboxgl.Marker({ color: markerColor, scale: 1.2 })
+      .setLngLat(start)
+      .setPopup(new mapboxgl.Popup({ offset: 25 }).setText("Point de départ"))
+      .addTo(map);
+
+    const bounds = v3Coordinates.reduce(
+      (b, c) => b.extend(c as [number, number]),
+      new mapboxgl.LngLatBounds(start, start)
+    );
+    map.fitBounds(bounds, { padding: 60, maxZoom: 15, duration: 800 });
+    return;
+  }
+
+  if (!currentRoute) return;
+  const v2Route = currentRoute;
+
   // ── Set full data immediately (ensures route is visible even if animation fails)
-  const segCollection = buildSegmentCollection(currentRoute.best);
+  const segCollection = buildSegmentCollection(v2Route.best);
 
   fullSource?.setData({
     type: "Feature",
-    geometry: currentRoute.best.geometry,
+    geometry: v2Route.best.geometry,
     properties: {},
   });
 
@@ -280,22 +315,22 @@ function applyRoute(
 
   arrowSource?.setData({
     type: "Feature",
-    geometry: currentRoute.best.geometry,
+    geometry: v2Route.best.geometry,
     properties: {},
   });
 
   // ── Animated draw (progressive reveal on top of the static data) ────────
-  animateDraw(map, segCollection, currentRoute.best.geometry.coordinates, rafRef);
+  animateDraw(map, segCollection, v2Route.best.geometry.coordinates, rafRef);
 
   // ── Start marker ──────────────────────────────────────────────────────────
   const markerColor = scenicMode ? "#A8D672" : "#7FB08A";
   markerRef.current = new mapboxgl.Marker({ color: markerColor, scale: 1.2 })
-    .setLngLat([currentRoute.startCoordinate.lng, currentRoute.startCoordinate.lat])
+    .setLngLat([v2Route.startCoordinate.lng, v2Route.startCoordinate.lat])
     .setPopup(new mapboxgl.Popup({ offset: 25 }).setText("Point de départ"))
     .addTo(map);
 
   // ── Fit bounds ────────────────────────────────────────────────────────────
-  const coords = currentRoute.best.geometry.coordinates;
+  const coords = v2Route.best.geometry.coordinates;
   if (coords.length > 0) {
     const bounds = coords.reduce(
       (b, c) => b.extend(c as [number, number]),
@@ -383,7 +418,7 @@ export default function MapView() {
   const markerRef = useRef<mapboxgl.Marker | null>(null);
   const rafRef = useRef<number>(0);
 
-  const { currentRoute, scenicMode, hoveredRouteProgress, status, mapCenter, mapZoom } = useAppStore();
+  const { currentRoute, currentRouteV3, scenicMode, hoveredRouteProgress, status, mapCenter, mapZoom } = useAppStore();
   const hasMapboxToken = Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
 
   // ── Initialise map once ───────────────────────────────────────────────────
@@ -414,7 +449,7 @@ export default function MapView() {
     const onLoad = () => {
       ensureLayers(map);
       const state = useAppStore.getState();
-      applyRoute(map, markerRef, rafRef, state.currentRoute, state.scenicMode);
+      applyRoute(map, markerRef, rafRef, state.currentRoute, state.currentRouteV3, state.scenicMode);
     };
 
     if (map.isStyleLoaded()) {
@@ -445,14 +480,14 @@ export default function MapView() {
     if (!map) return;
 
     if (map.isStyleLoaded()) {
-      applyRoute(map, markerRef, rafRef, currentRoute, scenicMode);
+      applyRoute(map, markerRef, rafRef, currentRoute, currentRouteV3, scenicMode);
     } else {
       // Style not ready yet — defer until it loads
-      const onStyleLoad = () => applyRoute(map, markerRef, rafRef, currentRoute, scenicMode);
+      const onStyleLoad = () => applyRoute(map, markerRef, rafRef, currentRoute, currentRouteV3, scenicMode);
       map.once("load", onStyleLoad);
       return () => { map.off("load", onStyleLoad); };
     }
-  }, [currentRoute, scenicMode]);
+  }, [currentRoute, currentRouteV3, scenicMode]);
 
   // ── Hover sync: ElevationProfile → map marker ─────────────────────────────
   useEffect(() => {
@@ -506,7 +541,7 @@ export default function MapView() {
         aria-label="Carte interactive du parcours généré"
       />
 
-      {!best && status !== "loading" && (
+      {!best && !currentRouteV3 && status !== "loading" && (
         <div
           className="absolute inset-0 z-10 pointer-events-none"
           style={{ display: "grid", placeItems: "center" }}

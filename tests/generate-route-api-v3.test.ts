@@ -41,6 +41,8 @@ const baseBody = {
 const v3Contract = {
   engine: "v3-clean-room" as const,
   betaOutcome: "generated" as const,
+  betaOutcomeLabel: "generated_trail" as const,
+  productLabel: "generated_trail" as const,
   metrics: {
     distanceKm: 8.1,
     pavedKm: 1.2,
@@ -50,6 +52,7 @@ const v3Contract = {
   },
   reason: "Route V3 experimental generated from graph evidence.",
   warnings: ["Experimental V3 output."],
+  userWarnings: ["Sortie V3 expérimentale."],
   routeGeoJson: {
     type: "Feature" as const,
     geometry: {
@@ -96,9 +99,12 @@ describe("POST /api/generate-route V3 experimental", () => {
       engine: "v3-clean-room",
       generationId: expect.stringMatching(/^gen_/),
       betaOutcome: "generated",
+      betaOutcomeLabel: "generated_trail",
+      productLabel: "generated_trail",
       metrics: v3Contract.metrics,
       reason: v3Contract.reason,
       warnings: v3Contract.warnings,
+      userWarnings: v3Contract.userWarnings,
       routeGeoJson: v3Contract.routeGeoJson,
       gpxAvailable: true,
     });

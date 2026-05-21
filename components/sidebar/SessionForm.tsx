@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppStore } from "@/lib/store";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
 import { buildRouteIntentionCard } from "@/lib/route-intentions";
-import type { GenerateRouteError, GenerateRouteRequest, GenerateRouteResponse } from "@/lib/types";
+import type { GenerateRouteApiResponse, GenerateRouteError, GenerateRouteRequest } from "@/lib/types";
 import AddressInput from "@/components/sidebar/AddressInput";
 
 const LOADING_STEPS = ["lecture du terrain", "corridors", "retour propre", "GPX propre"];
@@ -26,11 +26,12 @@ export default function SessionForm() {
   const {
     address, setAddress, selectedProfileId, setProfileId, targetDistanceKm, setTargetDistance,
     targetElevationM, setTargetElevation, status, setLoading, setSuccess, setError, errorMessage,
-    scenicMode, setScenicMode, setMapCenter, setSidebarOpen,
+    scenicMode, setScenicMode, setMapCenter, setSidebarOpen, setSuccessV3,
   } = useAppStore();
 
   const [stepIndex, setStepIndex] = useState(0);
   const [progressPct, setProgressPct] = useState(0);
+  const [experimentalV3, setExperimentalV3] = useState(false);
   const isLoading = status === "loading";
   const canGenerate = address.trim().length > 2 && !isLoading;
   const currentProfile = PROFILES_BY_ID.get(selectedProfileId);
@@ -81,13 +82,22 @@ export default function SessionForm() {
       targetDistanceKm: Math.min(targetDistanceKm, PHASE1_MAX_DISTANCE_KM),
       targetElevationM: Math.min(targetElevationM, PHASE1_MAX_ELEVATION_M),
       scenicMode: scenicMode || undefined,
+      engineVersion: experimentalV3 ? "v3_experimental" : undefined,
     };
     try {
       const res = await fetch("/api/generate-route", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const data: GenerateRouteResponse | GenerateRouteError = await res.json();
-      if (data.success) setSuccess(data.route); else setError(data.error, data);
+      const data: GenerateRouteApiResponse | GenerateRouteError = await res.json();
+      if (data.success && data.engine === "v3-clean-room") {
+        setSuccessV3(data);
+      } else if (data.success && "route" in data) {
+        setSuccess(data.route);
+      } else if (!data.success) {
+        setError(data.error, data);
+      } else {
+        setError("Réponse route invalide. Aucun tracé exploitable reçu.");
+      }
     } catch { setError("Erreur réseau. Réessaie dans quelques secondes."); }
-  }, [address, canGenerate, scenicMode, selectedProfileId, setError, setLoading, setSidebarOpen, setSuccess, targetDistanceKm, targetElevationM]);
+  }, [address, canGenerate, experimentalV3, scenicMode, selectedProfileId, setError, setLoading, setSidebarOpen, setSuccess, setSuccessV3, targetDistanceKm, targetElevationM]);
 
   const chipProps = (active: boolean) => ({ className: "field-chip", "data-active": active });
 
@@ -136,6 +146,16 @@ export default function SessionForm() {
           <button type="button" className="constraint-toggle" data-active={scenicMode} onClick={() => setScenicMode(true)} disabled={isLoading}>Plus sauvage</button>
         </div>
         {routeIntention && <p className="mt-3 text-[12px] leading-relaxed text-[var(--text-muted)]">{routeIntention.promise}</p>}
+      </section>
+
+      <section className="console-section">
+        <ConsoleLabel>Expérimental</ConsoleLabel>
+        <button type="button" className="constraint-toggle" data-active={experimentalV3} onClick={() => setExperimentalV3((value) => !value)} disabled={isLoading} aria-pressed={experimentalV3}>
+          V3 clean-room {experimentalV3 ? "activée" : "désactivée"}
+        </button>
+        <p className="mt-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
+          Opt-in manuel: V2.5 reste le moteur par défaut. V3 affiche des labels honnêtes et peut refuser plutôt que maquiller une trace.
+        </p>
       </section>
 
       <footer className="console-footer">

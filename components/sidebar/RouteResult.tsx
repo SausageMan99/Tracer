@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useAppStore } from "@/lib/store";
-import { downloadGPX } from "@/lib/gpx-export";
+import { downloadGPX, downloadV3GPX } from "@/lib/gpx-export";
 import { exportFeedbacksAsJSON, loadFeedbacks, saveFeedback, type RouteFeedback } from "@/lib/feedback-store";
 import FeedbackButtons from "@/components/sidebar/FeedbackButtons";
 import WaitlistForm from "@/components/ui/WaitlistForm";
@@ -12,6 +12,7 @@ import { buildRouteExplanation } from "@/lib/route-explanations";
 import { buildFeedbackInsights } from "@/lib/feedback-insights";
 import { FEEDBACK_REASON_OPTIONS, type FeedbackReason } from "@/lib/feedback-reasons";
 import { PROFILES_BY_ID } from "@/lib/session-profiles";
+import { routeV3ProductCopy } from "@/lib/engine-v3/product-copy";
 
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
@@ -236,6 +237,7 @@ function RefusalFeedbackButtons({
 export default function RouteResult() {
   const {
     currentRoute,
+    currentRouteV3,
     candidateIndex,
     setCandidateIndex,
     status,
@@ -277,6 +279,17 @@ export default function RouteResult() {
     if (!waitlistDismissed) setShowWaitlistWidget(true);
   }, [currentRoute, waitlistDismissed]);
 
+  const handleDownloadV3GPX = useCallback(() => {
+    if (!currentRouteV3?.routeGeoJson || !currentRouteV3.gpxAvailable) return;
+    downloadV3GPX(currentRouteV3.routeGeoJson, {
+      name: routeV3ProductCopy(currentRouteV3.productLabel, currentRouteV3.reason).title,
+      sport: "running",
+      distanceKm: currentRouteV3.metrics?.distanceProducedKm ?? currentRouteV3.metrics?.targetDistanceKm ?? 0,
+      description: currentRouteV3.reason,
+    });
+    if (!waitlistDismissed) setShowWaitlistWidget(true);
+  }, [currentRouteV3, waitlistDismissed]);
+
   if (status === "error") {
     return (
       <div className="px-4 md:px-6 py-6">
@@ -311,6 +324,70 @@ export default function RouteResult() {
             scenicMode={scenicMode}
           />
         </MiniPanel>
+      </div>
+    );
+  }
+
+  if (currentRouteV3) {
+    const copy = routeV3ProductCopy(currentRouteV3.productLabel, currentRouteV3.reason);
+    const metrics = currentRouteV3.metrics;
+    const distanceKm = metrics?.distanceProducedKm ?? metrics?.targetDistanceKm ?? 0;
+    const toneColor = copy.tone === "ok" ? "var(--accent-lime)" : copy.tone === "adjusted" ? "var(--accent-amber)" : "var(--accent-danger)";
+    const warnings = currentRouteV3.userWarnings ?? currentRouteV3.warnings;
+
+    return (
+      <div className="flex flex-col pb-6">
+        <div className="px-4 md:px-6" style={{ paddingTop: "16px", paddingBottom: "16px", borderBottom: "1px solid var(--border)" }}>
+          <button onClick={clearRoute} style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontFamily: "var(--font-syne), sans-serif", fontSize: "10px", fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-dim)", background: "none", border: "none", cursor: "pointer", padding: 0, marginBottom: "14px" }} aria-label="Retour au formulaire">
+            Paramètres
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: toneColor }} />
+            <h2 style={{ fontFamily: "var(--font-syne), sans-serif", fontSize: "22px", color: "var(--text-primary)", letterSpacing: "-0.03em", lineHeight: 1.05 }}>
+              {copy.title}
+            </h2>
+          </div>
+          <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: copy.tone === "ok" ? "var(--text-muted)" : toneColor, lineHeight: 1.5, marginBottom: "6px" }}>
+            {copy.subtitle}
+          </p>
+          <p style={{ fontFamily: "var(--font-jetbrains), monospace", fontSize: "12px", color: "var(--text-primary)", lineHeight: 1.6 }}>
+            {distanceKm.toFixed(1)} km · label {currentRouteV3.productLabel} · {currentRouteV3.gpxAvailable ? "GPX prêt" : "GPX indisponible"}
+          </p>
+          <p style={{ marginTop: "4px", fontFamily: "var(--font-jetbrains), monospace", fontSize: "11px", color: "var(--text-dim)", lineHeight: 1.6 }}>
+            trail strict {Math.round((metrics?.trailRatio ?? 0) * 100)}% · naturel {Math.round((metrics?.naturalWayRatio ?? 0) * 100)}% · pavé {Math.round((metrics?.pavedRatio ?? 0) * 100)}% · inconnu chemin {(metrics?.pathTrackUnknownKm ?? 0).toFixed(1)} km · repeat {Math.round((metrics?.repeatRatio ?? 0) * 100)}%
+          </p>
+        </div>
+
+        <div className="px-4 md:px-6" style={{ paddingTop: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <MiniPanel label="Lecture V3">
+            <p style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.55 }}>
+              {currentRouteV3.reason}
+            </p>
+          </MiniPanel>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "8px" }}>
+            <StatBlock label="Trail strict" value={`${Math.round((metrics?.trailRatio ?? 0) * 100)}%`} sub={`${(metrics?.strictTrailKm ?? 0).toFixed(1)} km`} />
+            <StatBlock label="Naturel" value={`${Math.round((metrics?.naturalWayRatio ?? 0) * 100)}%`} sub={`${(metrics?.naturalDwellKm ?? 0).toFixed(1)} km dwell`} />
+            <StatBlock label="Pavé" value={`${Math.round((metrics?.pavedRatio ?? 0) * 100)}%`} sub={`${(metrics?.pavedKm ?? 0).toFixed(1)} km`} />
+            <StatBlock label="Répétition" value={`${Math.round((metrics?.repeatRatio ?? 0) * 100)}%`} sub={`${(metrics?.repeatEdgeKm ?? 0).toFixed(1)} km`} />
+          </div>
+
+          {warnings.length > 0 && (
+            <MiniPanel label="Warnings terrain">
+              <ul style={{ display: "flex", flexDirection: "column", gap: "8px", margin: 0, paddingLeft: "16px" }}>
+                {warnings.map((warning) => (
+                  <li key={warning} style={{ fontFamily: "var(--font-inter), sans-serif", fontSize: "12px", color: "var(--text-muted)", lineHeight: 1.45 }}>
+                    {warning}
+                  </li>
+                ))}
+              </ul>
+            </MiniPanel>
+          )}
+
+          <button onClick={handleDownloadV3GPX} disabled={!currentRouteV3.gpxAvailable} style={{ padding: "14px 16px", borderRadius: "var(--radius-control)", border: "1px solid var(--border)", background: currentRouteV3.gpxAvailable ? "var(--accent-lime)" : "var(--bg-surface)", color: currentRouteV3.gpxAvailable ? "#10140d" : "var(--text-dim)", fontFamily: "var(--font-syne), sans-serif", fontWeight: 700, cursor: currentRouteV3.gpxAvailable ? "pointer" : "not-allowed" }}>
+            Exporter GPX V3
+          </button>
+        </div>
       </div>
     );
   }

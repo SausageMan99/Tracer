@@ -488,9 +488,53 @@ export interface GenerateRouteResponse {
   success: true;
   /** Stable id tying input, output, GPX export, and feedback. */
   generationId: string;
+  /** Discriminator for the default V2.5 route response. */
+  engine?: "v2.5" | "legacy";
   /** The generated route with candidates and scoring metadata */
   route: GeneratedRoute;
 }
+
+export type GenerateRouteV3Outcome = "generated" | "adjusted" | "refused";
+
+export type GenerateRouteV3ProductLabel = import("./engine-v3/types").ProductOutcomeLabelV3;
+
+export interface GenerateRouteV3Feature {
+  type: "Feature";
+  geometry: {
+    type: "LineString";
+    coordinates: number[][];
+  };
+  properties: {
+    engine: "v3-clean-room";
+    strategy: string;
+    betaOutcome: GenerateRouteV3Outcome;
+    betaOutcomeLabel: GenerateRouteV3ProductLabel;
+    productLabel: GenerateRouteV3ProductLabel;
+  };
+}
+
+/**
+ * Experimental V3 success/product response from `POST /api/generate-route`.
+ * This is top-level by design: it is not nested under `route` and may carry an
+ * honest product refusal with HTTP 200.
+ */
+export interface GenerateRouteV3Response {
+  success: true;
+  generationId: string;
+  engine: "v3-clean-room";
+  betaOutcome: GenerateRouteV3Outcome;
+  betaOutcomeLabel: GenerateRouteV3ProductLabel;
+  /** Alias kept for frontend/product analytics. Same value as betaOutcomeLabel. */
+  productLabel: GenerateRouteV3ProductLabel;
+  metrics: import("./engine-v3/types").RouteMetricsV3 | null;
+  reason: string;
+  warnings: string[];
+  userWarnings?: string[];
+  routeGeoJson: GenerateRouteV3Feature | null;
+  gpxAvailable: boolean;
+}
+
+export type GenerateRouteApiResponse = GenerateRouteResponse | GenerateRouteV3Response;
 
 /**
  * Error response from `POST /api/generate-route`.
@@ -563,6 +607,8 @@ export interface AppState {
   errorSubCode: string | null;
   /** The most recently generated route; null when status is not "success" */
   currentRoute: GeneratedRoute | null;
+  /** Experimental V3 result, kept separate from V2 GeneratedRoute so route cannot be set to undefined. */
+  currentRouteV3: GenerateRouteV3Response | null;
   /**
    * Index into `currentRoute.candidates` that the user has selected.
    * Selecting a candidate also updates `currentRoute.best`.

@@ -9,7 +9,7 @@
  * first session profile (running endurance) pre-selected.
  */
 import { create } from "zustand";
-import type { AppState, AppStatus, Coordinate, GeneratedRoute, GenerateRouteError } from "./types";
+import type { AppState, AppStatus, Coordinate, GeneratedRoute, GenerateRouteError, GenerateRouteV3Response } from "./types";
 import { SESSION_PROFILES } from "./session-profiles";
 
 /**
@@ -33,6 +33,8 @@ interface AppStore extends AppState {
   setLoading: () => void;
   /** Transition to success state and store the generated route */
   setSuccess: (route: GeneratedRoute) => void;
+  /** Transition to success state and store an experimental V3 product result. */
+  setSuccessV3: (route: GenerateRouteV3Response) => void;
   /** Transition to error state with a display message */
   setError: (message: string, meta?: Pick<GenerateRouteError, "generationId" | "betaOutcome" | "errorCode" | "subCode">) => void;
   /**
@@ -79,6 +81,7 @@ const initialState: AppState = {
   errorCode: null,
   errorSubCode: null,
   currentRoute: null,
+  currentRouteV3: null,
   candidateIndex: 0,
   mapCenter: { lat: 48.8566, lng: 2.3522 }, // Paris
   mapZoom: 12,
@@ -107,13 +110,25 @@ export const useAppStore = create<AppStore>((set) => ({
   setMapCenter: (mapCenter) => set({ mapCenter }),
   setMapZoom: (mapZoom) => set({ mapZoom }),
   setLoading: () =>
-    set({ status: "loading", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, candidateIndex: 0 }),
+    set({ status: "loading", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, currentRouteV3: null, candidateIndex: 0 }),
   setSuccess: (currentRoute) =>
     set({
       status: "success",
       currentRoute,
+      currentRouteV3: null,
       generationId: currentRoute.generationId ?? null,
       betaOutcome: currentRoute.betaOutcome ?? "generated",
+      errorCode: null,
+      errorSubCode: null,
+      candidateIndex: 0,
+    }),
+  setSuccessV3: (currentRouteV3) =>
+    set({
+      status: "success",
+      currentRoute: null,
+      currentRouteV3,
+      generationId: currentRouteV3.generationId,
+      betaOutcome: currentRouteV3.betaOutcome,
       errorCode: null,
       errorSubCode: null,
       candidateIndex: 0,
@@ -121,6 +136,8 @@ export const useAppStore = create<AppStore>((set) => ({
   setError: (errorMessage, meta) => set({
     status: "error",
     errorMessage,
+    currentRoute: null,
+    currentRouteV3: null,
     generationId: meta?.generationId ?? null,
     betaOutcome: meta?.betaOutcome ?? "refused",
     errorCode: meta?.errorCode ?? null,
@@ -143,7 +160,7 @@ export const useAppStore = create<AppStore>((set) => ({
   reset: () => set({ ...initialState, scenicMode: false, hoveredRouteProgress: null }),
 
   clearRoute: () =>
-    set({ status: "idle", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, candidateIndex: 0, hoveredRouteProgress: null }),
+    set({ status: "idle", errorMessage: null, generationId: null, betaOutcome: null, errorCode: null, errorSubCode: null, currentRoute: null, currentRouteV3: null, candidateIndex: 0, hoveredRouteProgress: null }),
 
   setScenicMode: (scenicMode) => set({ scenicMode }),
   setHoveredRouteProgress: (hoveredRouteProgress) => set({ hoveredRouteProgress }),
