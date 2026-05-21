@@ -27,9 +27,24 @@ export function assembleParkLoopMissionV3(
   graph: EnrichedGraph,
   mission: MissionContractV3,
 ): AssemblerResultV3 {
-  const parkEdges = routeableUrbanParkEdges(graph, mission);
+  return assembleParkLikeMissionV3(graph, mission, 'park_loop');
+}
+
+export function assembleUrbanNatureLoopMissionCoreV3(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+): AssemblerResultV3 {
+  return assembleParkLikeMissionV3(graph, mission, 'urban_nature_loop');
+}
+
+function assembleParkLikeMissionV3(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  assemblerMode: 'park_loop' | 'urban_nature_loop',
+): AssemblerResultV3 {
+  const parkEdges = routeableUrbanParkEdges(graph, mission, assemblerMode);
   const parkCapacityKm = sumLengthKm(parkEdges);
-  const blocker = mission.strategy === 'urban_nature_loop'
+  const blocker = assemblerMode === 'urban_nature_loop'
     ? 'urban_nature_corridor_capacity_below_requested_distance'
     : 'park_capacity_below_requested_distance';
   const relaxationAllowed = mission.relaxations.some((relaxation) => relaxation.allowed && relaxation.id === 'adjust_to_park_capacity');
@@ -46,7 +61,7 @@ export function assembleParkLoopMissionV3(
   const legacyMetrics = metricsFromEdges(legacySelectedEdges, mission.request.targetDistanceKm);
   let selectedEdges = legacySelectedEdges;
   let selectedByComponentFirst = false;
-  if (mission.strategy === 'urban_nature_loop' && legacyMetrics.naturalDwellKm < mission.target.minNaturalDwellKm) {
+  if (assemblerMode === 'urban_nature_loop' && legacyMetrics.naturalDwellKm < mission.target.minNaturalDwellKm) {
     const componentFirstEdges = selectUrbanNatureComponentRouteEdges(graph, mission, parkEdges);
     if (componentFirstEdges) {
       selectedEdges = componentFirstEdges;
@@ -54,7 +69,7 @@ export function assembleParkLoopMissionV3(
     }
   }
   const opportunityDiagnostics = buildUrbanParkOpportunityDiagnostics(graph, mission, parkEdges, selectedEdges, selectedByComponentFirst);
-  const adjustableCandidate = createParkCandidate(graph, mission, selectedEdges, blocker);
+  const adjustableCandidate = createParkCandidate(graph, mission, selectedEdges, blocker, assemblerMode);
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
     candidates: [adjustableCandidate],
@@ -87,6 +102,7 @@ export function assembleParkLoopMissionV3(
         parkCapacityKm,
         requestedMinDistanceKm: mission.request.minDistanceKm,
         compromise: mission.relaxations.find((relaxation) => relaxation.allowed)?.userFacingCompromise ?? null,
+        targetOpportunity: opportunityDiagnostics.targetOpportunity,
         selectedOpportunity: opportunityDiagnostics.selectedOpportunity,
         availableOpportunity: opportunityDiagnostics.availableOpportunity,
         nearestNonPavedAllowedEdges: opportunityDiagnostics.nearestNonPavedAllowedEdges,
@@ -94,7 +110,7 @@ export function assembleParkLoopMissionV3(
       },
     },
     warnings: [
-      mission.strategy === 'urban_nature_loop'
+      assemblerMode === 'urban_nature_loop'
         ? 'urban_nature_loop may use paved park/canal/corridor paths but keeps paved distance explicit instead of selling it as pure trail'
         : 'park_loop may use paved park paths but keeps paved distance explicit instead of selling it as pure trail',
       blocker,
@@ -107,12 +123,14 @@ function createParkCandidate(
   mission: MissionContractV3,
   edges: EnrichedEdge[],
   blocker: string,
+  assemblerMode: 'park_loop' | 'urban_nature_loop' = 'park_loop',
 ): RouteCandidateV3 {
   const nodeIds = nodeIdsFromEdges(edges);
+  const urbanNature = assemblerMode === 'urban_nature_loop';
 
   return {
-    id: `${mission.id}-park-capacity-adjusted`,
-    source: 'park_loop',
+    id: urbanNature ? `${mission.id}-urban-nature-opportunity-adjusted` : `${mission.id}-park-capacity-adjusted`,
+    source: urbanNature ? 'urban_corridor' : 'park_loop',
     lane: 'complete_adjustable',
     lifecycle: 'gated',
     edgeIds: edges.map((edge) => edge.id),
@@ -131,7 +149,7 @@ function createParkCandidate(
     gates: [{ id: blocker, status: 'warning', severity: 'soft', reason: blocker }],
     selectionScore: sumLengthKm(edges),
     selected: false,
-    selectedReason: 'park_compromise_relaxation_allowed',
+    selectedReason: urbanNature ? 'urban_nature_target_opportunity_selected' : 'park_compromise_relaxation_allowed',
   };
 }
 
@@ -185,8 +203,12 @@ function createParkPhaseDiagnostics(
   };
 }
 
-function routeableUrbanParkEdges(graph: EnrichedGraph, mission: MissionContractV3): EnrichedEdge[] {
-  const allowedKinds = allowedUrbanParkComponentKinds(mission);
+function routeableUrbanParkEdges(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  assemblerMode: 'park_loop' | 'urban_nature_loop' = 'park_loop',
+): EnrichedEdge[] {
+  const allowedKinds = allowedUrbanParkComponentKinds(assemblerMode);
   return Array.from(graph.edges.values()).filter((edge) => allowedKinds.has(classifyEdgeSemanticsV3(edge).componentKind));
 }
 
@@ -197,16 +219,19 @@ function buildUrbanParkOpportunityDiagnostics(
   selectedEdges: EnrichedEdge[],
   selectedByComponentFirst: boolean,
 ): {
+  targetOpportunity: UrbanNatureTargetOpportunityDiagnostic | null;
   selectedOpportunity: EdgeOpportunitySummary;
   availableOpportunity: EdgeOpportunitySummary;
   nearestNonPavedAllowedEdges: NearestOpportunityEdge[];
   urbanNatureOpportunityComponents: UrbanNatureOpportunityComponentDiagnostic[];
 } {
+  const urbanNatureOpportunityComponents = buildUrbanNatureOpportunityComponents(graph, mission, allowedEdges, selectedEdges, selectedByComponentFirst);
   return {
+    targetOpportunity: selectUrbanNatureTargetOpportunity(urbanNatureOpportunityComponents),
     selectedOpportunity: summarizeEdgeOpportunity(selectedEdges),
     availableOpportunity: summarizeEdgeOpportunity(allowedEdges),
     nearestNonPavedAllowedEdges: nearestNonPavedAllowedEdges(graph, mission, allowedEdges),
-    urbanNatureOpportunityComponents: buildUrbanNatureOpportunityComponents(graph, mission, allowedEdges, selectedEdges, selectedByComponentFirst),
+    urbanNatureOpportunityComponents,
   };
 }
 
@@ -250,6 +275,40 @@ interface UrbanNatureOpportunityComponentDiagnostic {
   surfaceEvidenceKm: Record<string, number>;
   exclusionReason: string;
   sampleEdgeIds: string[];
+}
+
+interface UrbanNatureTargetOpportunityDiagnostic {
+  id: string;
+  capacityKm: number;
+  candidateNaturalKm: number;
+  pathTrackUnknownKm: number;
+  explicitPavedKm: number;
+  connectorKm: number | null;
+  reachable: boolean;
+  closurePossible: boolean;
+  selected: boolean;
+  rejectedReason: string | null;
+}
+
+function selectUrbanNatureTargetOpportunity(
+  opportunities: UrbanNatureOpportunityComponentDiagnostic[],
+): UrbanNatureTargetOpportunityDiagnostic | null {
+  const selected = opportunities.find((opportunity) => opportunity.selectedCandidateKm > 0);
+  const opportunity = selected ?? opportunities[0] ?? null;
+  if (!opportunity) return null;
+
+  return {
+    id: opportunity.componentId,
+    capacityKm: opportunity.capacityKm,
+    candidateNaturalKm: opportunity.candidateNaturalKm,
+    pathTrackUnknownKm: opportunity.surfaceEvidenceKm.path_track_unknown ?? 0,
+    explicitPavedKm: opportunity.surfaceEvidenceKm.explicit_paved ?? 0,
+    connectorKm: opportunity.connectorKm,
+    reachable: opportunity.reachable,
+    closurePossible: opportunity.closurePossible,
+    selected: opportunity.selectedCandidateKm > 0,
+    rejectedReason: opportunity.selectedCandidateKm > 0 ? null : opportunity.exclusionReason,
+  };
 }
 
 function summarizeEdgeOpportunity(edges: EnrichedEdge[]): EdgeOpportunitySummary {
@@ -522,8 +581,8 @@ function round3(value: number): number {
   return Math.round(value * 1000) / 1000;
 }
 
-function allowedUrbanParkComponentKinds(mission: MissionContractV3): ReadonlySet<TerrainComponentKindV3> {
-  if (mission.strategy === 'urban_nature_loop') {
+function allowedUrbanParkComponentKinds(assemblerMode: 'park_loop' | 'urban_nature_loop'): ReadonlySet<TerrainComponentKindV3> {
+  if (assemblerMode === 'urban_nature_loop') {
     return new Set<TerrainComponentKindV3>(['park', 'urban_green', 'river_corridor', 'scenic_paved', 'field_paths']);
   }
   return new Set<TerrainComponentKindV3>(['park']);

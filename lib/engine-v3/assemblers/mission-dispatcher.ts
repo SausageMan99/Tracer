@@ -5,6 +5,7 @@ import { assembleForestLoopMissionV3 } from './forest-loop-assembler';
 import { assembleParkLoopMissionV3 } from './park-loop-assembler';
 import { assemblePoorOsmRuralMissionV3 } from './poor-osm-rural-assembler';
 import { assembleTransitionToWoodsMissionV3 } from './transition-to-woods-assembler';
+import { assembleUrbanNatureLoopMissionV3 } from './urban-nature-loop-assembler';
 
 export function assembleMissionV3(
   graph: EnrichedGraph,
@@ -16,8 +17,9 @@ export function assembleMissionV3(
     case 'transition_to_woods':
       return assembleTransitionToWoodsMissionV3(graph, mission);
     case 'park_loop':
-    case 'urban_nature_loop':
       return assembleParkLoopMissionV3(graph, mission);
+    case 'urban_nature_loop':
+      return assembleUrbanNatureLoopMissionV3(graph, mission);
     case 'simple_quiet_loop':
       return createNoCandidateAssemblerResultV3(mission, 'strategy_not_supported_yet');
     case 'poor_osm_rural':

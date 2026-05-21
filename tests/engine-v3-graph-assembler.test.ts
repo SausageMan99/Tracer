@@ -8,8 +8,10 @@ import {
 } from '@/lib/engine-v3/assemblers/graph-route-assembly-core';
 import { decideOutcomeV3 } from '@/lib/engine-v3/outcome-decider';
 import { buildMissionContractV3 } from '@/lib/engine-v3/mission-contract-builder';
+import { assembleMissionV3 } from '@/lib/engine-v3/assemblers/mission-dispatcher';
 import { assembleTransitionToWoodsMissionV3 } from '@/lib/engine-v3/assemblers/transition-to-woods-assembler';
 import { assembleParkLoopMissionV3 } from '@/lib/engine-v3/assemblers/park-loop-assembler';
+import { assembleUrbanNatureLoopMissionV3 } from '@/lib/engine-v3/assemblers/urban-nature-loop-assembler';
 import type { CorridorMissionV3, RouteIntentV3, TerrainComponentKindV3 } from '@/lib/engine-v3/types';
 
 function node(id: string, index: number): GraphNode {
@@ -409,7 +411,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     const contract = buildMissionContractV3(urbanIntent);
     if (!contract) throw new Error('expected urban-nature mission contract');
 
-    const result = assembleParkLoopMissionV3(
+    const result = assembleUrbanNatureLoopMissionV3(
       graph([
         { ...edge('paved-safe-1', 's', 'a', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
         { ...edge('paved-safe-2', 'a', 'b', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
@@ -447,7 +449,7 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     const contract = buildMissionContractV3(urbanIntent);
     if (!contract) throw new Error('expected urban-nature mission contract');
 
-    const result = assembleParkLoopMissionV3(
+    const result = assembleUrbanNatureLoopMissionV3(
       graph([
         { ...edge('paved-safe-1', 's', 'a', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
         { ...edge('paved-safe-2', 'a', 'b', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
@@ -474,6 +476,48 @@ describe('assembleGraphRouteV3 graph assembler', () => {
       selectedCandidateKm: 3.3,
       exclusionReason: 'selected_by_component_first_lane',
     }));
+  });
+
+  it('dispatches urban_nature_loop through an explicit targetOpportunity contract instead of a generic park candidate', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleMissionV3(
+      graph([
+        { ...edge('paved-safe-1', 's', 'a', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-2', 'a', 'b', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-3', 'b', 'c', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-return', 'c', 's', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-nature-access', 's', 'n1', 0.2, 'asphalt', 'footway', 'urban'), scenic: true },
+        edge('urban-nature-soft-1', 'n1', 'n2', 1.1, 'grass', 'path', 'park'),
+        edge('urban-nature-soft-2', 'n2', 'n3', 1.1, 'ground', 'path', 'park'),
+        edge('urban-nature-soft-3', 'n3', 'n1', 1.1, 'grass', 'path', 'park'),
+        { ...edge('urban-nature-return', 'n1', 's', 0.2, 'asphalt', 'footway', 'urban'), scenic: true },
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.source).toBe('urban_corridor');
+    expect(result.selectedCandidate?.selectedReason).toBe('urban_nature_target_opportunity_selected');
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      targetOpportunity: {
+        id: 'urban-nature-opportunity-1',
+        selected: true,
+        reachable: true,
+        closurePossible: true,
+        candidateNaturalKm: 3.3,
+        pathTrackUnknownKm: 0,
+        explicitPavedKm: 0,
+        connectorKm: expect.any(Number),
+        rejectedReason: null,
+      },
+    });
   });
 
   it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {
