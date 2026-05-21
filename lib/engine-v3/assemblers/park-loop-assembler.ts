@@ -104,6 +104,7 @@ function assembleParkLikeMissionV3(
       closureRejectedReasons: componentFirstDiagnostics.closureRejectedReasons,
       bestReturnedCandidate: componentFirstDiagnostics.bestReturnedCandidate,
       bestNonReturnedCandidate: componentFirstDiagnostics.bestNonReturnedCandidate,
+      closureCandidatePortfolio: componentFirstDiagnostics.closureCandidatePortfolio,
     };
     noCandidate.phaseDiagnostics.closure = {
       ...noCandidate.phaseDiagnostics.closure,
@@ -153,6 +154,7 @@ function assembleParkLikeMissionV3(
         closureRejectedReasons: componentFirstDiagnostics.closureRejectedReasons,
         bestReturnedCandidate: componentFirstDiagnostics.bestReturnedCandidate,
         bestNonReturnedCandidate: componentFirstDiagnostics.bestNonReturnedCandidate,
+        closureCandidatePortfolio: componentFirstDiagnostics.closureCandidatePortfolio,
       },
     },
     warnings: [
@@ -363,6 +365,7 @@ interface UrbanNatureClosureSearchDiagnostics {
   closureRejectedReasons: Record<string, number>;
   bestReturnedCandidate: UrbanNatureClosureCandidateDiagnostic | null;
   bestNonReturnedCandidate: UrbanNatureClosureCandidateDiagnostic | null;
+  closureCandidatePortfolio: UrbanNatureClosureCandidateDiagnostic[];
 }
 
 interface UrbanNatureClosureCandidateDiagnostic {
@@ -682,7 +685,8 @@ function selectUrbanNatureComponentRouteEdges(
       Math.max(mission.target.minNaturalDwellKm, mission.request.targetDistanceKm * 0.3),
     );
     const componentBudgetKm = Math.max(0, mission.request.maxDistanceKm - access.distanceKm);
-    let dwell = walkComponentOpportunity(component, access.endNodeId, componentBudgetKm, minimumDwellKm);
+    const preferredComponentDistanceKm = Math.max(minimumDwellKm, mission.request.targetDistanceKm - access.distanceKm * 2);
+    let dwell = walkComponentOpportunity(component, access.endNodeId, componentBudgetKm, minimumDwellKm, preferredComponentDistanceKm);
     if (!dwell || metricsFromEdges(dwell.edges, mission.request.targetDistanceKm).naturalDwellKm < minimumDwellKm * 0.8) {
       dwell = walkComponentDwellPath(component, access.endNodeId, componentBudgetKm, minimumDwellKm)
         ?? selectComponentCapacityEdges(component, componentBudgetKm, minimumDwellKm);
@@ -832,6 +836,7 @@ function emptyUrbanNatureClosureSearchDiagnostics(): UrbanNatureClosureSearchDia
     closureRejectedReasons: {},
     bestReturnedCandidate: null,
     bestNonReturnedCandidate: null,
+    closureCandidatePortfolio: [],
   };
 }
 
@@ -859,6 +864,12 @@ function recordClosureCandidateDiagnostic(
   } else if (!diagnostics.bestNonReturnedCandidate || candidate.distanceKm > diagnostics.bestNonReturnedCandidate.distanceKm) {
     diagnostics.bestNonReturnedCandidate = candidate;
   }
+  diagnostics.closureCandidatePortfolio.push(candidate);
+  diagnostics.closureCandidatePortfolio.sort((left, right) => (
+    Number(right.returned) - Number(left.returned)
+      || left.distanceKm - right.distanceKm
+      || (left.reason ?? '').localeCompare(right.reason ?? '')
+  ));
 }
 
 function scoreUrbanNatureRouteMetrics(metrics: RouteMetricsV3): number {
@@ -935,59 +946,88 @@ function walkComponentOpportunity(
   entryNodeId: string,
   budgetKm: number,
   minimumDwellKm: number,
+  preferredDistanceKm: number,
 ): { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number } | null {
   const adjacency = buildAllowedAdjacency(componentEdges);
-  const selected: EnrichedEdge[] = [];
-  const used = new Set<string>();
-  let current = entryNodeId;
-  let distanceKm = 0;
-  let dwellKm = 0;
+  const maxExplorationKm = Math.max(budgetKm, preferredDistanceKm * 1.5);
+  const queue: Array<{ nodeId: string; edges: EnrichedEdge[]; distanceKm: number; dwellKm: number; used: Set<string> }> = [
+    { nodeId: entryNodeId, edges: [], distanceKm: 0, dwellKm: 0, used: new Set() },
+  ];
+  let bestClosed: { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number; dwellKm: number } | null = null;
+  let bestPartial: { edges: EnrichedEdge[]; endNodeId: string; distanceKm: number; dwellKm: number } | null = null;
 
-  for (let step = 0; step < 320 && distanceKm < budgetKm + 0.001; step += 1) {
-    if (current === entryNodeId && selected.length > 0 && dwellKm >= minimumDwellKm) {
-      return { edges: selected, endNodeId: current, distanceKm };
-    }
+  for (let step = 0; step < 30_000 && queue.length > 0; step += 1) {
+    queue.sort((left, right) => scoreUrbanNatureOpportunityState(right, preferredDistanceKm, minimumDwellKm) - scoreUrbanNatureOpportunityState(left, preferredDistanceKm, minimumDwellKm));
+    const current = queue.shift();
+    if (!current) break;
 
-    const choices = (adjacency.get(current) ?? [])
-      .filter((candidate) => !used.has(candidate.edge.id))
-      .filter((candidate) => distanceKm + candidate.edge.lengthKm <= budgetKm + 0.001)
-      .sort((left, right) => scoreUrbanNatureComponentStep(right, entryNodeId, dwellKm, minimumDwellKm) - scoreUrbanNatureComponentStep(left, entryNodeId, dwellKm, minimumDwellKm));
-    const next = choices[0];
-    if (!next) break;
-
-    selected.push(orientEdge(next.edge, current, next.to));
-    used.add(next.edge.id);
-    distanceKm += Math.max(0, next.edge.lengthKm);
-    dwellKm += Math.max(0, next.edge.lengthKm) * classifyEdgeSemanticsV3(next.edge).candidateNaturalWeight;
-    current = next.to;
-  }
-
-  if (current !== entryNodeId) {
-    const returnToEntry = shortestPathBetweenNodes(componentEdges, current, entryNodeId);
-    if (returnToEntry && distanceKm + returnToEntry.distanceKm <= budgetKm + 0.001) {
-      const candidate = [...selected, ...returnToEntry.edges];
-      const candidateDwellKm = candidate.reduce((sum, edge) => sum + Math.max(0, edge.lengthKm) * classifyEdgeSemanticsV3(edge).candidateNaturalWeight, 0);
-      if (candidateDwellKm >= minimumDwellKm) {
-        return { edges: candidate, endNodeId: entryNodeId, distanceKm: distanceKm + returnToEntry.distanceKm };
+    if (current.edges.length > 0 && current.dwellKm >= minimumDwellKm * 0.8) {
+      if (current.nodeId === entryNodeId) {
+        if (!bestClosed || scoreUrbanNatureClosedOpportunity(current, preferredDistanceKm, budgetKm) > scoreUrbanNatureClosedOpportunity(bestClosed, preferredDistanceKm, budgetKm)) {
+          bestClosed = { edges: current.edges, endNodeId: current.nodeId, distanceKm: current.distanceKm, dwellKm: current.dwellKm };
+        }
+      }
+      if (!bestPartial || current.dwellKm > bestPartial.dwellKm || (current.dwellKm === bestPartial.dwellKm && current.distanceKm > bestPartial.distanceKm)) {
+        bestPartial = { edges: current.edges, endNodeId: current.nodeId, distanceKm: current.distanceKm, dwellKm: current.dwellKm };
       }
     }
+
+    for (const next of adjacency.get(current.nodeId) ?? []) {
+      if (current.used.has(next.edge.id)) continue;
+      const edgeLengthKm = Math.max(0, next.edge.lengthKm);
+      const distanceKm = current.distanceKm + edgeLengthKm;
+      if (distanceKm > maxExplorationKm + 0.001) continue;
+      const used = new Set(current.used);
+      used.add(next.edge.id);
+      queue.push({
+        nodeId: next.to,
+        edges: [...current.edges, orientEdge(next.edge, current.nodeId, next.to)],
+        distanceKm,
+        dwellKm: current.dwellKm + edgeLengthKm * classifyEdgeSemanticsV3(next.edge).candidateNaturalWeight,
+        used,
+      });
+    }
+
+    if (queue.length > 512) queue.length = 512;
   }
 
-  if (selected.length > 0 && dwellKm >= minimumDwellKm * 0.8) return { edges: selected, endNodeId: current, distanceKm };
+  if (bestClosed) return { edges: bestClosed.edges, endNodeId: bestClosed.endNodeId, distanceKm: bestClosed.distanceKm };
+
+  if (bestPartial && bestPartial.endNodeId !== entryNodeId) {
+    const returnToEntry = shortestPathBetweenNodes(componentEdges, bestPartial.endNodeId, entryNodeId, new Set(bestPartial.edges.map((edge) => edge.id)));
+    if (returnToEntry && bestPartial.distanceKm + returnToEntry.distanceKm <= budgetKm + 0.001) {
+      const candidate = [...bestPartial.edges, ...returnToEntry.edges];
+      const candidateDwellKm = candidate.reduce((sum, edge) => sum + Math.max(0, edge.lengthKm) * classifyEdgeSemanticsV3(edge).candidateNaturalWeight, 0);
+      if (candidateDwellKm >= minimumDwellKm * 0.8) {
+        return { edges: candidate, endNodeId: entryNodeId, distanceKm: bestPartial.distanceKm + returnToEntry.distanceKm };
+      }
+    }
+    return { edges: bestPartial.edges, endNodeId: bestPartial.endNodeId, distanceKm: bestPartial.distanceKm };
+  }
+
   return null;
 }
 
-function scoreUrbanNatureComponentStep(
-  candidate: { edge: EnrichedEdge; to: string },
-  entryNodeId: string,
-  dwellKm: number,
+function scoreUrbanNatureOpportunityState(
+  state: { distanceKm: number; dwellKm: number; nodeId: string },
+  preferredDistanceKm: number,
   minimumDwellKm: number,
 ): number {
-  const semantics = classifyEdgeSemanticsV3(candidate.edge);
-  const closeBonus = dwellKm >= minimumDwellKm && candidate.to === entryNodeId ? 10_000 : 0;
-  const naturalBonus = semantics.candidateNaturalWeight * 1_000;
-  const strictBonus = semantics.isStrictTrailLike ? 100 : 0;
-  return closeBonus + naturalBonus + strictBonus + candidate.edge.lengthKm;
+  const distanceDeficit = Math.max(0, preferredDistanceKm - state.distanceKm);
+  const distanceOvershoot = Math.max(0, state.distanceKm - preferredDistanceKm);
+  const dwellDeficit = Math.max(0, minimumDwellKm - state.dwellKm);
+  return state.dwellKm * 100 + Math.min(state.distanceKm, preferredDistanceKm) * 20 - distanceDeficit * 3 - distanceOvershoot * 8 - dwellDeficit * 50;
+}
+
+function scoreUrbanNatureClosedOpportunity(
+  state: { distanceKm: number; dwellKm: number },
+  preferredDistanceKm: number,
+  budgetKm: number,
+): number {
+  const distanceError = Math.abs(preferredDistanceKm - state.distanceKm);
+  const inUsefulWindowBonus = state.distanceKm <= budgetKm + 0.001 && state.distanceKm >= preferredDistanceKm * 0.75 ? 1_000 : 0;
+  const overBudgetPenalty = Math.max(0, state.distanceKm - budgetKm) * 300;
+  return inUsefulWindowBonus - distanceError * 100 - overBudgetPenalty + state.dwellKm * 10;
 }
 
 function orientEdge(edge: EnrichedEdge, from: string, to: string): EnrichedEdge {

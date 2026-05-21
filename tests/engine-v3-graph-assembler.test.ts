@@ -624,6 +624,108 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(result.selectedCandidate?.metrics.strictTrailKm).toBeGreaterThan(0);
   });
 
+  it('selects an intermediate river-corridor loop when short seed and overlong loop also exist', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(8, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(8, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(8, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('quiet-access', 's', 'w1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('quiet-return', 'w1', 's', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('short-seed-out', 'w1', 'seed', 1.1, '', 'path', 'water_corridor'),
+        edge('short-seed-back', 'seed', 'w1', 1.1, '', 'path', 'water_corridor'),
+        edge('intermediate-river-1', 'w1', 'i1', 1.55, '', 'path', 'water_corridor'),
+        edge('intermediate-river-2', 'i1', 'i2', 1.55, '', 'path', 'water_corridor'),
+        { ...edge('intermediate-green-1', 'i2', 'i3', 1.55, 'grass', 'path', 'urban'), scenic: true },
+        edge('intermediate-return', 'i3', 'w1', 1.55, '', 'path', 'water_corridor'),
+        edge('overloop-river-1', 'w1', 'l1', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-river-2', 'l1', 'l2', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-river-3', 'l2', 'l3', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-return', 'l3', 'w1', 2.7, '', 'path', 'water_corridor'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.edgeIds).toEqual(expect.arrayContaining([
+      'intermediate-river-1',
+      'intermediate-river-2',
+      'intermediate-green-1',
+      'intermediate-return',
+    ]));
+    expect(result.selectedCandidate?.edgeIds).not.toEqual(expect.arrayContaining(['overloop-river-1']));
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeGreaterThanOrEqual(6.5);
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeLessThanOrEqual(8.5);
+    expect(result.selectedCandidate?.metrics.visitedComponents).toEqual(expect.arrayContaining(['river_corridor', 'urban_green']));
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      closureCandidatePortfolio: expect.arrayContaining([
+        expect.objectContaining({ distanceKm: 7, returned: true, reason: null }),
+      ]),
+    });
+  });
+
+  it('keeps a short-only river-corridor loop as refused or adjusted_short evidence, never a fake 8k', () => {
+    const generated = generateRouteV3FromGraph(
+      {
+        start: { lat: 49, lng: -0.6 },
+        targetDistanceKm: 8,
+        sport: 'running',
+        mode: 'nature_urbaine',
+        loop: true,
+      },
+      graph([
+        edge('quiet-access', 's', 'w1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('quiet-return', 'w1', 's', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('short-river-out', 'w1', 'seed', 1.1, '', 'path', 'water_corridor'),
+        edge('short-river-back', 'seed', 'w1', 1.1, '', 'path', 'water_corridor'),
+      ]),
+    );
+
+    expect(generated.route.metrics.distanceProducedKm).toBeLessThan(8 * 0.7);
+    const outcome = generated.outcome;
+    expect(outcome.type).toBe('refused');
+    if (outcome.type !== 'refused') throw new Error('expected refused short-only urban nature route');
+    expect(outcome.productLabel).toBe('refused_topology');
+    expect(outcome.reason).toContain('too short');
+  });
+
+  it('keeps an overlong river-corridor loop rejected above max distance with portfolio diagnostics', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(8, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(8, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(8, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('quiet-access', 's', 'w1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('quiet-return', 'w1', 's', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('overloop-river-1', 'w1', 'l1', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-river-2', 'l1', 'l2', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-river-3', 'l2', 'l3', 2.7, '', 'path', 'water_corridor'),
+        edge('overloop-return', 'l3', 'w1', 2.7, '', 'path', 'water_corridor'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate).toBeNull();
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      returnedClosureCount: 0,
+      closureRejectedReasons: expect.objectContaining({ distance_above_max_contract: expect.any(Number) }),
+      closureCandidatePortfolio: expect.arrayContaining([
+        expect.objectContaining({ returned: true, reason: 'distance_above_max_contract' }),
+      ]),
+    });
+  });
+
   it('refuses an uncloseable urban-nature corridor with stable closure diagnostics instead of fabricating a chord', () => {
     const urbanIntent: RouteIntentV3 = {
       ...intent(6, []),
