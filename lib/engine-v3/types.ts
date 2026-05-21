@@ -173,6 +173,8 @@ export interface RouteEdgeV3 {
   componentKind: TerrainComponentKindV3;
   highway: string;
   osmWayId: number;
+  /** Original OSM surface tag when available; keeps export diagnostics honest instead of collapsing to route surface. */
+  osmSurface?: string;
 }
 
 export interface RouteGeometryV3 {

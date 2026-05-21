@@ -1,6 +1,7 @@
 import { generateGPXFromPolyline } from "../gpx-export";
 import { buildRouteLineFeature } from "../map-route-geojson";
 import type { RoutePoint, Sport } from "../types";
+import type { RouteEdgeV3 } from "./types";
 
 export type RouteV3PolylinePoint = RoutePoint;
 
@@ -37,6 +38,23 @@ export interface RouteV3ExportValidationInput {
   /** Allows small graph-edge-vs-haversine differences without accepting a different route. */
   distanceToleranceRatio?: number;
   distanceToleranceKm?: number;
+  routeEdges?: readonly RouteV3ExportEdgeEvidence[];
+}
+
+export type RouteV3ExportEdgeEvidence = Pick<RouteEdgeV3, 'id' | 'from' | 'to' | 'lengthKm' | 'highway' | 'osmWayId'> & {
+  surface?: string;
+  osmSurface?: string;
+};
+
+export interface RouteV3LongSegmentEdgeEvidence {
+  segmentIndex: number;
+  edgeId: string;
+  osmWayId: number;
+  edgeLengthKm: number;
+  segmentKm: number;
+  highway: string;
+  surface: string;
+  segmentMatchesRouteEdge: true;
 }
 
 export interface RouteV3ExportValidation {
@@ -49,6 +67,7 @@ export interface RouteV3ExportValidation {
   distanceToleranceKm: number | null;
   maxSegmentKm: number;
   closureKm: number | null;
+  longSegmentAllowedByEdgeEvidence: RouteV3LongSegmentEdgeEvidence[];
 }
 
 export function buildRouteV3ExportBundle(input: RouteV3ExportInput): RouteV3ExportBundle {
@@ -121,9 +140,16 @@ export function validateRouteV3ExportConsistency(input: RouteV3ExportValidationI
       reasons.push(`invalid coordinate at index ${index}`);
     }
   });
-  if (maxSegmentKm > maxAllowedSegmentKm) {
-    reasons.push(`max segment jump ${round(maxSegmentKm)}km exceeds ${maxAllowedSegmentKm}km`);
-  }
+  const longSegmentAllowedByEdgeEvidence: RouteV3LongSegmentEdgeEvidence[] = [];
+  segments.forEach((segmentKm, segmentIndex) => {
+    if (segmentKm <= maxAllowedSegmentKm) return;
+    const edgeEvidence = matchingLongSegmentEdgeEvidence(input.routeEdges?.[segmentIndex], segmentKm, segmentIndex);
+    if (edgeEvidence) {
+      longSegmentAllowedByEdgeEvidence.push(edgeEvidence);
+      return;
+    }
+    reasons.push(`max segment jump ${round(segmentKm)}km exceeds ${maxAllowedSegmentKm}km`);
+  });
   if (closureKm !== null && closureKm > maxAllowedClosureKm) {
     reasons.push(`loop closure ${round(closureKm)}km exceeds ${maxAllowedClosureKm}km`);
   }
@@ -141,7 +167,79 @@ export function validateRouteV3ExportConsistency(input: RouteV3ExportValidationI
     distanceToleranceKm,
     maxSegmentKm,
     closureKm,
+    longSegmentAllowedByEdgeEvidence,
   };
+}
+
+function matchingLongSegmentEdgeEvidence(
+  edge: RouteV3ExportEdgeEvidence | undefined,
+  segmentKm: number,
+  segmentIndex: number,
+): RouteV3LongSegmentEdgeEvidence | null {
+  if (!edge) return null;
+  if (!Number.isFinite(edge.lengthKm) || edge.lengthKm <= 0) return null;
+  if (!isRoutableHighway(edge.highway)) return null;
+  const surface = edge.osmSurface ?? edge.surface;
+  if (!surface || !isKnownSurfaceEvidence(surface)) return null;
+
+  const toleranceKm = Math.max(0.03, segmentKm * 0.12);
+  if (Math.abs(edge.lengthKm - segmentKm) > toleranceKm) return null;
+
+  return {
+    segmentIndex,
+    edgeId: edge.id,
+    osmWayId: edge.osmWayId,
+    edgeLengthKm: edge.lengthKm,
+    segmentKm,
+    highway: edge.highway,
+    surface,
+    segmentMatchesRouteEdge: true,
+  };
+}
+
+const ROUTABLE_LONG_SEGMENT_HIGHWAYS = new Set([
+  'track',
+  'path',
+  'footway',
+  'bridleway',
+  'cycleway',
+  'pedestrian',
+  'steps',
+  'service',
+  'living_street',
+  'residential',
+  'unclassified',
+  'tertiary',
+  'secondary',
+]);
+
+const KNOWN_SURFACE_EVIDENCE = new Set([
+  'natural',
+  'mixed',
+  'paved',
+  'dirt',
+  'earth',
+  'ground',
+  'grass',
+  'gravel',
+  'fine_gravel',
+  'sand',
+  'woodchips',
+  'unpaved',
+  'compacted',
+  'asphalt',
+  'concrete',
+  'paving_stones',
+  'sett',
+  'cobblestone',
+]);
+
+function isRoutableHighway(highway: string | undefined): boolean {
+  return typeof highway === 'string' && ROUTABLE_LONG_SEGMENT_HIGHWAYS.has(highway);
+}
+
+function isKnownSurfaceEvidence(surface: string | undefined): boolean {
+  return typeof surface === 'string' && KNOWN_SURFACE_EVIDENCE.has(surface);
 }
 
 function segmentDistancesKm(polyline: readonly RouteV3PolylinePoint[]): number[] {

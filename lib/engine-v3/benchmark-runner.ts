@@ -455,6 +455,7 @@ function evaluateBenchmarkExportContract(
     polyline,
     metricDistanceKm: generated.route.metrics.distanceProducedKm,
     loop: benchmark.request.loop,
+    routeEdges: generated.route.edges,
   });
   const apiContractExportable = generated.outcome.type !== 'refused' && exportValidity.valid;
   const gpxAvailableExpected = apiContractExportable;

@@ -220,6 +220,72 @@ describe('Engine V3 real OSM benchmark CLI wiring', () => {
       rmSync(tempRoot, { recursive: true, force: true });
     }
   });
+
+  it('marks a benchmark exportable when a long segment is proven by matching route-edge evidence', async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), 'trailforge-v3-benchmark-export-edge-aware-'));
+    const artifactDir = join(tempRoot, 'routes');
+    const reportPath = join(tempRoot, 'latest.json');
+    const benchmark = benchmarkFixture({ id: 'edge-aware-long-track-export', requiresGeometryExports: true });
+    const generated = generatedFixture({
+      outcome: 'generated',
+      coordinates: [
+        [2.6679871, 48.4048174],
+        [2.6673907, 48.4005233],
+        [2.6679871, 48.4048174],
+      ],
+      metricDistanceKm: 0.9590152662586032,
+      edges: [
+        {
+          id: '1508627493-12901975860-808733631',
+          from: '1508627493',
+          to: '12901975860',
+          lengthKm: 0.4795076331293016,
+          surface: 'natural',
+          osmSurface: 'dirt',
+          componentKind: 'forest',
+          highway: 'track',
+          osmWayId: 808733631,
+        },
+        {
+          id: '808733631-12901975860-1508627493',
+          from: '12901975860',
+          to: '1508627493',
+          lengthKm: 0.4795076331293016,
+          surface: 'natural',
+          osmSurface: 'dirt',
+          componentKind: 'forest',
+          highway: 'track',
+          osmWayId: 808733631,
+        },
+      ],
+    });
+
+    try {
+      const report = await runEngineV3BenchmarkPanel({
+        cases: [benchmark],
+        artifactDir,
+        reportPath,
+        graphBuilder: async () => ({ graph: {} as never, scenicWayIds: new Set() }),
+        routeGenerator: () => generated,
+        now: () => new Date('2026-05-21T12:00:00.000Z'),
+      });
+
+      const result = report.cases[0];
+      const artifact = JSON.parse(readFileSync(result.artifacts.json, 'utf8'));
+
+      expect(result.exportValidity.valid).toBe(true);
+      expect(result.exportValidity.maxSegmentKm).toBeGreaterThan(0.2);
+      expect(result.exportValidity.longSegmentAllowedByEdgeEvidence).toEqual(expect.arrayContaining([
+        expect.objectContaining({ edgeId: '1508627493-12901975860-808733631', osmWayId: 808733631 }),
+      ]));
+      expect(result.apiContractExportable).toBe(true);
+      expect(result.benchmarkProductStatus).toBe('acceptable');
+      expect(report.summary.success).toBe(true);
+      expect(artifact.exportValidity.longSegmentAllowedByEdgeEvidence[0].highway).toBe('track');
+    } finally {
+      rmSync(tempRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 function benchmarkFixture(options: { id: string; requiresGeometryExports: boolean }): EngineV3BenchmarkCase {
@@ -248,6 +314,7 @@ function generatedFixture(options: {
   outcome: 'generated' | 'adjusted';
   coordinates: [number, number][];
   metricDistanceKm: number;
+  edges?: GeneratedRouteV3['route']['edges'];
 }): GeneratedRouteV3 {
   return {
     engine: 'v3-clean-room',
@@ -258,7 +325,7 @@ function generatedFixture(options: {
     },
     mission: { warnings: [] },
     route: {
-      edges: [],
+      edges: options.edges ?? [],
       geometry: { type: 'LineString', coordinates: options.coordinates },
       metrics: {
         distanceProducedKm: options.metricDistanceKm,

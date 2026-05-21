@@ -112,6 +112,7 @@ export function buildGenerateRouteV3ApiResponseFromGenerated(generated: Generate
       polyline,
       metricDistanceKm: generated.route.metrics.distanceProducedKm,
       loop: true,
+      routeEdges: generated.route.edges,
     })
     : null;
   const exportValid = exportValidation?.valid ?? false;

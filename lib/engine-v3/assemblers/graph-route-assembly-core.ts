@@ -1911,6 +1911,7 @@ function toRouteEdge(edge: TraversalEdgeV3): RouteEdgeV3 {
     componentKind: edge.kind,
     highway: edge.edge.highway,
     osmWayId: edge.edge.osmWayId,
+    osmSurface: edge.edge.surface,
   };
 }
 

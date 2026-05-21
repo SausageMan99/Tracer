@@ -126,6 +126,7 @@ function toRouteEdge(graph: EnrichedGraph, edgeId: string, nodeIds: string[], in
     componentKind: semantics.componentKind,
     highway: edge.highway,
     osmWayId: edge.osmWayId,
+    osmSurface: edge.surface,
   };
 }
 
