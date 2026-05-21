@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 
 import { buildGraph } from '../engine/graph-builder';
 import type { EnrichedGraph } from '../types';
+import { validateRouteV3ExportConsistency, type RouteV3ExportValidation } from './route-export';
 import { generateRouteV3FromGraph, type GeneratedRouteV3 } from './route-generator';
 import type { RouteModeV3, RouteOutcomeV3, UserRouteRequestV3 } from './types';
 
@@ -34,6 +35,11 @@ export interface EngineV3BenchmarkResult {
   outcome: RouteOutcomeV3 | { type: 'errored'; reason: string };
   outcomeReasons: string[];
   metrics: GeneratedRouteV3['route']['metrics'] | null;
+  exportValidity: RouteV3ExportValidation;
+  exportInvalidReasons: string[];
+  apiContractExportable: boolean;
+  gpxAvailableExpected: boolean;
+  benchmarkProductStatus: 'acceptable' | 'refused' | 'non_exportable' | 'errored';
   warnings: string[];
   timings: EngineV3BenchmarkTimings;
   artifacts: EngineV3BenchmarkArtifactPaths;
@@ -47,6 +53,12 @@ export interface EngineV3BenchmarkSummary {
     adjusted: number;
     refused: number;
     errored: number;
+  };
+  export: {
+    exportable: number;
+    nonExportable: number;
+    invalidGeometry: number;
+    requiredButNonExportable: number;
   };
 }
 
@@ -93,6 +105,11 @@ interface SuccessfulBenchmarkArtifact {
   outcomeReasons: string[];
   warnings: string[];
   diagnostics: GeneratedRouteV3['diagnostics'];
+  exportValidity: RouteV3ExportValidation;
+  exportInvalidReasons: string[];
+  apiContractExportable: boolean;
+  gpxAvailableExpected: boolean;
+  benchmarkProductStatus: EngineV3BenchmarkResult['benchmarkProductStatus'];
   timings: EngineV3BenchmarkTimings;
 }
 
@@ -110,6 +127,11 @@ interface ErroredBenchmarkArtifact {
   outcomeReasons: string[];
   warnings: string[];
   diagnostics: { error: string };
+  exportValidity: RouteV3ExportValidation;
+  exportInvalidReasons: string[];
+  apiContractExportable: boolean;
+  gpxAvailableExpected: boolean;
+  benchmarkProductStatus: EngineV3BenchmarkResult['benchmarkProductStatus'];
   timings: EngineV3BenchmarkTimings;
 }
 
@@ -175,6 +197,38 @@ export const ENGINE_V3_BENCHMARK_CASES: EngineV3BenchmarkCase[] = [
   benchmarkCase('clecy-trail-10k', 'Clécy 10k', 'Suisse normande trail-ish terrain with rural connectors and real natural path evidence.', 48.9171, -0.4849, 10, 'trail', ['clecy', 'suisse-normande']),
   benchmarkCase('clecy-trail-12k', 'Clécy 12k', 'Longer Suisse normande rural/trail case; should expose if distance padding becomes dishonest.', 48.9171, -0.4849, 12, 'trail', ['clecy', 'suisse-normande', 'longer']),
   benchmarkCase('paris-buttes-chaumont-urban-nature', 'Paris Buttes-Chaumont', 'Dense urban park case: nature urbaine only, never a forest trail claim.', 48.8809, 2.3824, 6, 'nature_urbaine', ['paris', 'dense-urban', 'park']),
+  benchmarkCase(
+    'brunoy-urban-nature-8k',
+    'Brunoy urban nature 8k',
+    'Real-user Brunoy urban nature case from 3 rue Jean XXIII; must not export fake/chorded route and must keep pavement honest.',
+    48.704819,
+    2.500846,
+    8,
+    'nature_urbaine',
+    ['brunoy', 'urban-nature', 'real-user', 'post-urban-chain'],
+    {
+      role: 'regression',
+      expectedOutcomeTypes: ['generated', 'adjusted', 'refused'],
+      requiresGeometryExports: false,
+      notes: 'Post-Brunoy QA regression case; refused is acceptable only if typed and artifacts stay geometry/export-consistent.',
+    },
+  ),
+  benchmarkCase(
+    'brunoy-urban-nature-9_5k',
+    'Brunoy urban nature 9.5k',
+    'Longer real-user Brunoy urban nature stress case; should refuse cleanly when topology cannot close an honest route.',
+    48.704819,
+    2.500846,
+    9.5,
+    'nature_urbaine',
+    ['brunoy', 'urban-nature', 'real-user', 'post-urban-chain'],
+    {
+      role: 'regression',
+      expectedOutcomeTypes: ['generated', 'adjusted', 'refused'],
+      requiresGeometryExports: false,
+      notes: 'Post-Brunoy QA stress case; no fake GPX/GeoJSON export should be treated as product-usable.',
+    },
+  ),
   benchmarkCase('small-park-too-long-trail', 'Petit parc trop long', 'Small park negative case: a long trail request must be adjusted/refused instead of padded with paved loops.', 48.8792, 2.3091, 15, 'trail', ['negative', 'small-park', 'too-long']),
   benchmarkCase('poor-rural-trail', 'Poor rural', 'Sparse rural graph negative case: refuse rather than fabricate GPS/terrain evidence.', 48.9438, -0.6986, 12, 'trail', ['negative', 'poor-rural']),
   benchmarkCase('semi-rural-normand-9k', 'Semi-rural normand 9k', 'Normandy semi-rural case with mixed roads/paths; outcome should explain paved compromises honestly.', 49.0284, -0.5744, 9, 'trail', ['normandy', 'semi-rural']),
@@ -239,6 +293,7 @@ async function runEngineV3BenchmarkCase(
     ]);
     const geojson = routeToGeoJson(benchmark, generated);
     const gpx = routeToGpx(benchmark, generated);
+    const exportContract = evaluateBenchmarkExportContract(benchmark, generated);
     const artifact: SuccessfulBenchmarkArtifact = {
       case: benchmark,
       request: benchmark.request,
@@ -253,6 +308,7 @@ async function runEngineV3BenchmarkCase(
       outcomeReasons,
       warnings,
       diagnostics: generated.diagnostics,
+      ...exportContract,
       timings,
     };
 
@@ -269,6 +325,7 @@ async function runEngineV3BenchmarkCase(
       outcome: generated.outcome,
       outcomeReasons,
       metrics: generated.route.metrics,
+      ...exportContract,
       warnings,
       timings,
       artifacts: paths,
@@ -279,6 +336,7 @@ async function runEngineV3BenchmarkCase(
     const outcome = { type: 'errored' as const, reason: message };
     const geojson = emptyGeoJson(benchmark);
     const gpx = emptyGpx(benchmark);
+    const exportContract = erroredExportContract();
     const artifact: ErroredBenchmarkArtifact = {
       case: benchmark,
       request: benchmark.request,
@@ -293,6 +351,7 @@ async function runEngineV3BenchmarkCase(
       outcomeReasons: [message],
       warnings: ['benchmark errored before V3 could classify generated/adjusted/refused'],
       diagnostics: { error: message },
+      ...exportContract,
       timings,
     };
     const artifactStarted = Date.now();
@@ -308,6 +367,7 @@ async function runEngineV3BenchmarkCase(
       outcome,
       outcomeReasons: [message],
       metrics: null,
+      ...exportContract,
       warnings: artifact.warnings,
       timings,
       artifacts: paths,
@@ -369,14 +429,66 @@ async function writeArtifacts(paths: EngineV3BenchmarkArtifactPaths, artifact: S
 
 function summarize(results: EngineV3BenchmarkResult[]): EngineV3BenchmarkSummary {
   const byOutcome = { generated: 0, adjusted: 0, refused: 0, errored: 0 };
+  const exportSummary = { exportable: 0, nonExportable: 0, invalidGeometry: 0, requiredButNonExportable: 0 };
   for (const result of results) {
     byOutcome[result.outcome.type] += 1;
+    if (result.apiContractExportable) exportSummary.exportable += 1;
+    else exportSummary.nonExportable += 1;
+    if (!result.exportValidity.valid) exportSummary.invalidGeometry += 1;
+    if (result.benchmarkProductStatus === 'non_exportable') exportSummary.requiredButNonExportable += 1;
   }
   return {
-    success: byOutcome.errored === 0,
+    success: byOutcome.errored === 0 && exportSummary.requiredButNonExportable === 0,
     total: results.length,
     byOutcome,
+    export: exportSummary,
   };
+}
+
+function evaluateBenchmarkExportContract(
+  benchmark: EngineV3BenchmarkCase,
+  generated: GeneratedRouteV3,
+): Pick<EngineV3BenchmarkResult, 'exportValidity' | 'exportInvalidReasons' | 'apiContractExportable' | 'gpxAvailableExpected' | 'benchmarkProductStatus'> {
+  const coordinates = generated.route.geometry.coordinates;
+  const polyline = coordinates.map(([lng, lat]) => ({ lat, lng }));
+  const exportValidity = validateRouteV3ExportConsistency({
+    polyline,
+    metricDistanceKm: generated.route.metrics.distanceProducedKm,
+    loop: benchmark.request.loop,
+  });
+  const apiContractExportable = generated.outcome.type !== 'refused' && exportValidity.valid;
+  const gpxAvailableExpected = apiContractExportable;
+  const benchmarkProductStatus = statusForBenchmarkExport(benchmark, generated.outcome.type, apiContractExportable);
+
+  return {
+    exportValidity,
+    exportInvalidReasons: exportValidity.reasons,
+    apiContractExportable,
+    gpxAvailableExpected,
+    benchmarkProductStatus,
+  };
+}
+
+function erroredExportContract(): Pick<EngineV3BenchmarkResult, 'exportValidity' | 'exportInvalidReasons' | 'apiContractExportable' | 'gpxAvailableExpected' | 'benchmarkProductStatus'> {
+  const exportValidity = validateRouteV3ExportConsistency({ polyline: [], metricDistanceKm: null, loop: true });
+  return {
+    exportValidity,
+    exportInvalidReasons: exportValidity.reasons,
+    apiContractExportable: false,
+    gpxAvailableExpected: false,
+    benchmarkProductStatus: 'errored',
+  };
+}
+
+function statusForBenchmarkExport(
+  benchmark: EngineV3BenchmarkCase,
+  outcomeType: RouteOutcomeV3['type'],
+  apiContractExportable: boolean,
+): EngineV3BenchmarkResult['benchmarkProductStatus'] {
+  if (outcomeType === 'refused') return 'refused';
+  if (benchmark.contract?.requiresGeometryExports === true && !apiContractExportable) return 'non_exportable';
+  if (!apiContractExportable) return 'non_exportable';
+  return 'acceptable';
 }
 
 function routeToGeoJson(benchmark: EngineV3BenchmarkCase, generated: GeneratedRouteV3): GeoJSON.FeatureCollection {
