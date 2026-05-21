@@ -3,6 +3,7 @@ import type {
   EnrichedEdge,
   EnrichedGraph,
   GraphNode,
+  TerrainContextSignals,
 } from "../types";
 import { haversineKm } from "../route-generator-legacy";
 import { RouteGenerationError } from "../errors";
@@ -47,7 +48,10 @@ interface CachedGraph {
   radiusKm: number;
   scenicWayIds: string[];
   cachedAt: number;
+  schemaVersion?: number;
 }
+
+const GRAPH_CACHE_SCHEMA_VERSION = 2;
 
 interface GraphBuildOptions {
   targetDistanceKm?: number;
@@ -72,7 +76,7 @@ function computeRadius(options: GraphBuildOptions = {}): number {
 
 function getCacheKey(center: Coordinate, radiusKm: number, includeScenicAreas: boolean): string {
   const scenicSuffix = includeScenicAreas ? "scenic" : "roads";
-  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}_${scenicSuffix}.json`;
+  return `${center.lat.toFixed(3)}_${center.lng.toFixed(3)}_${radiusKm.toFixed(1)}_${scenicSuffix}_v${GRAPH_CACHE_SCHEMA_VERSION}.json`;
 }
 
 function findClosestNodeId(graph: Pick<EnrichedGraph, "nodes">, center: Coordinate): string | null {
@@ -136,6 +140,7 @@ function isGraphUsable(graph: EnrichedGraph, options: GraphBuildOptions): boolea
 
 function isCachedGraphUsable(cached: CachedGraph, options: GraphBuildOptions): boolean {
   if (cached.nodes.length === 0 || cached.edges.length === 0) return false;
+  if (cached.schemaVersion !== GRAPH_CACHE_SCHEMA_VERSION) return false;
   if (Date.now() - cached.cachedAt > CACHE_TTL_MS) return false;
 
   const graph: EnrichedGraph = {
@@ -195,6 +200,19 @@ function isScenicArea(tags: Record<string, string>): boolean {
   );
 }
 
+function isWaterCorridor(tags: Record<string, string>): boolean {
+  return Boolean(
+    tags.waterway === "river" ||
+      tags.waterway === "canal" ||
+      tags.waterway === "stream" ||
+      tags.natural === "water" ||
+      tags.water === "river" ||
+      tags.water === "stream" ||
+      tags.water === "canal" ||
+      tags.water === "oxbow"
+  );
+}
+
 function scenicCellKey(coord: { lat: number; lon: number }): string {
   return `${Math.round(coord.lat * 1000)}:${Math.round(coord.lon * 1000)}`;
 }
@@ -239,6 +257,55 @@ function isNearScenicArea(
   return false;
 }
 
+function nearestIndexedCoordDistanceM(
+  coord: { lat: number; lon: number },
+  index: Map<string, { lat: number; lon: number }[]>,
+  maxDistanceKm: number
+): number | null {
+  if (index.size === 0) return null;
+  const baseLat = Math.round(coord.lat * 1000);
+  const baseLon = Math.round(coord.lon * 1000);
+  let bestKm = Infinity;
+  const cellRange = Math.max(1, Math.ceil(maxDistanceKm / 0.08));
+
+  for (let dLat = -cellRange; dLat <= cellRange; dLat += 1) {
+    for (let dLon = -cellRange; dLon <= cellRange; dLon += 1) {
+      const bucket = index.get(`${baseLat + dLat}:${baseLon + dLon}`);
+      if (!bucket) continue;
+      for (const indexedCoord of bucket) {
+        const distanceKm = haversineKm(
+          { lat: coord.lat, lng: coord.lon },
+          { lat: indexedCoord.lat, lng: indexedCoord.lon }
+        );
+        if (distanceKm < bestKm) bestKm = distanceKm;
+      }
+    }
+  }
+
+  if (!Number.isFinite(bestKm) || bestKm > maxDistanceKm) return null;
+  return Math.round(bestKm * 1000);
+}
+
+function waterCorridorContextForEdge(
+  points: Array<{ lat: number; lon: number }>,
+  waterIndex: Map<string, { lat: number; lon: number }[]>
+): TerrainContextSignals | undefined {
+  const distances = points
+    .map((point) => nearestIndexedCoordDistanceM(point, waterIndex, 0.12))
+    .filter((distance): distance is number => distance !== null);
+  if (distances.length === 0) return undefined;
+  const waterProximityM = Math.min(...distances);
+  return {
+    source: "overpass_context",
+    landcoverClass: "water_corridor",
+    naturalContextScore: 0.35,
+    artificializationScore: 0.65,
+    waterProximityM,
+    confidence: waterProximityM <= 50 ? "high" : "medium",
+    warnings: ["overpass water corridor proximity is contextual; paved/asphalt surfaces stay paved"],
+  };
+}
+
 export async function buildGraph(
   center: Coordinate,
   options: GraphBuildOptions = {}
@@ -269,7 +336,10 @@ export async function buildGraph(
 nwr["natural"~"^(wood|forest|grassland|heath|scrub|wetland)$"](around:${radiusM},${center.lat},${center.lng});
 nwr["landuse"~"^(forest|wood|recreation_ground)$"](around:${radiusM},${center.lat},${center.lng});
 nwr["leisure"~"^(nature_reserve|park)$"](around:${radiusM},${center.lat},${center.lng});
-nwr["boundary"="protected_area"](around:${radiusM},${center.lat},${center.lng});`
+nwr["boundary"="protected_area"](around:${radiusM},${center.lat},${center.lng});
+nwr["waterway"~"^(river|canal|stream)$"](around:${radiusM},${center.lat},${center.lng});
+nwr["natural"="water"](around:${radiusM},${center.lat},${center.lng});
+nwr["water"~"^(river|canal|stream|oxbow)$"](around:${radiusM},${center.lat},${center.lng});`
     : "";
   const query = `[out:json][timeout:30];(
 way["highway"~"^(${HIGHWAY_FILTER})$"]["access"!~"^(private|no)$"]["foot"!="no"](around:${radiusM},${center.lat},${center.lng});${scenicAreaQuery}
@@ -329,17 +399,23 @@ out body qt;`;
   // wood polygon is the only signal that they are useful for trail running.
   const scenicWayIds = new Set<string>();
   const scenicNodeIds = new Set<number>();
+  const waterNodeIds = new Set<number>();
   for (const el of data.elements) {
     if (el.type !== "way") continue;
     const tags = el.tags ?? {};
     if (isScenicArea(tags)) {
       scenicWayIds.add(String(el.id));
       for (const nodeId of el.nodes ?? []) scenicNodeIds.add(nodeId);
+    }
+    if (isWaterCorridor(tags)) {
+      scenicWayIds.add(String(el.id));
+      for (const nodeId of el.nodes ?? []) waterNodeIds.add(nodeId);
     } else if (tags.route === "hiking") {
       scenicWayIds.add(String(el.id));
     }
   }
   const scenicIndex = buildScenicNodeIndex(scenicNodeIds, nodeCoords);
+  const waterIndex = buildScenicNodeIndex(waterNodeIds, nodeCoords);
 
   // Step 3: Build graph from highway ways
   const nodes = new Map<string, GraphNode>();
@@ -404,6 +480,7 @@ out body qt;`;
         isNearScenicArea(fromCoord, scenicIndex) ||
         isNearScenicArea(toCoord, scenicIndex) ||
         isNearScenicArea(midpoint, scenicIndex);
+      const waterContext = waterCorridorContextForEdge([fromCoord, toCoord, midpoint], waterIndex);
 
       // Bidirectional edges
       const fwdId = `${fromId}-${toId}-${wayId}`;
@@ -424,6 +501,7 @@ out body qt;`;
           oneway,
           onewayViolation: isOnewayReverse && !bicycleExemptFromOneway,
           scenic,
+          terrainContext: waterContext,
           name,
           ref,
           osmWayId: wayId,
@@ -448,6 +526,7 @@ out body qt;`;
           oneway,
           onewayViolation: isOnewayForward && !bicycleExemptFromOneway,
           scenic,
+          terrainContext: waterContext,
           name,
           ref,
           osmWayId: wayId,
@@ -474,6 +553,7 @@ out body qt;`;
       radiusKm,
       scenicWayIds: Array.from(scenicWayIds),
       cachedAt: Date.now(),
+      schemaVersion: GRAPH_CACHE_SCHEMA_VERSION,
     });
   }
 

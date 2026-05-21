@@ -306,7 +306,7 @@ export interface RejectedRouteCandidatesDiagnostics {
   topCandidates: RejectedRouteCandidateDebugSummary[];
 }
 
-export type TerrainContextSource = 'ign_poc_fixture' | 'ign_cache' | 'none';
+export type TerrainContextSource = 'ign_poc_fixture' | 'ign_cache' | 'overpass_context' | 'none';
 export type TerrainContextLandcoverClass = 'forest' | 'park' | 'grassland' | 'water_corridor' | 'urban' | 'agriculture' | 'unknown';
 export type TerrainContextConfidence = 'low' | 'medium' | 'high';
 

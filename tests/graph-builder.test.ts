@@ -92,6 +92,35 @@ describe("buildGraph Overpass query", () => {
     expect(decodedBody).toContain('nwr["landuse"');
     expect(decodedBody).toContain('nwr["leisure"');
     expect(decodedBody).toContain('nwr["boundary"="protected_area"]');
+    expect(decodedBody).toContain('nwr["waterway"');
+    expect(decodedBody).toContain('nwr["natural"="water"]');
+  });
+
+  it("marks routable edges near mapped water as water-corridor terrain context without changing their paved surface", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        elements: [
+          { type: "node", id: 1, lat: 48.8701, lon: 2.3246 },
+          { type: "node", id: 2, lat: 48.8702, lon: 2.3247 },
+          { type: "node", id: 3, lat: 48.87011, lon: 2.32461 },
+          { type: "node", id: 4, lat: 48.87021, lon: 2.32471 },
+          { type: "way", id: 10, nodes: [1, 2], tags: { highway: "footway", surface: "asphalt", name: "Promenade de l'eau" } },
+          { type: "way", id: 99, nodes: [3, 4], tags: { waterway: "river", name: "L'Yerres" } },
+        ],
+      }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { graph } = await buildGraph(
+      { lat: 48.8701, lng: 2.3246 },
+      { sport: "running", targetDistanceKm: 10 },
+    );
+
+    const routeEdges = Array.from(graph.edges.values());
+    expect(routeEdges).toHaveLength(2);
+    expect(routeEdges.every((edge) => edge.surface === "asphalt")).toBe(true);
+    expect(routeEdges.every((edge) => edge.terrainContext?.landcoverClass === "water_corridor")).toBe(true);
+    expect(routeEdges.every((edge) => edge.terrainContext?.waterProximityM !== undefined)).toBe(true);
   });
 
   it("ignores stale empty graph caches and refetches routable ways", async () => {

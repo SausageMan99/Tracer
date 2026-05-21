@@ -547,6 +547,47 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     }
   });
 
+  it('connects a reachable water-corridor opportunity through quiet paved streets without counting the paved corridor as trail', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('quiet-access', 's', 'r1', 0.4, 'asphalt', 'residential', 'urban'),
+        edge('quiet-access-2', 'r1', 'w1', 0.4, 'asphalt', 'living_street', 'urban'),
+        edge('water-paved-1', 'w1', 'w2', 1.1, 'asphalt', 'footway', 'water_corridor'),
+        edge('water-paved-2', 'w2', 'w3', 1.1, 'asphalt', 'footway', 'water_corridor'),
+        edge('water-soft-1', 'w3', 'w4', 1.1, '', 'path', 'water_corridor'),
+        edge('water-soft-2', 'w4', 'w1', 1.1, '', 'path', 'water_corridor'),
+        edge('quiet-return', 'w1', 's', 0.5, 'asphalt', 'residential', 'urban'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.source).toBe('urban_corridor');
+    expect(result.selectedCandidate?.edgeIds).toEqual(expect.arrayContaining([
+      'water-paved-1',
+      'water-paved-2',
+      'water-soft-1',
+      'water-soft-2',
+      'quiet-return',
+    ]));
+    expect(result.selectedCandidate?.metrics.visitedComponents).toContain('river_corridor');
+    expect(result.selectedCandidate?.metrics.strictTrailKm).toBe(0);
+    expect(result.selectedCandidate?.metrics.explicitPavedKm).toBeGreaterThan(3);
+    expect(result.selectedCandidate?.metrics.pavedRatio).toBeGreaterThan(0.5);
+    expect(result.selectedCandidate?.metrics.naturalWayRatio).toBeLessThan(0.5);
+    expect(result.diagnostics.observationOnly).toMatchObject({
+      targetOpportunity: expect.objectContaining({ selected: true, reachable: true, closurePossible: true }),
+    });
+  });
+
   it('refuses disconnected urban-nature fragments instead of stitching them with implicit chords', () => {
     const urbanIntent: RouteIntentV3 = {
       ...intent(6, []),

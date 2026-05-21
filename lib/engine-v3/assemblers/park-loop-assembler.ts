@@ -43,7 +43,8 @@ function assembleParkLikeMissionV3(
   assemblerMode: 'park_loop' | 'urban_nature_loop',
 ): AssemblerResultV3 {
   const parkEdges = routeableUrbanParkEdges(graph, mission, assemblerMode);
-  const parkCapacityKm = sumLengthKm(parkEdges);
+  const capacityEdges = assemblerMode === 'urban_nature_loop' ? urbanNatureConnectorEdges(graph) : parkEdges;
+  const parkCapacityKm = sumLengthKm(capacityEdges);
   const blocker = assemblerMode === 'urban_nature_loop'
     ? 'urban_nature_corridor_capacity_below_requested_distance'
     : 'park_capacity_below_requested_distance';
@@ -59,10 +60,11 @@ function assembleParkLikeMissionV3(
 
   const legacySelectedEdges = selectUrbanParkRouteEdges(graph, mission, parkEdges);
   const legacyMetrics = metricsFromEdges(legacySelectedEdges, mission.request.targetDistanceKm);
+  const legacyStartsAtStart = routeStartsAtClosestNode(graph, mission, legacySelectedEdges);
   let selectedEdges = legacySelectedEdges;
   let selectedByComponentFirst = false;
-  if (assemblerMode === 'urban_nature_loop' && legacyMetrics.naturalDwellKm < mission.target.minNaturalDwellKm) {
-    const componentFirstEdges = selectUrbanNatureComponentRouteEdges(graph, mission, parkEdges);
+  if (assemblerMode === 'urban_nature_loop' && (!legacyStartsAtStart || legacyMetrics.naturalDwellKm < mission.target.minNaturalDwellKm)) {
+    const componentFirstEdges = selectUrbanNatureComponentRouteEdges(graph, mission, urbanNatureConnectorEdges(graph));
     if (componentFirstEdges) {
       selectedEdges = componentFirstEdges;
       selectedByComponentFirst = true;
@@ -74,7 +76,20 @@ function assembleParkLikeMissionV3(
     const connectivityBlocker = assemblerMode === 'urban_nature_loop'
       ? 'urban_nature_corridor_not_reachable_from_start'
       : 'park_loop_edges_not_continuous_from_start';
-    return createNoCandidateAssemblerResultV3(mission, connectivityBlocker);
+    const noCandidate = createNoCandidateAssemblerResultV3(mission, connectivityBlocker);
+    noCandidate.diagnostics.targetEntryAttempted = true;
+    noCandidate.diagnostics.closureAttempted = true;
+    noCandidate.diagnostics.observationOnly = {
+      parkCapacityKm,
+      requestedMinDistanceKm: mission.request.minDistanceKm,
+      compromise: mission.relaxations.find((relaxation) => relaxation.allowed)?.userFacingCompromise ?? null,
+      targetOpportunity: opportunityDiagnostics.targetOpportunity,
+      selectedOpportunity: opportunityDiagnostics.selectedOpportunity,
+      availableOpportunity: opportunityDiagnostics.availableOpportunity,
+      nearestNonPavedAllowedEdges: opportunityDiagnostics.nearestNonPavedAllowedEdges,
+      urbanNatureOpportunityComponents: opportunityDiagnostics.urbanNatureOpportunityComponents,
+    };
+    return noCandidate;
   }
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
@@ -122,6 +137,16 @@ function assembleParkLikeMissionV3(
       blocker,
     ],
   };
+}
+
+function routeStartsAtClosestNode(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  edges: EnrichedEdge[],
+): boolean {
+  const nodeIds = nodeIdsFromContinuousEdges(edges);
+  const startNodeId = closestNodeId(graph, mission.request.start);
+  return Boolean(nodeIds && startNodeId && nodeIds[0] === startNodeId);
 }
 
 function createParkCandidate(
@@ -218,6 +243,15 @@ function routeableUrbanParkEdges(
 ): EnrichedEdge[] {
   const allowedKinds = allowedUrbanParkComponentKinds(assemblerMode);
   return Array.from(graph.edges.values()).filter((edge) => allowedKinds.has(classifyEdgeSemanticsV3(edge).componentKind));
+}
+
+function urbanNatureConnectorEdges(graph: EnrichedGraph): EnrichedEdge[] {
+  return Array.from(graph.edges.values()).filter((edge) => {
+    const semantics = classifyEdgeSemanticsV3(edge);
+    if (allowedUrbanParkComponentKinds('urban_nature_loop').has(semantics.componentKind)) return true;
+    if (semantics.componentKind !== 'residential') return false;
+    return ['residential', 'living_street', 'service', 'footway', 'pedestrian', 'cycleway'].includes(edge.highway);
+  });
 }
 
 function buildUrbanParkOpportunityDiagnostics(
@@ -424,6 +458,7 @@ function buildUrbanNatureOpportunityComponents(
 
 function isUrbanNatureOpportunityEdge(edge: EnrichedEdge): boolean {
   const semantics = classifyEdgeSemanticsV3(edge);
+  if (semantics.componentKind === 'river_corridor') return true;
   if (semantics.surfaceEvidence === 'explicit_paved' || semantics.surfaceEvidence === 'road_like_unknown') return false;
   return semantics.candidateNaturalWeight > 0;
 }
