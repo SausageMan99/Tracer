@@ -52,7 +52,12 @@ export function assembleTransitionToWoodsMissionV3(
   const cleanReturnedPlans = returnedPlans.filter((plan) => topologyLaneFromPlan(plan, mission) !== 'long_dirty'
     && sumLengthKm([...plan.accessPath.edges, ...plan.targetRoute.edges, ...plan.closurePath.edges]) >= mission.request.minDistanceKm * 0.95);
   const cleanShortLateralFallbackPlans = returnedPlans.filter((plan) => isCleanShortLateralFallbackPlan(plan, mission));
-  const preferredCleanPlans = uniquePlansById([...cleanReturnedPlans, ...cleanShortLateralFallbackPlans], mission);
+  const cleanShortLateralEvidencePlans = eligiblePlans.filter((plan) => isCleanShortLateralEvidencePlan(plan, mission));
+  const preferredCleanPlans = uniquePlansById([
+    ...cleanReturnedPlans,
+    ...cleanShortLateralFallbackPlans,
+    ...cleanShortLateralEvidencePlans,
+  ], mission);
   const selectedPlan = (preferredCleanPlans.length > 0 ? preferredCleanPlans : returnedPlans.length > 0 ? returnedPlans : eligiblePlans)
     .sort((left, right) => scoreTransitionPlan(right, mission) - scoreTransitionPlan(left, mission))[0] ?? null;
   const selectedAccessPath = selectedPlan?.accessPath ?? null;
@@ -69,7 +74,8 @@ export function assembleTransitionToWoodsMissionV3(
   }
 
   const selectedIsCleanShortLateralFallback = isCleanShortLateralFallbackPlan(selectedPlan, mission);
-  if (targetDwellKm < mission.target.minNaturalDwellKm && !selectedIsCleanShortLateralFallback) {
+  const selectedIsCleanShortLateralEvidence = isCleanShortLateralEvidencePlan(selectedPlan, mission);
+  if (targetDwellKm < mission.target.minNaturalDwellKm && !selectedIsCleanShortLateralFallback && !selectedIsCleanShortLateralEvidence) {
     return createNoCandidateAssemblerResultV3(mission, 'insufficient_natural_target_dwell');
   }
 
@@ -126,8 +132,11 @@ export function assembleTransitionToWoodsMissionV3(
       phaseBlockers: {},
     },
   });
-  const selectedCandidate = portfolio.candidates.find((candidate) => candidate.id === portfolio.selectedCandidateId)
+  const portfolioSelectedCandidate = portfolio.candidates.find((candidate) => candidate.id === portfolio.selectedCandidateId)
     ?? selectCandidateFromPortfolioV3(portfolio);
+  const selectedCandidate = selectedIsCleanShortLateralEvidence
+    ? { ...validCandidate, lifecycle: 'selected' as const, selected: true }
+    : portfolioSelectedCandidate;
 
   return {
     mission,
@@ -157,6 +166,7 @@ export function assembleTransitionToWoodsMissionV3(
     warnings: [
       'transition_to_woods_used_paved_connector_before_natural_dwell',
       ...(selectedIsCleanShortLateralFallback ? ['transition_to_woods_clean_short_lateral_under_requested_dwell'] : []),
+      ...(selectedIsCleanShortLateralEvidence ? ['transition_to_woods_selected_clean_short_over_long_dirty_repeat'] : []),
     ],
   };
 }
@@ -609,8 +619,11 @@ function isEligibleTransitionPlan(plan: TransitionRoutePlan, mission: MissionCon
 }
 
 function isCleanShortLateralEvidencePlan(plan: TransitionRoutePlan, mission: MissionContractV3): boolean {
+  const distanceKm = sumLengthKm([...plan.accessPath.edges, ...plan.targetRoute.edges, ...plan.closurePath.edges]);
   return plan.productionSource === 'target_lateral'
-    && plan.targetRoute.naturalDwellKm >= mission.target.minNaturalDwellKm * 0.9;
+    && topologyLaneFromPlan(plan, mission) === 'clean_short'
+    && plan.targetRoute.naturalDwellKm >= mission.target.minNaturalDwellKm * 0.9
+    && distanceKm >= mission.request.minDistanceKm * 0.75;
 }
 
 function isCleanShortLateralFallbackPlan(plan: TransitionRoutePlan, mission: MissionContractV3): boolean {

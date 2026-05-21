@@ -7,6 +7,8 @@ import {
   isAdjustedTargetRepeatWithinEvidenceBudgetV3,
 } from '@/lib/engine-v3/assemblers/graph-route-assembly-core';
 import { decideOutcomeV3 } from '@/lib/engine-v3/outcome-decider';
+import { buildMissionContractV3 } from '@/lib/engine-v3/mission-contract-builder';
+import { assembleTransitionToWoodsMissionV3 } from '@/lib/engine-v3/assemblers/transition-to-woods-assembler';
 import type { CorridorMissionV3, RouteIntentV3, TerrainComponentKindV3 } from '@/lib/engine-v3/types';
 
 function node(id: string, index: number): GraphNode {
@@ -494,6 +496,30 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(route.metrics.targetRepeatKm).toBe(0);
     expect(route.metrics.repeatRatio).toBeLessThanOrEqual(0.1);
     expect(route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(targetKm * 0.45);
+  });
+
+  it('prefers clean short transition evidence over a returned long-dirty target repeat loop', () => {
+    const targetKm = 8;
+    const routeIntent = intent(targetKm, ['field_paths']);
+    const contract = buildMissionContractV3(routeIntent);
+    if (!contract) throw new Error('expected transition_to_woods mission contract');
+
+    const result = assembleTransitionToWoodsMissionV3(
+      graph([
+        edge('connector-out', 's', 'a', 0.05, 'asphalt', 'residential', 'urban'),
+        edge('field-clean-1', 'a', 'b', 1.32, 'ground', 'path', null),
+        edge('field-clean-2', 'b', 'c', 1.32, 'ground', 'track', null),
+        edge('field-clean-3', 'c', 'd', 1.32, 'ground', 'path', null),
+        edge('field-clean-4', 'd', 'e', 1.32, 'ground', 'track', null),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.selectedReason).toBe('clean_short');
+    expect(result.selectedCandidate?.selectedReason).not.toBe('long_dirty');
+    expect(result.selectedCandidate?.metrics.targetRepeatKm).toBe(0);
+    expect(result.selectedCandidate?.metrics.distanceProducedKm).toBeLessThan(targetKm * 0.85);
+    expect(result.selectedCandidate?.returned).toBe(false);
   });
 
   it('reports reachable non-paved target evidence from the start node without changing the outcome gates', () => {
