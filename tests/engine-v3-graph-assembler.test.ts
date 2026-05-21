@@ -547,6 +547,32 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     }
   });
 
+  it('refuses disconnected urban-nature fragments instead of stitching them with implicit chords', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleUrbanNatureLoopMissionV3(
+      graph([
+        edge('start-road-not-allowed', 's', 'r', 0.1, 'asphalt', 'residential', 'urban'),
+        edge('isolated-park-1', 'a', 'b', 1.5, 'grass', 'path', 'park'),
+        edge('isolated-park-2', 'b', 'c', 1.5, 'grass', 'path', 'park'),
+        edge('isolated-park-3', 'c', 'a', 1.5, 'grass', 'path', 'park'),
+        edge('other-park-1', 'x', 'y', 1.5, 'grass', 'path', 'park'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate).toBeNull();
+    expect(result.status).toBe('no_candidate');
+    expect(result.diagnostics.blocker).toBe('urban_nature_corridor_not_reachable_from_start');
+  });
+
   it('dispatches urban_nature_loop through an explicit targetOpportunity contract instead of a generic park candidate', () => {
     const urbanIntent: RouteIntentV3 = {
       ...intent(6, []),

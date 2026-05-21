@@ -70,6 +70,12 @@ function assembleParkLikeMissionV3(
   }
   const opportunityDiagnostics = buildUrbanParkOpportunityDiagnostics(graph, mission, parkEdges, selectedEdges, selectedByComponentFirst);
   const adjustableCandidate = createParkCandidate(graph, mission, selectedEdges, blocker, assemblerMode);
+  if (!adjustableCandidate) {
+    const connectivityBlocker = assemblerMode === 'urban_nature_loop'
+      ? 'urban_nature_corridor_not_reachable_from_start'
+      : 'park_loop_edges_not_continuous_from_start';
+    return createNoCandidateAssemblerResultV3(mission, connectivityBlocker);
+  }
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
     candidates: [adjustableCandidate],
@@ -124,8 +130,10 @@ function createParkCandidate(
   edges: EnrichedEdge[],
   blocker: string,
   assemblerMode: 'park_loop' | 'urban_nature_loop' = 'park_loop',
-): RouteCandidateV3 {
-  const nodeIds = nodeIdsFromEdges(edges);
+): RouteCandidateV3 | null {
+  const nodeIds = nodeIdsFromContinuousEdges(edges);
+  const startNodeId = closestNodeId(graph, mission.request.start);
+  if (!nodeIds || (startNodeId && nodeIds[0] !== startNodeId)) return null;
   const urbanNature = assemblerMode === 'urban_nature_loop';
 
   return {
@@ -889,9 +897,24 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): Rout
   };
 }
 
-function nodeIdsFromEdges(edges: EnrichedEdge[]): string[] {
+function nodeIdsFromContinuousEdges(edges: EnrichedEdge[]): string[] | null {
   if (edges.length === 0) return [];
-  return [edges[0].from, ...edges.map((edge) => edge.to)];
+  const nodeIds = [edges[0].from];
+  let current = edges[0].from;
+  for (const edge of edges) {
+    if (edge.from === current) {
+      nodeIds.push(edge.to);
+      current = edge.to;
+      continue;
+    }
+    if (edge.to === current) {
+      nodeIds.push(edge.from);
+      current = edge.from;
+      continue;
+    }
+    return null;
+  }
+  return nodeIds;
 }
 
 function emptyPortfolioCounts(): CandidatePortfolioV3['counts'] {
