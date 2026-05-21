@@ -399,6 +399,83 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     });
   });
 
+  it('groups urban-nature candidate components and explains why visible input opportunity is excluded from the park lane', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleParkLoopMissionV3(
+      graph([
+        { ...edge('paved-safe-1', 's', 'a', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-2', 'a', 'b', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-3', 'b', 'c', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-return', 'c', 's', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        edge('visible-forest-path-1', 'a', 'x', 0.8, 'ground', 'path', 'forest'),
+        edge('visible-forest-path-2', 'x', 'y', 0.8, 'ground', 'path', 'forest'),
+        edge('visible-forest-path-3', 'y', 'a', 0.8, 'ground', 'path', 'forest'),
+      ]),
+      contract,
+    );
+
+    const diagnostics = result.diagnostics.observationOnly.urbanNatureOpportunityComponents as Array<Record<string, unknown>>;
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        capacityKm: 2.4,
+        candidateNaturalKm: 2.4,
+        routeableCandidateKm: 0,
+        reachable: true,
+        closurePossible: true,
+        exclusionReason: 'excluded_from_routeableUrbanParkEdges_component_kind_or_contract',
+        componentKinds: expect.objectContaining({ forest: 2.4 }),
+        surfaceEvidenceKm: expect.objectContaining({ explicit_natural: 2.4 }),
+      }),
+    ]));
+  });
+
+  it('builds an urban-nature component-first candidate instead of staying on a paved-safe decoy loop', () => {
+    const urbanIntent: RouteIntentV3 = {
+      ...intent(6, []),
+      strategy: 'urban_nature_loop',
+      request: { ...intent(6, []).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(6, []).constraints, targetComponents: [], maxPavedRatio: 0.9, minNaturalDwellRatio: 0.1 },
+    };
+    const contract = buildMissionContractV3(urbanIntent);
+    if (!contract) throw new Error('expected urban-nature mission contract');
+
+    const result = assembleParkLoopMissionV3(
+      graph([
+        { ...edge('paved-safe-1', 's', 'a', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-2', 'a', 'b', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-3', 'b', 'c', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-safe-return', 'c', 's', 1.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('urban-nature-access', 's', 'n1', 0.2, 'asphalt', 'footway', 'urban'), scenic: true },
+        edge('urban-nature-soft-1', 'n1', 'n2', 1.1, 'grass', 'path', 'park'),
+        edge('urban-nature-soft-2', 'n2', 'n3', 1.1, 'ground', 'path', 'park'),
+        edge('urban-nature-soft-3', 'n3', 'n1', 1.1, 'grass', 'path', 'park'),
+        { ...edge('urban-nature-return', 'n1', 's', 0.2, 'asphalt', 'footway', 'urban'), scenic: true },
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.edgeIds).toEqual(expect.arrayContaining([
+      'urban-nature-soft-1',
+      'urban-nature-soft-2',
+      'urban-nature-soft-3',
+    ]));
+    expect(result.selectedCandidate?.metrics.naturalDwellKm).toBeGreaterThanOrEqual(3.3);
+    expect(result.selectedCandidate?.metrics.pavedRatio).toBeLessThan(0.2);
+    const diagnostics = result.diagnostics.observationOnly.urbanNatureOpportunityComponents as Array<Record<string, unknown>>;
+    expect(diagnostics[0]).toEqual(expect.objectContaining({
+      selectedCandidateKm: 3.3,
+      exclusionReason: 'selected_by_component_first_lane',
+    }));
+  });
+
   it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {
     const targetKm = 5.5;
     const route = assembleGraphRouteV3(
