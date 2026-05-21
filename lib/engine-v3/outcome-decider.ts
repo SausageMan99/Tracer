@@ -35,6 +35,14 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
     };
   }
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
+  const topologyLimitedRepeat = transitionTopologyLimitedTargetRepeat(intent, route);
+  if (topologyLimitedRepeat) {
+    return {
+      type: 'refused',
+      reason: 'trail topology insufficient: clean target traversal cannot support the requested distance without excessive repeat',
+      details: unique([topologyLimitedRepeat, ...details]),
+    };
+  }
 
   if (hardRefusals.length > 0 || severeDistanceGap) {
     return {
@@ -238,6 +246,41 @@ function isSmallParkOverclaim(intent: RouteIntentV3, route: AssembledRouteV3): b
   const distanceWasReduced = route.metrics.distanceProducedKm < intent.constraints.targetDistanceKm;
 
   return !distanceWasReduced && parkCapacityKm < intent.constraints.targetDistanceKm;
+}
+
+function transitionTopologyLimitedTargetRepeat(intent: RouteIntentV3, route: AssembledRouteV3): string | null {
+  if (intent.strategy !== 'transition_to_woods') return null;
+  if (!isTrailRequest(intent)) return null;
+  if (route.assemblyDiagnostics?.selectedReason !== 'mission-driven:long_dirty') return null;
+  if (route.metrics.targetRepeatKm <= 0 || route.metrics.repeatRatio <= STRICT_OUTCOME_RULES.repeatAdjustRatio) return null;
+
+  const production = recordField(route.assemblyDiagnostics.candidateProductionDiagnostics, 'candidateProduction');
+  const targetLateralSummary = recordField(production, 'targetLateralSummary');
+  if (targetLateralSummary?.topologyInsufficient !== true) return null;
+
+  const requestedDwellKm = intent.constraints.targetDistanceKm * intent.constraints.minNaturalDwellRatio;
+  const bestCleanLateralNaturalDwellKm = numberField(targetLateralSummary, 'bestCleanLateralNaturalDwellKm');
+  const cleanDwellDetail = bestCleanLateralNaturalDwellKm === null
+    ? `requested clean natural dwell ${round(requestedDwellKm)}km was not reachable without repeating target edges`
+    : `best clean lateral natural dwell ${round(bestCleanLateralNaturalDwellKm)}km below requested ${round(requestedDwellKm)}km`;
+
+  return [
+    'topology_insufficient: transition_to_woods only produced a long_dirty repeated target route',
+    cleanDwellDetail,
+    `targetRepeat ${round(route.metrics.targetRepeatKm)}km and repeatRatio ${round(route.metrics.repeatRatio)} exceed clean trail tolerance`,
+  ].join('; ');
+}
+
+function recordField(value: unknown, key: string): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const field = (value as Record<string, unknown>)[key];
+  if (!field || typeof field !== 'object' || Array.isArray(field)) return null;
+  return field as Record<string, unknown>;
+}
+
+function numberField(value: Record<string, unknown> | null, key: string): number | null {
+  const field = value?.[key];
+  return typeof field === 'number' && Number.isFinite(field) ? field : null;
 }
 
 interface BuildOutcomeEvidenceV3Input {

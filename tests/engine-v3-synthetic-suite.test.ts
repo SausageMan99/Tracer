@@ -189,6 +189,16 @@ describe('V3 mission dispatcher synthetic behavior', () => {
       makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.7, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
       makeEdge({ id: 'short-clean-branch-1', from: 'woods-entry', to: 'branch-1', lengthKm: 1.6, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
       makeEdge({ id: 'short-clean-branch-2', from: 'branch-1', to: 'dead-end', lengthKm: 1.6, surface: 'dirt', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      ...Array.from({ length: 10 }, (_, index) => makeEdge({
+        id: `audit-context-residential-${index}`,
+        from: `ctx-${index}`,
+        to: `ctx-${index + 1}`,
+        lengthKm: 0.2,
+        surface: 'asphalt' as const,
+        highway: 'residential' as const,
+        componentKind: 'residential' as const,
+        landcoverClass: 'urban' as const,
+      })),
     ]);
     const mission = makeMission({
       id: 'mission-transition-lateral-insufficient-dwell',
@@ -216,6 +226,20 @@ describe('V3 mission dispatcher synthetic behavior', () => {
       requestedNaturalDwellKm: 3.6,
     });
     expect(result.selectedCandidate?.selectedReason).toBe('long_dirty');
+
+    const generated = generateRouteV3FromGraph(
+      { start: mission.request.start, targetDistanceKm: mission.request.targetDistanceKm, mode: 'trail', sport: 'running', loop: true },
+      graph,
+    );
+    expect(generated.outcome.type).toBe('refused');
+    expect(generated.outcome.type === 'refused' ? generated.outcome.reason : '').toBe(
+      'trail topology insufficient: clean target traversal cannot support the requested distance without excessive repeat',
+    );
+    expect(generated.outcome.type === 'refused' ? generated.outcome.details ?? [] : []).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('topology_insufficient: transition_to_woods only produced a long_dirty repeated target route'),
+      ]),
+    );
   });
 
   it('transition_to_woods selects adjusted clean_short lateral over repetitive long_dirty when dwell is narrowly under target', () => {
