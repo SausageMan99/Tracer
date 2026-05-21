@@ -6,6 +6,7 @@ const STRICT_OUTCOME_RULES = {
   refusedDistanceRatio: 0.7,
   repeatAdjustRatio: 0.2,
   repeatRefuseRatio: 0.35,
+  transitionTargetRepeatRefuseRatio: 0.3,
   overlapAdjustRatio: 0.2,
   overlapRefuseRatio: 0.35,
   busyRoadAdjustRatio: 0.2,
@@ -276,6 +277,7 @@ function isModerateTransitionRepeatWithUsefulEvidence(intent: RouteIntentV3, rou
   if (!isTrailRequest(intent)) return false;
   if (route.assemblyDiagnostics?.selectedReason !== 'mission-driven:long_dirty') return false;
   if (route.metrics.repeatRatio >= STRICT_OUTCOME_RULES.repeatRefuseRatio) return false;
+  if (route.metrics.targetRepeatKm > 0 && route.metrics.repeatRatio >= STRICT_OUTCOME_RULES.transitionTargetRepeatRefuseRatio) return false;
   if (route.metrics.overlapRatio >= STRICT_OUTCOME_RULES.overlapRefuseRatio) return false;
   if (distanceRatio < STRICT_OUTCOME_RULES.minimumGeneratedDistanceRatio) return false;
   if (route.metrics.pavedRatio > intent.constraints.maxPavedRatio) return false;
