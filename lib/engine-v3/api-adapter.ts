@@ -4,13 +4,14 @@ import type { RouteRequest } from "../types";
 import { planRouteIntentV3 } from "./route-intent-planner";
 import { generateRouteV3FromGraph } from "./route-generator";
 import { buildTerrainSnapshotV3FromGraph } from "./terrain-snapshot-builder";
-import type { RouteMetricsV3, RouteModeV3, RouteOutcomeV3, RouteStrategyV3, TerrainComponentV3, TerrainSnapshotV3 } from "./types";
+import type { ProductOutcomeLabelV3, RouteMetricsV3, RouteModeV3, RouteOutcomeV3, RouteStrategyV3, TerrainComponentV3, TerrainSnapshotV3 } from "./types";
 
 export type GenerateRouteV3ApiOutcome = "generated" | "adjusted" | "refused";
 
 export interface GenerateRouteV3ApiResponse {
   engine: "v3-clean-room";
   betaOutcome: GenerateRouteV3ApiOutcome;
+  betaOutcomeLabel: ProductOutcomeLabelV3;
   metrics: RouteMetricsV3 | null;
   reason: string;
   warnings: string[];
@@ -24,6 +25,7 @@ export interface GenerateRouteV3ApiResponse {
       engine: "v3-clean-room";
       strategy: string;
       betaOutcome: GenerateRouteV3ApiOutcome;
+      betaOutcomeLabel: ProductOutcomeLabelV3;
     };
   } | null;
   gpxAvailable: boolean;
@@ -92,6 +94,7 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
   }, graph);
 
   const betaOutcome = generated.outcome.type;
+  const betaOutcomeLabel = generated.outcome.productLabel ?? fallbackProductLabel(betaOutcome);
   const coordinates = generated.route.geometry.coordinates;
   const hasGeometry = betaOutcome !== "refused" && coordinates.length >= 2;
   const routeGeoJson = hasGeometry
@@ -105,6 +108,7 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
         engine: generated.engine,
         strategy: generated.intent.strategy,
         betaOutcome,
+        betaOutcomeLabel,
       },
     }
     : null;
@@ -112,6 +116,7 @@ export async function generateRouteV3Api(request: RouteRequest): Promise<Generat
   return {
     engine: generated.engine,
     betaOutcome,
+    betaOutcomeLabel,
     metrics: generated.route.metrics,
     reason: reasonForOutcome(generated.outcome),
     warnings: unique([
@@ -199,12 +204,19 @@ function refusedContract(reason: string, warnings: string[]): GenerateRouteV3Api
   return {
     engine: "v3-clean-room",
     betaOutcome: "refused",
+    betaOutcomeLabel: "refused_topology",
     metrics: null,
     reason,
     warnings,
     routeGeoJson: null,
     gpxAvailable: false,
   };
+}
+
+function fallbackProductLabel(outcome: GenerateRouteV3ApiOutcome): ProductOutcomeLabelV3 {
+  if (outcome === "generated") return "generated_trail";
+  if (outcome === "adjusted") return "adjusted_trail";
+  return "refused_other";
 }
 
 function unique(values: string[]): string[] {

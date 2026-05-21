@@ -1,3 +1,5 @@
+import type { ProductOutcomeLabelV3 } from '../types';
+
 export type ProductVerdictV3 =
   | 'good_route'
   | 'acceptable_adjusted'
@@ -9,6 +11,7 @@ export interface OutcomeEvidenceV3 {
   missionId: string;
   selectedCandidateId: string | null;
   productOutcome: 'generated' | 'adjusted' | 'refused';
+  productLabel: ProductOutcomeLabelV3;
   primaryReason: string;
   userFacingSummary: string;
   reasons: string[];

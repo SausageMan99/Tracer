@@ -1,4 +1,4 @@
-import type { AssembledRouteV3, RouteIntentV3, RouteOutcomeV3 } from './types';
+import type { AssembledRouteV3, ProductOutcomeLabelV3, RouteIntentV3, RouteOutcomeV3 } from './types';
 import type { OutcomeEvidenceV3, ProductVerdictV3, RouteCandidateV3 } from './contracts';
 
 const STRICT_OUTCOME_RULES = {
@@ -17,14 +17,14 @@ const STRICT_OUTCOME_RULES = {
 } as const;
 
 export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3): RouteOutcomeV3 {
-  if (intent.outcome.type === 'refused') return cloneOutcome(intent.outcome);
+  if (intent.outcome.type === 'refused') return withProductLabel(cloneOutcome(intent.outcome), intent, route);
 
   const details = diagnostics(intent, route);
   const distanceRatio = ratio(route.metrics.distanceProducedKm, intent.constraints.targetDistanceKm);
   const severeDistanceGap = distanceRatio < STRICT_OUTCOME_RULES.refusedDistanceRatio;
   if (route.assemblyDiagnostics?.assemblyTimeout) {
     const timeout = route.assemblyDiagnostics.assemblyTimeout;
-    return {
+    return withProductLabel({
       type: 'refused',
       reason: 'assembly timeout: V3 graph assembly exceeded its bounded diagnostic budget',
       details: [
@@ -32,43 +32,43 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
         `lastProgress ${timeout.lastProgress}; candidates ${timeout.candidateCount}; frontier ${timeout.frontierSize}; cycles ${timeout.cycleCount}`,
         ...details,
       ],
-    };
+    }, intent, route);
   }
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
   const topologyLimitedRepeat = transitionTopologyLimitedTargetRepeat(intent, route);
   if (topologyLimitedRepeat) {
-    return {
+    return withProductLabel({
       type: 'refused',
       reason: 'trail topology insufficient: clean target traversal cannot support the requested distance without excessive repeat',
       details: unique([topologyLimitedRepeat, ...details]),
-    };
+    }, intent, route);
   }
 
   if (hardRefusals.length > 0 || severeDistanceGap) {
-    return {
+    return withProductLabel({
       type: 'refused',
       reason: hardRefusals[0] ?? 'assembled route does not meet minimal distance evidence',
       details,
-    };
+    }, intent, route);
   }
 
   if (intent.outcome.type === 'adjusted') {
-    return {
+    return withProductLabel({
       type: 'adjusted',
       summary: intent.outcome.summary,
       compromises: unique([...intent.outcome.compromises, ...details]),
-    };
+    }, intent, route);
   }
 
   if (adjustmentReasons(intent, route, distanceRatio).length > 0) {
-    return {
+    return withProductLabel({
       type: 'adjusted',
       summary: 'Route assembled with explicit compromises; not marked generated.',
       compromises: details,
-    };
+    }, intent, route);
   }
 
-  return { type: 'generated', summary: 'Route assembled within V3 clean-room constraints.' };
+  return withProductLabel({ type: 'generated', summary: 'Route assembled within V3 clean-room constraints.' }, intent, route);
 }
 
 function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, distanceRatio: number): string[] {
@@ -316,6 +316,7 @@ export function buildOutcomeEvidenceV3(input: BuildOutcomeEvidenceV3Input): Outc
     missionId: input.missionId,
     selectedCandidateId: refused ? null : input.selectedCandidate?.id ?? null,
     productOutcome,
+    productLabel: input.outcome.productLabel ?? (productOutcome === 'generated' ? 'generated_trail' : productOutcome === 'adjusted' ? 'adjusted_trail' : 'refused_other'),
     primaryReason,
     userFacingSummary: summaryFromOutcome(productOutcome, input.outcome, primaryReason),
     reasons,
@@ -360,6 +361,63 @@ function productVerdict(productOutcome: OutcomeEvidenceV3['productOutcome']): Pr
   if (productOutcome === 'generated') return 'good_route';
   if (productOutcome === 'adjusted') return 'acceptable_adjusted';
   return 'honest_refusal';
+}
+
+function withProductLabel(outcome: RouteOutcomeV3, intent: RouteIntentV3, route: AssembledRouteV3): RouteOutcomeV3 {
+  return { ...outcome, productLabel: productLabelForOutcome(outcome, intent, route) };
+}
+
+function productLabelForOutcome(outcome: RouteOutcomeV3, intent: RouteIntentV3, route: AssembledRouteV3): ProductOutcomeLabelV3 {
+  if (outcome.type === 'refused') return refusedProductLabel(outcome, intent);
+
+  const distanceRatio = ratio(route.metrics.distanceProducedKm, intent.constraints.targetDistanceKm);
+  if (outcome.type === 'generated') {
+    return isUrbanNaturePromise(intent) ? 'generated_urban_nature' : 'generated_trail';
+  }
+
+  if (isStrongTrailEvidence(intent, route, distanceRatio)) return 'generated_trail';
+  if (isUrbanNaturePromise(intent) || isUrbanNatureEvidence(route)) return 'adjusted_urban_nature';
+  if (isPavedScenicEvidence(route)) return 'adjusted_paved_scenic';
+  if (distanceRatio < STRICT_OUTCOME_RULES.minimumGeneratedDistanceRatio) return 'adjusted_short';
+  return 'adjusted_trail';
+}
+
+function refusedProductLabel(outcome: Extract<RouteOutcomeV3, { type: 'refused' }>, intent: RouteIntentV3): ProductOutcomeLabelV3 {
+  const evidence = [outcome.reason, ...(outcome.details ?? [])].join(' ').toLowerCase();
+  if (evidence.includes('assembly timeout')) return 'refused_assembly_timeout';
+  if (evidence.includes('repeat') || evidence.includes('overlap') || evidence.includes('long_dirty')) return 'refused_repeat_overlap';
+  if (evidence.includes('poor graph') || evidence.includes('no assembled route evidence')) return 'refused_poor_graph';
+  if (evidence.includes('gps geometry')) return 'refused_no_geometry';
+  if (evidence.includes('too short') || evidence.includes('distanceproduced')) return 'refused_topology';
+  if (evidence.includes('topology') || evidence.includes('no assembled route can support') || intent.strategy === 'unroutable') return 'refused_topology';
+  return 'refused_other';
+}
+
+function isUrbanNaturePromise(intent: RouteIntentV3): boolean {
+  return intent.strategy === 'urban_nature_loop' || intent.request?.mode === 'nature_urbaine';
+}
+
+function isUrbanNatureEvidence(route: AssembledRouteV3): boolean {
+  const strictTrailKm = route.metrics.strictTrailKm ?? 0;
+  const pathTrackUnknownKm = route.metrics.pathTrackUnknownKm ?? 0;
+  const naturalDwellKm = route.metrics.naturalDwellKm;
+  return strictTrailKm <= 0.1 && (pathTrackUnknownKm > 0.5 || naturalDwellKm > 0.5);
+}
+
+function isPavedScenicEvidence(route: AssembledRouteV3): boolean {
+  return route.metrics.pavedRatio >= 0.55 || route.metrics.visitedComponents.includes('scenic_paved');
+}
+
+function isStrongTrailEvidence(intent: RouteIntentV3, route: AssembledRouteV3, distanceRatio: number): boolean {
+  if (!isTrailRequest(intent)) return false;
+  const strictTrailKm = route.metrics.strictTrailKm ?? 0;
+  const strictTrailRatio = ratio(strictTrailKm, Math.max(route.metrics.distanceProducedKm, 0.001));
+  return distanceRatio >= STRICT_OUTCOME_RULES.minimumGeneratedDistanceRatio
+    && strictTrailRatio >= 0.65
+    && route.metrics.naturalWayRatio >= 0.65
+    && route.metrics.pavedRatio <= intent.constraints.maxPavedRatio
+    && route.metrics.repeatRatio <= STRICT_OUTCOME_RULES.repeatAdjustRatio
+    && route.metrics.overlapRatio <= STRICT_OUTCOME_RULES.overlapAdjustRatio;
 }
 
 function hasCandidateGeometry(candidate: RouteCandidateV3 | null): boolean {

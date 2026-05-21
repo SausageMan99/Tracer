@@ -62,10 +62,24 @@ export interface TerrainSnapshotV3 {
   components: TerrainComponentV3[];
 }
 
+export type ProductOutcomeLabelV3 =
+  | 'generated_trail'
+  | 'generated_urban_nature'
+  | 'adjusted_trail'
+  | 'adjusted_urban_nature'
+  | 'adjusted_paved_scenic'
+  | 'adjusted_short'
+  | 'refused_topology'
+  | 'refused_poor_graph'
+  | 'refused_repeat_overlap'
+  | 'refused_no_geometry'
+  | 'refused_assembly_timeout'
+  | 'refused_other';
+
 export type RouteOutcomeV3 =
-  | { type: 'generated'; summary: string }
-  | { type: 'adjusted'; summary: string; compromises: string[] }
-  | { type: 'refused'; reason: string; details?: string[] };
+  | { type: 'generated'; summary: string; productLabel?: ProductOutcomeLabelV3 }
+  | { type: 'adjusted'; summary: string; compromises: string[]; productLabel?: ProductOutcomeLabelV3 }
+  | { type: 'refused'; reason: string; details?: string[]; productLabel?: ProductOutcomeLabelV3 };
 
 export type NormalizedRequestResultV3 =
   | { status: 'accepted'; request: NormalizedRouteRequestV3 }

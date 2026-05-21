@@ -205,7 +205,7 @@ function buildCleanTargetWalk(
         usedWithEdge.add(edge.edge.id);
         return {
           edge,
-          scoreKm: edgeLength(edge) + longestUnusedCorePathKm(edge.to, usedWithEdge, coreEdgeIds, adjacency, targetComponents),
+          scoreKm: edgeLength(edge) + reachableUnusedCoreKm(edge.to, usedWithEdge, coreEdgeIds, adjacency, targetComponents),
         };
       })
       .sort((a, b) => b.scoreKm - a.scoreKm || edgeLength(b.edge) - edgeLength(a.edge))[0]?.edge;
@@ -418,37 +418,33 @@ function longestCleanTargetPathKm(
   return best;
 }
 
-function longestUnusedCorePathKm(
+function reachableUnusedCoreKm(
   startNodeId: string,
   used: Set<string>,
   coreEdgeIds: Set<string>,
   adjacency: Map<string, DirectedTraversalEdgeV3[]>,
   targetComponents: Set<TerrainComponentKindV3>,
 ): number {
-  let best = 0;
-  const maxSteps = Math.min(96, coreEdgeIds.size);
-  let expansions = 0;
-  const maxExpansions = 5_000;
-  const stack: Array<{ nodeId: string; distanceKm: number; usedEdgeIds: Set<string> }> = [
-    { nodeId: startNodeId, distanceKm: 0, usedEdgeIds: new Set(used) },
-  ];
+  const pending = [startNodeId];
+  const seenNodes = new Set<string>();
+  const seenEdges = new Set<string>();
+  let totalKm = 0;
 
-  while (stack.length > 0 && expansions < maxExpansions) {
-    expansions += 1;
-    const current = stack.pop();
-    if (!current) break;
-    best = Math.max(best, current.distanceKm);
-    if (current.usedEdgeIds.size - used.size >= maxSteps) continue;
-
-    for (const edge of adjacency.get(current.nodeId) ?? []) {
-      if (!coreEdgeIds.has(edge.edge.id) || !targetComponents.has(edge.kind) || current.usedEdgeIds.has(edge.edge.id)) continue;
-      const usedEdgeIds = new Set(current.usedEdgeIds);
-      usedEdgeIds.add(edge.edge.id);
-      stack.push({ nodeId: edge.to, distanceKm: current.distanceKm + edgeLength(edge), usedEdgeIds });
+  while (pending.length > 0) {
+    const current = pending.shift();
+    if (!current || seenNodes.has(current)) continue;
+    seenNodes.add(current);
+    for (const edge of adjacency.get(current) ?? []) {
+      if (!coreEdgeIds.has(edge.edge.id) || !targetComponents.has(edge.kind) || used.has(edge.edge.id)) continue;
+      if (!seenEdges.has(edge.edge.id)) {
+        seenEdges.add(edge.edge.id);
+        totalKm += edgeLength(edge);
+      }
+      if (!seenNodes.has(edge.to)) pending.push(edge.to);
     }
   }
 
-  return best;
+  return totalKm;
 }
 
 function findTargetBridges(
