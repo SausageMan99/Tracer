@@ -261,10 +261,28 @@ function closestNodeId(graph: EnrichedGraph, point: { lat: number; lng: number }
 
 function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): RouteMetricsV3 {
   const distanceProducedKm = sumLengthKm(edges);
-  const strictTrailKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).isStrictTrailLike));
-  const explicitPavedKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).surfaceEvidence === 'explicit_paved'));
-  const explicitNaturalKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).surfaceEvidence === 'explicit_natural'));
-  const visitedComponents = Array.from(new Set(edges.map((edge) => classifyEdgeSemanticsV3(edge).componentKind)));
+  let strictTrailKm = 0;
+  let explicitPavedKm = 0;
+  let explicitNaturalKm = 0;
+  let roadLikeUnknownKm = 0;
+  let pathTrackUnknownKm = 0;
+  let candidateNaturalKm = 0;
+  let unverifiedTrailCandidateKm = 0;
+  const visitedComponents = new Set<TerrainComponentKindV3>();
+
+  for (const edge of edges) {
+    const lengthKm = Math.max(0, edge.lengthKm);
+    const semantics = classifyEdgeSemanticsV3(edge);
+    visitedComponents.add(semantics.componentKind);
+    if (semantics.isStrictTrailLike) strictTrailKm += lengthKm;
+    if (semantics.surfaceEvidence === 'explicit_paved') explicitPavedKm += lengthKm;
+    if (semantics.surfaceEvidence === 'explicit_natural') explicitNaturalKm += lengthKm;
+    if (semantics.surfaceEvidence === 'road_like_unknown') roadLikeUnknownKm += lengthKm;
+    if (semantics.surfaceEvidence === 'path_track_unknown') pathTrackUnknownKm += lengthKm;
+    candidateNaturalKm += lengthKm * semantics.candidateNaturalWeight;
+    if (semantics.isUnverifiedTrailCandidate) unverifiedTrailCandidateKm += lengthKm;
+  }
+  const naturalDwellKm = candidateNaturalKm;
 
   return {
     targetDistanceKm,
@@ -272,21 +290,21 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number): Rout
     strictTrailKm,
     explicitNaturalKm,
     explicitPavedKm,
-    roadLikeUnknownKm: 0,
-    pathTrackUnknownKm: 0,
-    candidateNaturalKm: explicitNaturalKm,
-    trailCandidateKm: strictTrailKm,
-    unverifiedTrailCandidateKm: 0,
+    roadLikeUnknownKm,
+    pathTrackUnknownKm,
+    candidateNaturalKm,
+    trailCandidateKm: candidateNaturalKm,
+    unverifiedTrailCandidateKm,
     trailRatio: ratio(strictTrailKm, distanceProducedKm),
-    naturalWayRatio: ratio(explicitNaturalKm, distanceProducedKm),
-    pavedRatio: ratio(explicitPavedKm, distanceProducedKm),
-    pavedKm: explicitPavedKm,
-    nonPavedKm: Math.max(0, distanceProducedKm - explicitPavedKm),
-    naturalDwellKm: explicitNaturalKm,
+    naturalWayRatio: ratio(naturalDwellKm, distanceProducedKm),
+    pavedRatio: ratio(explicitPavedKm + roadLikeUnknownKm, distanceProducedKm),
+    pavedKm: explicitPavedKm + roadLikeUnknownKm,
+    nonPavedKm: Math.max(0, distanceProducedKm - explicitPavedKm - roadLikeUnknownKm),
+    naturalDwellKm,
     repeatEdgeKm: 0,
     targetRepeatKm: 0,
     connectorRepeatKm: 0,
-    visitedComponents,
+    visitedComponents: Array.from(visitedComponents),
     repeatRatio: 0,
     overlapRatio: 0,
     busyRoadRatio: 0,

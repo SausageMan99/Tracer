@@ -9,6 +9,7 @@ import {
 import { decideOutcomeV3 } from '@/lib/engine-v3/outcome-decider';
 import { buildMissionContractV3 } from '@/lib/engine-v3/mission-contract-builder';
 import { assembleTransitionToWoodsMissionV3 } from '@/lib/engine-v3/assemblers/transition-to-woods-assembler';
+import { assembleParkLoopMissionV3 } from '@/lib/engine-v3/assemblers/park-loop-assembler';
 import type { CorridorMissionV3, RouteIntentV3, TerrainComponentKindV3 } from '@/lib/engine-v3/types';
 
 function node(id: string, index: number): GraphNode {
@@ -259,6 +260,101 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     expect(generated.outcome.type).toBe('adjusted');
     if (generated.outcome.type !== 'adjusted') throw new Error('expected adjusted urban nature compromise');
     expect(generated.outcome.compromises.join(' ')).toContain('paved urban');
+  });
+
+  it('prioritizes a reachable soft urban-nature corridor over a longer paved loop at the start', () => {
+    const targetKm = 6;
+    const generated = generateRouteV3FromGraph(
+      {
+        start: { lat: 49, lng: -0.6 },
+        targetDistanceKm: targetKm,
+        sport: 'running',
+        mode: 'nature_urbaine',
+        loop: true,
+      },
+      graph([
+        { ...edge('paved-decoy-1', 's', 'a', 1.3, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-decoy-2', 'a', 'b', 1.3, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-decoy-3', 'b', 'c', 1.3, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('paved-decoy-return', 'c', 's', 1.3, 'asphalt', 'footway', 'urban'), scenic: true },
+        { ...edge('soft-corridor-access', 's', 'n1', 0.1, 'asphalt', 'footway', 'urban'), scenic: true },
+        edge('soft-corridor-1', 'n1', 'n2', 1.2, 'grass', 'path', 'park'),
+        edge('soft-corridor-2', 'n2', 'n3', 1.2, 'ground', 'path', 'park'),
+        edge('soft-corridor-3', 'n3', 'n4', 1.2, 'grass', 'path', 'park'),
+        edge('soft-corridor-4', 'n4', 'n5', 1.2, 'ground', 'path', 'park'),
+        { ...edge('soft-corridor-return', 'n5', 's', 0.3, 'asphalt', 'footway', 'urban'), scenic: true },
+      ]),
+    );
+
+    expect(['park_loop', 'urban_nature_loop']).toContain(generated.intent.strategy);
+    expect(generated.route.edges.map((candidate) => candidate.id)).toEqual([
+      'soft-corridor-access',
+      'soft-corridor-1',
+      'soft-corridor-2',
+      'soft-corridor-3',
+      'soft-corridor-4',
+      'soft-corridor-return',
+    ]);
+    expect(generated.route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.85);
+    expect(generated.route.metrics.naturalDwellKm).toBeGreaterThanOrEqual(4.8);
+    expect(generated.route.metrics.naturalWayRatio).toBeGreaterThan(0.9);
+    expect(generated.route.metrics.pavedRatio).toBeLessThan(0.1);
+  });
+
+  it('keeps mixed urban-park paths as unverified corridor evidence while preserving paved accounting', () => {
+    const targetKm = 6;
+    const generated = generateRouteV3FromGraph(
+      {
+        start: { lat: 49, lng: -0.6 },
+        targetDistanceKm: targetKm,
+        sport: 'running',
+        mode: 'nature_urbaine',
+        loop: true,
+      },
+      graph([
+        { ...edge('park-paved-access', 's', 'a', 0.4, 'asphalt', 'footway', 'urban'), scenic: true },
+        edge('park-mixed-path-1', 'a', 'b', 1.2, '', 'path', 'park'),
+        edge('park-mixed-path-2', 'b', 'c', 1.2, '', 'path', 'park'),
+        edge('park-mixed-path-3', 'c', 'd', 1.2, '', 'footway', 'park'),
+        edge('park-mixed-path-4', 'd', 'e', 1.2, '', 'path', 'park'),
+        { ...edge('park-paved-return', 'e', 's', 0.4, 'asphalt', 'footway', 'urban'), scenic: true },
+      ]),
+    );
+
+    expect(generated.route.metrics.distanceProducedKm).toBeGreaterThanOrEqual(targetKm * 0.85);
+    expect(generated.route.metrics.pathTrackUnknownKm).toBeGreaterThanOrEqual(4.8);
+    expect(generated.route.metrics.candidateNaturalKm).toBeGreaterThan(4);
+    expect(generated.route.metrics.unverifiedTrailCandidateKm).toBeGreaterThanOrEqual(4.8);
+    expect(generated.route.metrics.naturalDwellKm).toBeGreaterThan(4);
+    expect(generated.route.metrics.naturalWayRatio).toBeGreaterThan(0.4);
+    expect(generated.route.metrics.pavedKm).toBeLessThanOrEqual(3.2);
+  });
+
+  it('reports mixed park-loop candidate metrics as corridor opportunity evidence before route adaptation', () => {
+    const parkIntent: RouteIntentV3 = {
+      ...intent(5, ['park']),
+      strategy: 'park_loop',
+      request: { ...intent(5, ['park']).request!, mode: 'nature_urbaine' },
+      constraints: { ...intent(5, ['park']).constraints, targetComponents: ['park'], maxPavedRatio: 0.7, minNaturalDwellRatio: 0.25 },
+    };
+    const contract = buildMissionContractV3(parkIntent);
+    if (!contract) throw new Error('expected park mission contract');
+
+    const result = assembleParkLoopMissionV3(
+      graph([
+        edge('park-mixed-path-1', 'a', 'b', 1.2, '', 'path', 'park'),
+        edge('park-mixed-path-2', 'b', 'c', 1.2, '', 'path', 'park'),
+        edge('park-mixed-path-3', 'c', 'd', 1.2, '', 'footway', 'park'),
+        edge('park-mixed-path-4', 'd', 'e', 1.2, '', 'path', 'park'),
+      ]),
+      contract,
+    );
+
+    expect(result.selectedCandidate?.metrics.pathTrackUnknownKm).toBeGreaterThanOrEqual(4.8);
+    expect(result.selectedCandidate?.metrics.candidateNaturalKm).toBeGreaterThan(4);
+    expect(result.selectedCandidate?.metrics.unverifiedTrailCandidateKm).toBeGreaterThanOrEqual(4.8);
+    expect(result.selectedCandidate?.metrics.explicitNaturalKm).toBe(0);
+    expect(result.selectedCandidate?.metrics.pavedKm).toBe(0);
   });
 
   it('refuses a route that otherwise passes metrics but has no usable GPS geometry', () => {
