@@ -129,6 +129,22 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(result.portfolio.candidates.find((candidate) => candidate.id.includes('residential'))?.lane).not.toBe('complete_valid');
   });
 
+  it('exposes targetRepeatBudget diagnostic through assembleMissionV3 for transition_to_woods', () => {
+    const scenario = syntheticTransitionWoodsConnectorThenDwell();
+    const result = assembleMissionV3(scenario.graph, scenario.mission);
+
+    expect(result.selectedCandidate).not.toBeNull();
+    const budget = result.diagnostics.observationOnly.targetRepeatBudget as Record<string, unknown> | null;
+    expect(budget).not.toBeNull();
+    expect(typeof budget!.targetRepeatKm).toBe('number');
+    expect(typeof budget!.connectorRepeatKm).toBe('number');
+    expect(typeof budget!.targetRepeatRatio).toBe('number');
+    expect(typeof budget!.repeatBudgetExceeded).toBe('boolean');
+    expect(budget!.rejectedBecauseTargetRepeat).toBe(false);
+    expect(budget!.maxTargetRepeatKm as number).toBeGreaterThan(0);
+    expect(budget!.maxTargetRepeatRatio as number).toBeGreaterThan(0);
+  });
+
   it('transition_to_woods produces a returned candidate after multi-edge paved access to target dwell', () => {
     const scenario = syntheticTransitionWoodsConnectorThenDwell();
     const graph = makeGraph([
