@@ -24,6 +24,75 @@ export function assembleTransitionToWoodsGraphRouteV3(
   });
 }
 
+function computeTargetRepeatBudget(
+  plan: TransitionRoutePlan | null,
+  mission: MissionContractV3,
+  measuredTargetRepeatKm: number,
+  measuredConnectorRepeatKm: number,
+): Record<string, number | string | boolean | null> | null {
+  if (!plan) return null;
+
+  const targetKinds = new Set(mission.target.componentKinds);
+  const seenPairs = new Set<string>();
+  const repeatedTargetPairs = new Set<string>();
+  let closureRepeatKm = 0;
+
+  const visit = (edge: EnrichedEdge, phase: 'access' | 'target_dwell' | 'closure'): void => {
+    const semantics = classifyEdgeSemanticsV3(edge);
+    const pairKey = edgePairKey(edge);
+    const lengthKm = Math.max(0, edge.lengthKm);
+    if (seenPairs.has(pairKey)) {
+      if (targetKinds.has(semantics.componentKind)) {
+        repeatedTargetPairs.add(pairKey);
+        if (phase === 'closure') closureRepeatKm += lengthKm;
+      }
+    }
+    seenPairs.add(pairKey);
+  };
+
+  for (const edge of plan.accessPath.edges) visit(edge, 'access');
+  for (const edge of plan.targetRoute.edges) visit(edge, 'target_dwell');
+  for (const edge of plan.closurePath.edges) visit(edge, 'closure');
+
+  const measuredClosureRepeatKm = Math.min(measuredTargetRepeatKm, closureRepeatKm);
+  const measuredRecoveryRepeatKm = Math.max(0, measuredTargetRepeatKm - measuredClosureRepeatKm);
+  const totalKm = sumLengthKm([...plan.accessPath.edges, ...plan.targetRoute.edges, ...plan.closurePath.edges]);
+  const targetRepeatRatio = totalKm > 0 ? measuredTargetRepeatKm / totalKm : 0;
+
+  const maxTargetRepeatKm = Math.max(0.35, mission.request.targetDistanceKm * 0.08);
+  const maxTargetRepeatRatio = 0.08;
+  // Honest diagnostic threshold — NOT consumed by any gate in T2.
+  const repeatBudgetExceeded = measuredTargetRepeatKm > maxTargetRepeatKm + 0.001
+    || targetRepeatRatio > maxTargetRepeatRatio + 0.001;
+
+  return {
+    maxTargetRepeatKm: round(maxTargetRepeatKm),
+    maxTargetRepeatRatio,
+    allowConnectorRepeat: true,
+    allowShortReturnRepeat: true,
+    forbidNaturalCoreRepeatAboveKm: round(Math.max(0.35, mission.request.targetDistanceKm * 0.04)),
+    penalizeRepeatedCoreEdges: true,
+    targetCoreEdgesUsed: seenPairs.size,
+    targetCoreEdgesRepeated: measuredTargetRepeatKm > 0.001
+      ? Math.min(repeatedTargetPairs.size, Math.max(1, Math.ceil(measuredTargetRepeatKm / 0.05)))
+      : 0,
+    targetRepeatKm: round(measuredTargetRepeatKm),
+    targetRepeatRatio: round(targetRepeatRatio),
+    connectorRepeatKm: round(measuredConnectorRepeatKm),
+    closureRepeatKm: round(measuredClosureRepeatKm),
+    recoveryRepeatKm: round(measuredRecoveryRepeatKm),
+    repeatBudgetExceeded,
+    rejectedBecauseTargetRepeat: false,
+    repeatSource: measuredTargetRepeatKm <= 0.001
+      ? null
+      : measuredRecoveryRepeatKm >= measuredClosureRepeatKm ? 'distance_recovery' : 'closure',
+  };
+}
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000;
+}
+
 export function assembleTransitionToWoodsMissionV3(
   graph: EnrichedGraph,
   mission: MissionContractV3,
@@ -138,6 +207,13 @@ export function assembleTransitionToWoodsMissionV3(
     ? { ...validCandidate, lifecycle: 'selected' as const, selected: true }
     : portfolioSelectedCandidate;
 
+  const selectedRepeatBudget = computeTargetRepeatBudget(
+    selectedPlan,
+    mission,
+    validCandidate.metrics.targetRepeatKm ?? 0,
+    validCandidate.metrics.connectorRepeatKm ?? 0,
+  );
+
   return {
     mission,
     status: 'portfolio_ready',
@@ -161,6 +237,7 @@ export function assembleTransitionToWoodsMissionV3(
         rejectedResidentialConnectorCandidateCount: diagnosticCandidates.length,
         topologyLaneCounts: countTopologyLanes(topologyCandidates),
         candidateProduction: summarizeCandidateProduction(eligiblePlans, mission, productionDiagnostics),
+        targetRepeatBudget: selectedRepeatBudget,
       },
     },
     warnings: [
