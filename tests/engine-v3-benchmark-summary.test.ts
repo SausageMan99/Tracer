@@ -25,7 +25,7 @@ describe('Engine V3 benchmark CTO summary', () => {
       engine: 'v3-clean-room',
       panelKind: 'real-osm-overpass',
       generatedAt: '2026-05-19T06:36:59.388Z',
-      summary: { success: true, total: 1, byOutcome: { generated: 0, adjusted: 0, refused: 1, errored: 0 } },
+      summary: { success: true, total: 1, byOutcome: { generated: 0, adjusted: 0, refused: 1, errored: 0 }, export: { exportable: 0, nonExportable: 1, invalidGeometry: 0, requiredButNonExportable: 0 } },
       cases: [
         {
           id: 'tourville-pommiers-trail-8k',
@@ -96,7 +96,7 @@ describe('Engine V3 benchmark CTO summary', () => {
       engine: 'v3-clean-room',
       panelKind: 'real-osm-overpass',
       generatedAt: '2026-05-19T06:36:59.388Z',
-      summary: { success: false, total: 2, byOutcome: { generated: 1, adjusted: 0, refused: 0, errored: 1 } },
+      summary: { success: false, total: 2, byOutcome: { generated: 1, adjusted: 0, refused: 0, errored: 1 }, export: { exportable: 0, nonExportable: 1, invalidGeometry: 0, requiredButNonExportable: 1 } },
       cases: [
         {
           id: 'fake-generated',

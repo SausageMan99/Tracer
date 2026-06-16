@@ -863,9 +863,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
         ?? result.phaseDiagnostics.closure.closureRejectedReasons.distance_above_max_contract,
     ).toBeGreaterThan(0);
     expect(result.diagnostics.observationOnly.returnedClosureCount).toBe(0);
+    const observationClosureReasons = result.diagnostics.observationOnly.closureRejectedReasons as Record<string, number>;
     expect(
-      result.diagnostics.observationOnly.closureRejectedReasons.no_routable_connector_to_start
-        ?? result.diagnostics.observationOnly.closureRejectedReasons.distance_above_max_contract,
+      observationClosureReasons.no_routable_connector_to_start
+        ?? observationClosureReasons.distance_above_max_contract,
     ).toBeGreaterThan(0);
   });
 
