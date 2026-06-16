@@ -14,6 +14,8 @@ export function assembledRouteFromMissionCandidateV3(input: {
   const geometry = input.candidate.geometry.coordinates.length >= 2
     ? input.candidate.geometry
     : toGeometry(input.graph, input.candidate.nodeIds);
+  const observationOnly = input.assemblerResult.diagnostics.observationOnly as Record<string, unknown> | undefined;
+  const selectedRepeatBudget = asTargetRepeatBudget(observationOnly?.targetRepeatBudget);
 
   return {
     engine: 'v3-clean-room',
@@ -60,6 +62,13 @@ export function assembledRouteFromMissionCandidateV3(input: {
           repeatKm: candidate.metrics.repeatEdgeKm,
           targetRepeatKm: candidate.metrics.targetRepeatKm,
           connectorRepeatKm: candidate.metrics.connectorRepeatKm,
+          closureRepeatKm: candidate.id === input.candidate.id ? selectedRepeatBudget?.closureRepeatKm : undefined,
+          recoveryRepeatKm: candidate.id === input.candidate.id ? selectedRepeatBudget?.recoveryRepeatKm : undefined,
+          targetCoreEdgesUsed: candidate.id === input.candidate.id ? selectedRepeatBudget?.targetCoreEdgesUsed : undefined,
+          targetCoreEdgesRepeated: candidate.id === input.candidate.id ? selectedRepeatBudget?.targetCoreEdgesRepeated : undefined,
+          repeatBudgetExceeded: candidate.id === input.candidate.id ? selectedRepeatBudget?.repeatBudgetExceeded : undefined,
+          rejectedBecauseTargetRepeat: candidate.id === input.candidate.id ? selectedRepeatBudget?.rejectedBecauseTargetRepeat : undefined,
+          repeatSource: candidate.id === input.candidate.id ? selectedRepeatBudget?.repeatSource : undefined,
           returned: candidate.returned,
           scoreComplete: candidate.selectionScore,
           scoreProgress: candidate.selectionScore,
@@ -91,6 +100,7 @@ export function assembledRouteFromMissionCandidateV3(input: {
         selectedReason: candidate.selectedReason ?? null,
       })),
       firstDropStage: input.assemblerResult.diagnostics.firstDropStage,
+      targetRepeatBudget: selectedRepeatBudget ?? undefined,
       candidateProductionDiagnostics: input.assemblerResult.diagnostics.observationOnly,
     },
     warnings: unique([...input.corridorMission.warnings, ...input.assemblerResult.warnings]),
@@ -150,6 +160,31 @@ function cloneCorridorMission(mission: CorridorMissionV3): CorridorMissionV3 {
     targetComponents: [...mission.targetComponents],
     anchor: mission.anchor ? { ...mission.anchor } : null,
     warnings: [...mission.warnings],
+  };
+}
+
+function asTargetRepeatBudget(value: unknown): NonNullable<AssembledRouteV3['assemblyDiagnostics']>['targetRepeatBudget'] | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const numberField = (key: string): number => typeof record[key] === 'number' ? record[key] : 0;
+  const booleanField = (key: string): boolean => typeof record[key] === 'boolean' ? record[key] : false;
+  const stringField = (key: string): string | null => typeof record[key] === 'string' ? record[key] : null;
+  return {
+    maxTargetRepeatKm: numberField('maxTargetRepeatKm'),
+    maxTargetRepeatRatio: numberField('maxTargetRepeatRatio'),
+    allowConnectorRepeat: booleanField('allowConnectorRepeat'),
+    allowShortReturnRepeat: booleanField('allowShortReturnRepeat'),
+    forbidNaturalCoreRepeatAboveKm: numberField('forbidNaturalCoreRepeatAboveKm'),
+    penalizeRepeatedCoreEdges: booleanField('penalizeRepeatedCoreEdges'),
+    targetCoreEdgesUsed: numberField('targetCoreEdgesUsed'),
+    targetCoreEdgesRepeated: numberField('targetCoreEdgesRepeated'),
+    targetRepeatKm: numberField('targetRepeatKm'),
+    connectorRepeatKm: numberField('connectorRepeatKm'),
+    closureRepeatKm: numberField('closureRepeatKm'),
+    recoveryRepeatKm: numberField('recoveryRepeatKm'),
+    repeatBudgetExceeded: booleanField('repeatBudgetExceeded'),
+    rejectedBecauseTargetRepeat: booleanField('rejectedBecauseTargetRepeat'),
+    repeatSource: stringField('repeatSource'),
   };
 }
 

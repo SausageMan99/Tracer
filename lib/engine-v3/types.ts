@@ -226,6 +226,23 @@ export interface RouteAssemblyDiagnosticsV3 {
     lastProgress: string;
   };
   candidateProductionDiagnostics?: Record<string, unknown>;
+  targetRepeatBudget?: {
+    maxTargetRepeatKm: number;
+    maxTargetRepeatRatio: number;
+    allowConnectorRepeat: boolean;
+    allowShortReturnRepeat: boolean;
+    forbidNaturalCoreRepeatAboveKm: number;
+    penalizeRepeatedCoreEdges: boolean;
+    targetCoreEdgesUsed: number;
+    targetCoreEdgesRepeated: number;
+    targetRepeatKm: number;
+    connectorRepeatKm: number;
+    closureRepeatKm: number;
+    recoveryRepeatKm: number;
+    repeatBudgetExceeded: boolean;
+    rejectedBecauseTargetRepeat: boolean;
+    repeatSource: string | null;
+  };
 }
 
 export interface RouteAssemblyTargetComponentHandoffDiagnosticsV3 {
@@ -287,6 +304,13 @@ export interface RouteAssemblyFinalCandidateDiagnosticsV3 {
   repeatKm: number;
   targetRepeatKm: number;
   connectorRepeatKm: number;
+  closureRepeatKm?: number;
+  recoveryRepeatKm?: number;
+  targetCoreEdgesUsed?: number;
+  targetCoreEdgesRepeated?: number;
+  repeatBudgetExceeded?: boolean;
+  rejectedBecauseTargetRepeat?: boolean;
+  repeatSource?: string | null;
   returned: boolean;
   scoreComplete: number;
   scoreProgress: number;
