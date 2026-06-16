@@ -136,6 +136,14 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     })).toBe(true);
   });
 
+  it('rejects adjusted evidence when target core repeat exceeds the mission-derived budget', () => {
+    expect(isAdjustedTargetRepeatWithinEvidenceBudgetV3({
+      repeatedKm: 3.266,
+      distanceKm: 10.71,
+      targetDistanceKm: 8,
+    })).toBe(false);
+  });
+
   it('keeps Fontainebleau-like mixed path evidence selectable as adjusted, not generated, when strict trail evidence is present', () => {
     expect(isAdjustedMixedUnknownWithinEvidenceBudgetV3({
       mixedUnknownKm: 7.101,
@@ -1623,4 +1631,10 @@ describe('assembleGraphRouteV3 graph assembler', () => {
     });
   });
 
+  // T3 RED tests lock — dépendent du moteur WIP, gardés en `it.todo` jusqu'à T4+.
+  // Aucun fichier moteur touché. Aucun filtre élargi. Aucune lane modifiée.
+  it.todo('Tourville-like corridor: extracts a multi-km path/track rural corridor as a target candidate, not a 0.59 km spur');
+  it.todo('field-path classification: non-paved rural path/track/footway is a target, bitume is bitume');
+  it.todo('long_dirty stays rejected when repeatBudgetExceeded is true even after extraction improvements');
+  it.todo('no clean fallback available: refuses with honest diagnostics instead of fabricating a 0.59 km corridor');
 });

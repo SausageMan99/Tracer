@@ -3773,4 +3773,9 @@ describe("solveComponentLoopV3", () => {
     expect(result.metrics.pavedKm).toBeCloseTo(0.8, 3);
     expect(result.metrics.naturalDwellKm).toBeCloseTo(3.6, 3);
   });
+
+  // T3 RED tests lock — stratégie `clean_corridor_walk` absente au HEAD, gardée en `it.todo` jusqu'à T4+.
+  // Aucun fichier moteur touché. Aucun scoring modifié.
+  it.todo('builds a credible clean natural corridor when no internal loop exists');
+  it.todo('prefers a continuous natural core over an attractive isolated spur');
 });
