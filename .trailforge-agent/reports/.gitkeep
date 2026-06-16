@@ -1,0 +1,3 @@
+# Dossier pour les rapports horodatés de chaque cycle MAP/PLAN/PATCH/VERIFY.
+# Ne pas committer de fichiers de rapport ici directement : ils sont générés par tf:verify
+# ou par le CTO Supervisor après validation humaine.

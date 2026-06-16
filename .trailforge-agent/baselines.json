@@ -1,0 +1,76 @@
+{
+  "version": "1.0.0",
+  "captured_at": "2026-06-16T23:26:00Z",
+  "branch": "trailforge-v3-clean-from-04b7409",
+  "head": "0502ac1",
+  "head_subject": "test(engine-v3): cover targetRepeatBudget shape via assembleMissionV3",
+  "expected_stash": {
+    "ref": "stash@{0}",
+    "message": "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z",
+    "files": [
+      "lib/engine-v3/assemblers/graph-route-assembly-core.ts",
+      "lib/engine-v3/assemblers/target-component-traversal.ts",
+      "lib/engine-v3/assemblers/transition-to-woods-assembler.ts",
+      "lib/engine-v3/mission-candidate-route-adapter.ts",
+      "lib/engine-v3/types.ts",
+      "tests/engine-v3-graph-assembler.test.ts",
+      "tests/engine-v3-target-component-traversal.test.ts"
+    ]
+  },
+  "fontainebleau": {
+    "case_id": "fontainebleau-croix-augas-trail-12k",
+    "outcome": "adjusted",
+    "distanceProducedKm": 12.124277750391153,
+    "naturalDwellKm": 11.908877943088553,
+    "trailRatio": 0.9822340091725752,
+    "pavedRatio": 0.017765990827424572,
+    "repeatRatio": 0.008882995413712286,
+    "repeatBudgetExceeded": false,
+    "tolerance": {
+      "distanceProducedKm_abs": 0.001,
+      "naturalDwellKm_abs": 0.05,
+      "trailRatio_abs": 0.001,
+      "repeatRatio_abs": 0.001
+    }
+  },
+  "tourville": {
+    "case_id": "tourville-trail-8k",
+    "outcome": "refused",
+    "distanceProducedKm": 10.709911491738323,
+    "naturalDwellKm": 6.531258245091211,
+    "trailRatio": 0.6098330737961237,
+    "pavedRatio": 0.007500365636348912,
+    "repeatRatio": 0.304916536898062,
+    "targetRepeatKm": 3.2656291225456062,
+    "connectorRepeatKm": 2.089326623323557,
+    "repeatBudgetExceeded": true,
+    "rejectedBecauseTargetRepeat": false,
+    "repeatSource": "distance_recovery",
+    "tolerance": {
+      "distanceProducedKm_abs": 0.001,
+      "naturalDwellKm_abs": 0.05,
+      "repeatRatio_abs": 0.005,
+      "targetRepeatKm_abs": 0.05
+    }
+  },
+  "tests": {
+    "failed": 17,
+    "passed": 434,
+    "todo": 6,
+    "tolerance": {
+      "failed_abs": 0,
+      "passed_abs": 0,
+      "todo_abs": 0
+    },
+    "note": "17 failed = pre-existing Vite/node: env issue on 14 suites; baseline invariant"
+  },
+  "commits_since_04b7409": [
+    "4b9fd21",
+    "f307f64",
+    "d3aba7b",
+    "1f028be",
+    "b087eb0",
+    "0502ac1"
+  ],
+  "local_commits_total": 6
+}

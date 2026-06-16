@@ -30,7 +30,8 @@
     "audit:osm": "node scripts/audit-osm-terrain.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "tf:verify": "node scripts/trailforge-verify.mjs"
   },
   "dependencies": {
     "@flags-sdk/growthbook": "^0.2.0",

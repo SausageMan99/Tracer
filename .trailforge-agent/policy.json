@@ -1,0 +1,92 @@
+{
+  "version": "1.0.0",
+  "modes_allowed": ["MAP", "PLAN", "VERIFY"],
+  "modes_require_human_approval": ["PATCH"],
+  "files_allowed": [
+    ".trailforge-agent/**",
+    "scripts/trailforge-verify.mjs",
+    "HERMES.md",
+    "package.json",
+    "tests/**"
+  ],
+  "files_forbidden_unless_human_approved": [
+    "lib/engine-v3/**",
+    "lib/engine/**"
+  ],
+  "files_absolute_never_touch": [
+    "node_modules/**",
+    ".git/**",
+    "package-lock.json"
+  ],
+  "commands_forbidden": [
+    "git stash pop",
+    "git stash apply",
+    "git push",
+    "git push --force",
+    "git push --force-with-lease",
+    "git merge",
+    "git cherry-pick",
+    "npm publish",
+    "rm -rf node_modules"
+  ],
+  "commands_require_human_approval": [
+    "git commit",
+    "git checkout",
+    "git reset",
+    "git rebase",
+    "npm install"
+  ],
+  "commit_rules": {
+    "require_typecheck_pass": true,
+    "require_lint_pass": true,
+    "require_test_run_baseline_match": true,
+    "require_benchmark_baseline_match": true,
+    "no_emoji_in_subject": true,
+    "imperative_mood_subject": true,
+    "body_required_for_non_docs": true
+  },
+  "benchmark_rules": {
+    "fontainebleau_min_natural_dwell_km": 11.0,
+    "fontainebleau_min_trail_ratio": 0.95,
+    "fontainebleau_outcome_required": "adjusted",
+    "tourville_outcome_required": "refused",
+    "tourville_target_repeat_km_min": 3.0,
+    "tourville_repeat_budget_exceeded_required": true,
+    "tourville_rejected_because_target_repeat_required": false
+  },
+  "autonomy_levels": {
+    "SAFE": [
+      "docs/**",
+      ".trailforge-agent/**",
+      "tests/**",
+      "type plumbing without engine logic",
+      "diagnostic read-only computation",
+      "scripts/trailforge-verify.mjs"
+    ],
+    "SEMI_AUTONOMOUS": [
+      "scripts/** (other than engine)",
+      "package.json (scripts only, no deps)",
+      "test fixtures"
+    ],
+    "HUMAN_REQUIRED": [
+      "lib/engine-v3/**",
+      "lib/engine/**",
+      "benchmark-runner"
+    ]
+  },
+  "forbidden_unless_explicit": [
+    "transform it.todo to it",
+    "remove or weaken existing strict tests",
+    "modify it.skip / it.todo without body justification",
+    "loosen Fontainebleau gate thresholds",
+    "loosen Tourville diagnostic gates",
+    "pop WIP stash@{0} without per-file extraction"
+  ],
+  "wip_stash_protected": {
+    "ref": "stash@{0}",
+    "expected_message": "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z",
+    "never_pop": true,
+    "never_apply_partial": true,
+    "never_cherry_pick_from": true
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "active": "T5-MAP-clean-corridor",
+  "tickets": [
+    {
+      "id": "T5-MAP-clean-corridor",
+      "title": "Map the clean corridor narrow producer",
+      "mode": "MAP",
+      "risk": "HUMAN_REQUIRED",
+      "patch_authorized": false,
+      "objective": "Cartographier le premier patch moteur potentiel pour la stratégie clean_corridor_walk. Identifier les fichiers à toucher, les call graphs impliqués, les invariants à préserver. Aucun patch autorisé — lecture seule stricte.",
+      "files_to_touch": [],
+      "files_forbidden": ["lib/engine-v3/**"],
+      "files_for_read_only_reference": [
+        "lib/engine-v3/assemblers/target-component-traversal.ts",
+        "lib/engine-v3/assemblers/transition-to-woods-assembler.ts",
+        "tests/engine-v3-target-component-traversal.test.ts"
+      ],
+      "preconditions": [
+        "Branche trailforge-v3-clean-from-04b7409 @ 0502ac1",
+        "stash@{0} intact",
+        "npm run tf:verify PASS au moment de commencer"
+      ],
+      "expected_outputs": [
+        "Call graph réel de buildTargetComponentTraversal et rankNaturalCoreCandidates",
+        "Liste des invariants à préserver (naturalDwell, trailRatio, repeatRatio, repeatBudgetExceeded)",
+        "Estimation des fichiers touchés pour un éventuel T6-PATCH (≤ 1 fichier moteur, périmètre strict)",
+        "Proposition de scoring gate isolé vs producer-only",
+        "Aucun patch, aucun commit, aucun benchmark"
+      ],
+      "human_approval_required_for": [
+        "Lancement du MAP",
+        "Lecture du rapport MAP",
+        "Décision GO/NO-GO pour T6-PATCH"
+      ],
+      "estimated_duration_minutes": 30,
+      "linked_it_todo": [
+        "T2-A (clean_corridor_walk strategy)",
+        "T2-B (prefers continuous natural core over isolated spur)"
+      ]
+    }
+  ],
+  "completed": [
+    {
+      "id": "T1",
+      "title": "targetRepeatBudget type plumbing",
+      "mode": "PATCH",
+      "risk": "SAFE",
+      "commit": "d3aba7b",
+      "result": "OK"
+    },
+    {
+      "id": "T2",
+      "title": "targetRepeatBudget diagnostic read-only",
+      "mode": "PATCH",
+      "risk": "SAFE",
+      "commit": "1f028be",
+      "result": "OK"
+    },
+    {
+      "id": "T3",
+      "title": "RED tests lock",
+      "mode": "PATCH",
+      "risk": "SAFE",
+      "commit": "b087eb0",
+      "result": "OK"
+    },
+    {
+      "id": "T4",
+      "title": "diagnostic shape coverage via assembleMissionV3",
+      "mode": "PATCH",
+      "risk": "SAFE",
+      "commit": "0502ac1",
+      "result": "OK"
+    }
+  ]
+}
