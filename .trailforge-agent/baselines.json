@@ -55,14 +55,14 @@
   },
   "tests": {
     "failed": 0,
-    "passed": 527,
+    "passed": 528,
     "todo": 6,
     "tolerance": {
       "failed_abs": 0,
       "passed_abs": 0,
       "todo_abs": 0
     },
-    "note": "Previous 17 failed / 434 passed / 6 todo profile was captured from an obsolete Vite/node failure state. Current stable HEAD 7959721 verifies at 0 failed / 527 passed / 6 todo."
+    "note": "Refreshed after T6 (commit da5ab49) added one new test (`exposes clean under-distance rural corridor evidence candidate through assembleMissionV3 for transition_to_woods`). Engine behavior unchanged: 0 failed / 528 passed / 6 todo at HEAD da5ab49."
   },
   "commits_since_04b7409": [
     "4b9fd21",
