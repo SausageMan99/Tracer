@@ -91,7 +91,13 @@ export function normalizeCandidatePortfolioV3(portfolio: CandidatePortfolioV3): 
   )
     ? portfolio.selectedCandidateId
     : null;
+  const seenTopRejectedIds = new Set<string>();
   const topRejected = [...portfolio.topRejected, ...candidates.filter((candidate) => candidate.rejectedReason)]
+    .filter((candidate) => {
+      if (seenTopRejectedIds.has(candidate.id)) return false;
+      seenTopRejectedIds.add(candidate.id);
+      return true;
+    })
     .sort((left, right) => right.selectionScore - left.selectionScore)
     .slice(0, 5);
 
