@@ -55,14 +55,14 @@
   },
   "tests": {
     "failed": 0,
-    "passed": 528,
+    "passed": 529,
     "todo": 6,
     "tolerance": {
       "failed_abs": 0,
       "passed_abs": 0,
       "todo_abs": 0
     },
-    "note": "Refreshed after T6 (commit da5ab49) added one new test (`exposes clean under-distance rural corridor evidence candidate through assembleMissionV3 for transition_to_woods`). Engine behavior unchanged: 0 failed / 528 passed / 6 todo at HEAD da5ab49."
+    "note": "Refreshed after T7 (commit 4bc41ff) added one new test (`deduplicates topRejected by candidate.id after normalize for transition_to_woods`). Engine behavior unchanged: 0 failed / 529 passed / 6 todo at HEAD 4bc41ff."
   },
   "commits_since_04b7409": [
     "4b9fd21",
