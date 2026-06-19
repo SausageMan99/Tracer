@@ -1722,6 +1722,7 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number, missi
   const strictTrailKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).isStrictTrailLike));
   const explicitPavedKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).surfaceEvidence === 'explicit_paved'));
   const explicitNaturalKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).surfaceEvidence === 'explicit_natural'));
+  const pathTrackUnknownKm = sumLengthKm(edges.filter((edge) => classifyEdgeSemanticsV3(edge).surfaceEvidence === 'path_track_unknown'));
   const visitedComponents = Array.from(new Set(edges.map((edge) => classifyEdgeSemanticsV3(edge).componentKind)));
   const repeatByEdgeId = repeatedLengthByKind(edges, mission);
 
@@ -1732,7 +1733,7 @@ function metricsFromEdges(edges: EnrichedEdge[], targetDistanceKm: number, missi
     explicitNaturalKm,
     explicitPavedKm,
     roadLikeUnknownKm: 0,
-    pathTrackUnknownKm: 0,
+    pathTrackUnknownKm,
     candidateNaturalKm: explicitNaturalKm,
     trailCandidateKm: strictTrailKm,
     unverifiedTrailCandidateKm: 0,

@@ -255,6 +255,48 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(scores).toEqual([...scores].sort((left, right) => right - left));
   });
 
+  it('exposes pathTrackUnknownKm geometric corridor length for transition_to_woods evidence candidate', () => {
+    const scenario = syntheticTransitionWoodsConnectorThenDwell();
+    const tourvilleLikeCorridorEdges = [
+      makeEdge({ id: 'tourville-access-1', from: 'start', to: 'village-mid', lengthKm: 0.45, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'tourville-access-2', from: 'village-mid', to: 'corridor-entry', lengthKm: 0.45, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'tourville-corridor-dirt', from: 'corridor-entry', to: 'c1', lengthKm: 0.5, surface: 'dirt', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-2', from: 'c1', to: 'c2', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-3', from: 'c2', to: 'c3', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-4', from: 'c3', to: 'c4', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-5', from: 'c4', to: 'c5', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-6', from: 'c5', to: 'c6', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-7', from: 'c6', to: 'c7', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-8', from: 'c7', to: 'c8', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-9', from: 'c8', to: 'c9', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-10', from: 'c9', to: 'c10', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-11', from: 'c10', to: 'c11', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-12', from: 'c11', to: 'c12', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-13', from: 'c12', to: 'c13', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-14', from: 'c13', to: 'c14', lengthKm: 0.4, surface: '', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-corridor-end', from: 'c14', to: 'corridor-end', lengthKm: 0.4, surface: '', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'tourville-residential-decoy', from: 'start', to: 'decoy-loop', lengthKm: 0.8, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+    ];
+    const graph = makeGraph(tourvilleLikeCorridorEdges);
+
+    const result = assembleMissionV3(graph, scenario.mission);
+    const evidence = result.portfolio.candidates.find(
+      (candidate) => candidate.id === `${scenario.mission.id}-clean-under-distance-rural-corridor-evidence`,
+    );
+
+    expect(evidence).toBeDefined();
+    expect(evidence!.lane).toBe('diagnostic_only');
+    expect(evidence!.source).toBe('diagnostic');
+    expect(evidence!.metrics.pathTrackUnknownKm).toBeGreaterThan(0);
+    expect(evidence!.metrics.pathTrackUnknownKm).toBeCloseTo(5.6, 1);
+    expect(evidence!.metrics.explicitNaturalKm).toBeCloseTo(0.5, 1);
+    expect(evidence!.metrics.naturalDwellKm).toBeCloseTo(0.5, 1);
+
+    expect(result.selectedCandidate).not.toBeNull();
+    expect(result.selectedCandidate!.id).toMatch(/mission-transition-woods-long_dirty/);
+    expect(evidence!.selected).toBe(false);
+  });
+
   it('transition_to_woods prefers a lateral target traverse with separate connector closure over target out-and-back repeat', () => {
     const scenario = syntheticTransitionWoodsConnectorThenDwell();
     const graph = makeGraph([
