@@ -177,18 +177,37 @@ export function assembleTransitionToWoodsMissionV3(
     const semantics = classifyEdgeSemanticsV3(edge);
     return semantics.componentKind === 'residential' && !accessEdgeIds.has(edge.id);
   });
-  const diagnosticCandidates = residentialDiagnosticEdges.length > 0
-    ? [createCandidate({
-        id: `${mission.id}-residential-decoy-diagnostic`,
-        edges: residentialDiagnosticEdges,
-        graph,
-        lane: 'connector_heavy',
-        source: 'diagnostic',
-        mission,
-        selectionScore: -sumLengthKm(residentialDiagnosticEdges),
-        rejectedReason: 'residential_connector_without_target_dwell',
-      })]
-    : [];
+  const diagnosticCandidates: RouteCandidateV3[] = [];
+  if (residentialDiagnosticEdges.length > 0) {
+    diagnosticCandidates.push(createCandidate({
+      id: `${mission.id}-residential-decoy-diagnostic`,
+      edges: residentialDiagnosticEdges,
+      graph,
+      lane: 'connector_heavy',
+      source: 'diagnostic',
+      mission,
+      selectionScore: -sumLengthKm(residentialDiagnosticEdges),
+      rejectedReason: 'residential_connector_without_target_dwell',
+    }));
+  }
+  // Clean under-distance rural corridor evidence candidate.
+  // Skipped when the engine already produced a clean enough plan: this is a precondition
+  // for emitting the diagnostic, not a second heuristic. The helper takes
+  // `existingTargetEdgeIds` per the planned signature but this pass passes an empty set
+  // because Tourville's corridor edges are already in `targetEdges` via componentKind
+  // (`hasNaturalContext=true` triggers `isTrailCandidate=true`); the helper signature
+  // is preserved for future callers that want to suppress duplicates.
+  // The guard inspects the *selected* plan, not the whole `eligiblePlans` pool: in
+  // Tourville-like graphs `findTargetLateralRoutesFromEntry` emits non-returned
+  // `progress_no_closure` clean_short plans whose forward naturalDwell crosses the
+  // threshold but whose closure is empty, which would otherwise mask the gap.
+  const engineAlreadyProducedCleanPlan = selectedPlan !== null
+    && topologyLaneFromPlan(selectedPlan, mission) !== 'long_dirty'
+    && selectedPlan.targetRoute.naturalDwellKm >= mission.target.minNaturalDwellKm;
+  if (!engineAlreadyProducedCleanPlan) {
+    const corridorEvidence = scanCleanUnderDistanceRuralCorridorV3(graph, mission, new Set<string>());
+    if (corridorEvidence) diagnosticCandidates.push(corridorEvidence);
+  }
   const portfolio = normalizeCandidatePortfolioV3({
     missionId: mission.id,
     candidates: [validCandidate, ...topologyCandidates.filter((candidate) => candidate.id !== validCandidate.id), ...diagnosticCandidates],
@@ -1758,6 +1777,32 @@ function repeatedLengthByKind(
   }
 
   return { connectorRepeatKm, targetRepeatKm };
+}
+
+function scanCleanUnderDistanceRuralCorridorV3(
+  graph: EnrichedGraph,
+  mission: MissionContractV3,
+  existingTargetEdgeIds: Set<string>,
+): RouteCandidateV3 | null {
+  const candidateEdges = Array.from(graph.edges.values()).filter((edge) => {
+    const semantics = classifyEdgeSemanticsV3(edge);
+    return mission.target.componentKinds.includes(semantics.componentKind)
+      && semantics.routeSurface !== 'paved'
+      && semantics.surfaceEvidence !== 'road_like_unknown'
+      && !existingTargetEdgeIds.has(edge.id);
+  });
+  if (candidateEdges.length === 0) return null;
+  return createCandidate({
+    id: `${mission.id}-clean-under-distance-rural-corridor-evidence`,
+    edges: candidateEdges,
+    graph,
+    lane: 'diagnostic_only',
+    source: 'diagnostic',
+    mission,
+    selectionScore: -Math.max(sumLengthKm(candidateEdges), 1),
+    rejectedReason: 'clean_under_distance_rural_corridor_evidence',
+    returned: false,
+  });
 }
 
 function createPhaseDiagnostics(
