@@ -381,6 +381,70 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     );
   });
 
+  it('T9A: refused transition_to_woods outcome details explain the long_dirty alternative and why it is not surfaced', () => {
+    const graph = makeGraph([
+      makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.7, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'short-clean-branch-1', from: 'woods-entry', to: 'branch-1', lengthKm: 1.6, surface: 'ground', highway: 'track', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'short-clean-branch-2', from: 'branch-1', to: 'dead-end', lengthKm: 1.6, surface: 'dirt', highway: 'path', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      ...Array.from({ length: 10 }, (_, index) => makeEdge({
+        id: `audit-context-residential-${index}`,
+        from: `ctx-${index}`,
+        to: `ctx-${index + 1}`,
+        lengthKm: 0.2,
+        surface: 'asphalt' as const,
+        highway: 'residential' as const,
+        componentKind: 'residential' as const,
+        landcoverClass: 'urban' as const,
+      })),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t9a-repeat-details',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'trail', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 1.2 },
+      target: { componentIds: ['field-core'], componentKinds: ['field_paths', 'forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 3.6, minContinuousTrailKm: 1.5 },
+      budgets: { maxPavedKm: 2.4, maxPavedRatio: 0.32, maxBusyRoadRatio: 0.08, maxRepeatKm: 2.1, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 1.2, maxOverlapRatio: 0.18, maxAccessPavedKm: 1.2, maxClosurePavedKm: 1.2, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+    expect(result.selectedCandidate?.selectedReason).toBe('long_dirty');
+    const selectedMetrics = {
+      distanceProducedKm: result.selectedCandidate!.metrics.distanceProducedKm,
+      naturalDwellKm: result.selectedCandidate!.metrics.naturalDwellKm,
+      targetRepeatKm: result.selectedCandidate!.metrics.targetRepeatKm,
+      repeatRatio: result.selectedCandidate!.metrics.repeatRatio,
+    };
+
+    const generated = generateRouteV3FromGraph(
+      { start: mission.request.start, targetDistanceKm: mission.request.targetDistanceKm, mode: 'trail', sport: 'running', loop: true },
+      graph,
+    );
+    expect(generated.outcome.type).toBe('refused');
+    expect(generated.outcome.productLabel).toBe('refused_repeat_overlap');
+    const details = generated.outcome.type === 'refused' ? generated.outcome.details ?? [] : [];
+    expect(details.length).toBeGreaterThan(0);
+    // Existing topology_insufficient detail line is preserved
+    expect(details).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('topology_insufficient: transition_to_woods only produced a long_dirty repeated target route'),
+      ]),
+    );
+    // New T9A detail line mentions the long_dirty alternative and why it is not surfaced
+    const t9aLine = details.find((line) => line.includes('long_dirty alternative not surfaced'));
+    expect(t9aLine).toBeDefined();
+    expect(t9aLine).toEqual(expect.stringContaining('targetRepeatKm'));
+    expect(t9aLine).toEqual(expect.stringContaining('repeatRatio'));
+    expect(t9aLine).toEqual(expect.stringContaining('not surfaced'));
+    expect(t9aLine).toEqual(expect.stringContaining('refused_repeat_overlap'));
+    expect(t9aLine).toEqual(expect.stringContaining('non-exportable'));
+    // selectedCandidate metrics behavior unchanged by the diagnostic detail injection
+    expect(result.selectedCandidate!.metrics.distanceProducedKm).toBe(selectedMetrics.distanceProducedKm);
+    expect(result.selectedCandidate!.metrics.naturalDwellKm).toBe(selectedMetrics.naturalDwellKm);
+    expect(result.selectedCandidate!.metrics.targetRepeatKm).toBe(selectedMetrics.targetRepeatKm);
+    expect(result.selectedCandidate!.metrics.repeatRatio).toBe(selectedMetrics.repeatRatio);
+  });
+
   it('transition_to_woods selects adjusted clean_short lateral over repetitive long_dirty when dwell is narrowly under target', () => {
     const graph = makeGraph([
       makeEdge({ id: 'village-access', from: 'start', to: 'woods-entry', lengthKm: 0.7, surface: 'asphalt', highway: 'residential', componentKind: 'residential', landcoverClass: 'urban' }),

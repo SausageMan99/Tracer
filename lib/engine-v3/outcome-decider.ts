@@ -39,10 +39,11 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
   const topologyLimitedRepeat = transitionTopologyLimitedTargetRepeat(intent, route);
   if (topologyLimitedRepeat && !isModerateTransitionRepeatWithUsefulEvidence(intent, route, distanceRatio)) {
+    const longDirtyAlternativeDetail = `long_dirty alternative not surfaced: a complete route exists with targetRepeatKm ${round(route.metrics.targetRepeatKm)} and repeatRatio ${round(route.metrics.repeatRatio)}, but the primary outcome stays refused_repeat_overlap because the plan exceeds the generated-route repeat tolerance (transition_to_woods trail mode with topologyInsufficient=true); route export remains unavailable because refused routes are non-exportable`;
     return withProductLabel({
       type: 'refused',
       reason: 'trail topology insufficient: clean target traversal cannot support the requested distance without excessive repeat',
-      details: unique([topologyLimitedRepeat, ...details]),
+      details: unique([topologyLimitedRepeat, longDirtyAlternativeDetail, ...details]),
     }, intent, route);
   }
 
