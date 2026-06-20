@@ -867,4 +867,100 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     expect(generated.route.assemblyDiagnostics?.selectedReason).toContain('mission-driven');
     expect(generated.outcome.type).not.toBe('refused');
   });
+
+  it('T10B: urban_nature_loop accepts capped short tertiary connector to reach an urban_green component (post-patch)', () => {
+    // Graph: start connects to an urban_green component only via a 0.3 km tertiary residential
+    // road (asphalt surface). The urban_green loop has 2.2 km of footway edges. Before T10B
+    // the connector pool excluded tertiary, so access failed with no_routable_access_to_target
+    // and the route was refused. After T10B the 0.3 km tertiary is allowed under the cap.
+    const graph = makeGraph([
+      makeEdge({ id: 'start-to-tertiary-1', from: 'start', to: 'tertiary-1', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'tertiary-1-to-green-1', from: 'tertiary-1', to: 'green-1', lengthKm: 0.1, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-1-to-green-2', from: 'green-1', to: 'green-2', lengthKm: 1.0, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-2-to-green-3', from: 'green-2', to: 'green-3', lengthKm: 1.0, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-3-to-tertiary-2', from: 'green-3', to: 'tertiary-2', lengthKm: 0.1, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'tertiary-2-to-start', from: 'tertiary-2', to: 'start', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t10b-urban-nature-capped-tertiary',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 3, minDistanceKm: 2.55, maxDistanceKm: 3.45, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'clean_loop', maxClosureKm: 1.5 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 0.3, minContinuousTrailKm: 0.2 },
+      budgets: { maxPavedKm: 1.5, maxPavedRatio: 0.5, maxBusyRoadRatio: 0.05, maxRepeatKm: 0.6, maxTargetRepeatKm: 0.3, maxConnectorRepeatKm: 0.3, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.6, maxClosurePavedKm: 0.6, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+    const candidate = result.selectedCandidate;
+
+    // Post-patch: route is assembled, status is portfolio_ready (not no_candidate).
+    expect(result.status).toBe('portfolio_ready');
+    expect(candidate).not.toBeNull();
+    // Connector cap respected: every tertiary edge in the route is <= 0.4 km.
+    const tertiaryEdges = edgesOf({ graph }).filter((edge) => edge.highway === 'tertiary');
+    expect(tertiaryEdges.length).toBeGreaterThan(0);
+    for (const edge of tertiaryEdges) {
+      expect(edge.lengthKm).toBeLessThanOrEqual(0.4);
+    }
+    expect(candidate?.edgeIds ?? []).toEqual(expect.arrayContaining(['start-to-tertiary-1', 'tertiary-2-to-start']));
+    // naturalDwell comes from urban_green footway, NOT from the tertiary connector.
+    expect(candidate?.metrics.naturalDwellKm ?? 0).toBeGreaterThan(0.5);
+    expect(candidate?.metrics.candidateNaturalKm ?? 0).toBe(candidate?.metrics.naturalDwellKm ?? 0);
+    // pavedRatio cap respected (under 0.5).
+    expect(candidate?.metrics.pavedRatio ?? 1).toBeLessThanOrEqual(0.5);
+    // Distance stays in the requested envelope.
+    expect(candidate?.metrics.distanceProducedKm ?? 0).toBeGreaterThanOrEqual(mission.request.minDistanceKm);
+    expect(candidate?.metrics.distanceProducedKm ?? 0).toBeLessThanOrEqual(mission.request.maxDistanceKm + 0.001);
+    // urban_green component (semantics componentKind=park because landcoverClass='park') is visited;
+    // residential connector component is tracked too. Either 'park' or 'urban_green' is acceptable
+    // because edge-semantics overrides componentKind based on landcoverClass.
+    const visited = candidate?.metrics.visitedComponents ?? [];
+    expect(visited).toEqual(expect.arrayContaining(['residential']));
+    expect(visited.some((kind) => kind === 'park' || kind === 'urban_green')).toBe(true);
+    // Closure returns to start.
+    expect(candidate?.returned).toBe(true);
+    // Target repeat budget not violated (tertiary is connector-like, not target).
+    expect(candidate?.metrics.targetRepeatKm ?? 0).toBeLessThanOrEqual(0.001);
+  });
+
+  it('T10B: urban_nature_loop rejects long primary connector above the 0.2 km cap (negative guard)', () => {
+    // Graph: start connects to an urban_green component only via a 1.5 km primary
+    // residential road. Even after T10B the 0.2 km cap on primary/secondary rejects it,
+    // so access still fails and the route is refused. This guards against widening the
+    // pool to busier arterials.
+    const graph = makeGraph([
+      makeEdge({ id: 'start-to-primary-1', from: 'start', to: 'primary-1', lengthKm: 1.5, surface: 'asphalt', highway: 'primary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'primary-1-to-green-1', from: 'primary-1', to: 'green-1', lengthKm: 0.1, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-1-to-green-2', from: 'green-1', to: 'green-2', lengthKm: 1.0, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-2-to-green-3', from: 'green-2', to: 'green-3', lengthKm: 1.0, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'green-3-to-primary-2', from: 'green-3', to: 'primary-2', lengthKm: 0.1, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'primary-2-to-start', from: 'primary-2', to: 'start', lengthKm: 1.5, surface: 'asphalt', highway: 'primary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t10b-urban-nature-long-primary',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 3, minDistanceKm: 2.55, maxDistanceKm: 3.45, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'clean_loop', maxClosureKm: 1.5 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 0.3, minContinuousTrailKm: 0.2 },
+      budgets: { maxPavedKm: 1.5, maxPavedRatio: 0.5, maxBusyRoadRatio: 0.05, maxRepeatKm: 0.6, maxTargetRepeatKm: 0.3, maxConnectorRepeatKm: 0.3, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.6, maxClosurePavedKm: 0.6, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // Long primary road above the 0.2 km cap is rejected: route refused, no candidate.
+    expect(result.status).toBe('no_candidate');
+    expect(result.selectedCandidate).toBeNull();
+    // Closure rejected reasons include the access bottleneck, exactly as before T10B.
+    const closureReasons = (result.diagnostics.observationOnly as Record<string, unknown>).closureRejectedReasons as Record<string, number> | undefined;
+    expect(closureReasons?.no_routable_access_to_target ?? 0).toBeGreaterThan(0);
+    // The 1.5 km primary edges must NOT appear in any assembled route because
+    // they were excluded from the connector pool by the 0.2 km cap.
+    const primaryEdgesInMission = edgesOf({ graph }).filter((edge) => edge.highway === 'primary');
+    expect(primaryEdgesInMission.length).toBe(2);
+    for (const edge of primaryEdgesInMission) {
+      expect(edge.lengthKm).toBeGreaterThan(0.2);
+    }
+  });
 });

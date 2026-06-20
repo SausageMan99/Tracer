@@ -277,7 +277,15 @@ function urbanNatureConnectorEdges(graph: EnrichedGraph): EnrichedEdge[] {
     const semantics = classifyEdgeSemanticsV3(edge);
     if (allowedUrbanParkComponentKinds('urban_nature_loop').has(semantics.componentKind)) return true;
     if (semantics.componentKind !== 'residential') return false;
-    return ['residential', 'living_street', 'service', 'footway', 'pedestrian', 'cycleway'].includes(edge.highway);
+    if (['residential', 'living_street', 'service', 'footway', 'pedestrian', 'cycleway'].includes(edge.highway)) return true;
+    // T10B: capped short road connectors for dense-city urban green access.
+    // Quiet residential street (tertiary/unclassified) up to 0.4 km, busier
+    // roads (primary/secondary) up to 0.2 km. The per-edge cap keeps the
+    // widened pool honest — closure contract + pavedRatio budget are enforced
+    // downstream so a fake road corridor cannot satisfy the dwell contract.
+    if (['tertiary', 'unclassified'].includes(edge.highway) && edge.lengthKm <= 0.4) return true;
+    if (['primary', 'secondary'].includes(edge.highway) && edge.lengthKm <= 0.2) return true;
+    return false;
   });
 }
 
