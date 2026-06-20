@@ -9,15 +9,7 @@ const NO_TERRAIN_CONTEXT: TerrainContextSignals = {
   warnings: [],
 };
 
-function midpoint(edge: EnrichedEdge): Coordinate | null {
-  const from = edge.fromCoordinate;
-  const to = edge.toCoordinate;
-  if (from == null || to == null) return null;
-  return {
-    lat: (from.lat + to.lat) / 2,
-    lng: (from.lng + to.lng) / 2,
-  };
-}
+type NodeCoordinate = { lat: number; lng: number };
 
 function pointInRing(point: Coordinate, ring: [number, number][]): boolean {
   let inside = false;
@@ -47,6 +39,19 @@ function matchingFeature(point: Coordinate | null, fixtureGeoJson?: TerrainConte
   return fixtureGeoJson.features.find((feature) => pointInPolygon(point, feature.geometry.coordinates)) ?? null;
 }
 
+function resolveEdgeCoordinates(
+  edge: EnrichedEdge,
+  nodeResolver?: (nodeId: string) => NodeCoordinate | undefined,
+): { from: NodeCoordinate | null; to: NodeCoordinate | null } {
+  const from = edge.fromCoordinate
+    ?? (nodeResolver ? nodeResolver(edge.from) : undefined)
+    ?? null;
+  const to = edge.toCoordinate
+    ?? (nodeResolver ? nodeResolver(edge.to) : undefined)
+    ?? null;
+  return { from, to };
+}
+
 function contextFromFeature(edge: EnrichedEdge, feature: TerrainContextFeature | null): TerrainContextSignals {
   if (feature == null) return { ...NO_TERRAIN_CONTEXT };
 
@@ -74,13 +79,29 @@ function contextFromFeature(edge: EnrichedEdge, feature: TerrainContextFeature |
 
 export function enrichEdgesWithTerrainContext(
   edges: EnrichedEdge[],
-  options: { fixtureGeoJson?: TerrainContextFeatureCollection } = {},
+  options: {
+    fixtureGeoJson?: TerrainContextFeatureCollection;
+    /**
+     * T17: optional fallback resolver used when an edge lacks fromCoordinate
+     * / toCoordinate. buildGraph does not populate those fields, so real
+     * production graphs need a resolver that looks up the node lat/lng by
+     * the edge.from / edge.to OSM node id. Resolver must return undefined
+     * (not throw) when a node is unknown; the enricher then falls back to a
+     * clean no-op for that edge.
+     */
+    nodeResolver?: (nodeId: string) => NodeCoordinate | undefined;
+  } = {},
 ): EnrichedEdge[] {
   return edges.map((edge) => {
-    const feature = matchingFeature(midpoint(edge), options.fixtureGeoJson);
+    // Prefer edge.fromCoordinate/toCoordinate when present; fall back to
+    // nodeResolver for real graphs where buildGraph never sets those fields.
+    const coords = resolveEdgeCoordinates(edge, options.nodeResolver);
+    const mid: Coordinate | null = coords.from != null && coords.to != null
+      ? { lat: (coords.from.lat + coords.to.lat) / 2, lng: (coords.from.lng + coords.to.lng) / 2 }
+      : null;
     return {
       ...edge,
-      terrainContext: contextFromFeature(edge, feature),
+      terrainContext: contextFromFeature(edge, matchingFeature(mid, options.fixtureGeoJson)),
     };
   });
 }
