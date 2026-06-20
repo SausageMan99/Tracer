@@ -55,14 +55,14 @@
   },
   "tests": {
     "failed": 0,
-    "passed": 530,
+    "passed": 531,
     "todo": 6,
     "tolerance": {
       "failed_abs": 0,
       "passed_abs": 0,
       "todo_abs": 0
     },
-    "note": "Refreshed after T8 (commit c31684f) added one new test (`exposes pathTrackUnknownKm geometric corridor length for transition_to_woods evidence candidate`). Engine behavior unchanged: 0 failed / 530 passed / 6 todo at HEAD c31684f."
+    "note": "Refreshed after T9A (commit b2f853b) added one new test (`refused transition_to_woods outcome details explain the long_dirty alternative and why it is not surfaced` — T9A repeat-heavy compromise details test baseline refresh). Engine behavior unchanged: 0 failed / 531 passed / 6 todo at HEAD b2f853b."
   },
   "commits_since_04b7409": [
     "4b9fd21",
