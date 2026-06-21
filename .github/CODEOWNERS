@@ -1,0 +1,20 @@
+# TrailForge CODEOWNERS — single-owner private repo
+# Default owner is the repository owner; engine and agent files require owner review.
+
+* @SausageMan99
+
+# Engine files: require owner review per V3 protocol HUMAN_REQUIRED mode.
+/lib/engine-v3/ @SausageMan99
+/lib/engine/ @SausageMan99
+
+# Agent harness and baselines: require owner review.
+/.trailforge-agent/ @SausageMan99
+/scripts/trailforge-verify.mjs @SausageMan99
+/scripts/engine-v3-ts-loader.mjs @SausageMan99
+/scripts/run-engine-v3-benchmarks.ts @SausageMan99
+/scripts/summarize-engine-v3-benchmarks.ts @SausageMan99
+
+# CI/CD and infra: require owner review.
+/.github/ @SausageMan99
+/CI.md @SausageMan99
+/SECURITY.md @SausageMan99

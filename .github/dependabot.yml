@@ -1,0 +1,39 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    target-branch: "trailforge-v3-clean-from-04b7409"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    labels:
+      - "dependencies"
+      - "npm"
+    # No auto-merge: every dependency PR requires human review per V3 protocol.
+    # Engine-touching dependencies (lib/engine-v3/**, lib/engine/**) MUST be
+    # reviewed by @SausageMan99 before merge regardless of this config.
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Paris"
+    target-branch: "trailforge-v3-clean-from-04b7409"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "github-actions"
+    # No auto-merge: every GitHub Actions version PR requires human review.

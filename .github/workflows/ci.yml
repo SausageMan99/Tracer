@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - trailforge-v3-clean-from-04b7409
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm run test:run -- --reporter=verbose
+
+      - name: TrailForge verify (8 gates)
+        run: npm run tf:verify
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload tf:verify artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tf-verify-${{ github.run_id }}
+          path: artifacts/engine-v3-benchmarks/agent-verify-*/
+          if-no-files-found: ignore
