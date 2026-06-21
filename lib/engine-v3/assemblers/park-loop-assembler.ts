@@ -687,6 +687,19 @@ function selectUrbanNatureComponentRouteEdges(
     .sort((left, right) => sumCandidateNaturalKm(right) - sumCandidateNaturalKm(left) || sumLengthKm(right) - sumLengthKm(left));
 
   let best: { edges: EnrichedEdge[]; metrics: RouteMetricsV3 } | null = null;
+  // T12: small closure tolerance for urban_nature_loop only. Allows a strictly
+  // capped distance overshoot for otherwise-valid closure candidates and a
+  // strictly capped targetRepeat on the relaxed closure branch. Does NOT
+  // affect park_loop, forest_loop, transition_to_woods, edge semantics,
+  // outcome labels, export policy, or the T10B road connector caps.
+  const distanceOvershootToleranceKm =
+    mission.strategy === 'urban_nature_loop'
+      ? Math.min(0.5, mission.request.targetDistanceKm * 0.08)
+      : 0;
+  const targetRepeatToleranceKm =
+    mission.strategy === 'urban_nature_loop'
+      ? Math.min(0.4, mission.request.targetDistanceKm * 0.05)
+      : 0.001;
   for (const component of components) {
     const componentNodeIds = new Set(component.flatMap((edge) => [edge.from, edge.to]));
     const access = shortestPathToAnyNode(edges, startNodeId, componentNodeIds);
@@ -725,7 +738,7 @@ function selectUrbanNatureComponentRouteEdges(
       relaxedConnectorAudit = relaxedReturnPath
         ? auditConnectorRepeat(relaxedReturnPath.edges, dwellEdgeIds)
         : null;
-      if (relaxedReturnPath && relaxedConnectorAudit && relaxedConnectorAudit.targetRepeatKm <= 0.001) {
+      if (relaxedReturnPath && relaxedConnectorAudit && relaxedConnectorAudit.targetRepeatKm <= targetRepeatToleranceKm) {
         returnPath = relaxedReturnPath;
       } else {
         const partialEdges = [...access.edges, ...dwell.edges];
@@ -757,7 +770,7 @@ function selectUrbanNatureComponentRouteEdges(
       incrementReason(diagnostics.closureRejectedReasons, 'natural_dwell_below_contract');
       continue;
     }
-    if (metrics.distanceProducedKm > mission.request.maxDistanceKm + 0.001) {
+    if (metrics.distanceProducedKm > mission.request.maxDistanceKm + distanceOvershootToleranceKm + 0.001) {
       recordClosureCandidateDiagnostic(diagnostics, metrics, true, 'distance_above_max_contract', {
         graph,
         startNodeId,

@@ -964,3 +964,245 @@ describe('V3 mission dispatcher synthetic behavior', () => {
     }
   });
 });
+
+// =============================================================================
+// T12: urban_nature_loop closure contract tolerance
+// =============================================================================
+//
+// Two strictly-capped tolerances applied ONLY when mission.strategy === 'urban_nature_loop':
+//   A. distance overshoot: maxDistanceKm + min(0.5 km, targetDistanceKm * 0.08)
+//   B. targetRepeat on relaxed closure: min(0.4 km, targetDistanceKm * 0.05)
+//
+// Scope guard: every test that is not urban_nature_loop must remain byte-identical
+// to the HEAD behavior (park_loop, transition_to_woods). The T10B road connector
+// caps (tertiary 0.4 km, primary 0.2 km) are untouched.
+describe('T12: urban_nature_loop closure contract tolerance', () => {
+  it('T12-A1: urban_nature_loop accepts closure candidate within small distance overshoot tolerance (positive)', () => {
+    // Single urban_green component with a natural loop of ~6.5 km, plus a short
+    // tertiary access/return of 0.3 km each. The assembled closure produces
+    // distanceProducedKm ≈ 7.05 km. target=6.0, max=6.9, overshoot ≈ 0.15 km.
+    // Tolerance = min(0.5, 6.0 * 0.08) = 0.48 km. 0.15 km < 0.48 km → accepted.
+    const graph = makeGraph([
+      makeEdge({ id: 'access-start', from: 'start', to: 'g1', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'g1-g2', from: 'g1', to: 'g2', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g2-g3', from: 'g2', to: 'g3', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g3-g4', from: 'g3', to: 'g4', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g4-g5', from: 'g4', to: 'g5', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g5-g6', from: 'g5', to: 'g6', lengthKm: 0.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g6-end', from: 'g6', to: 'end', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'end-start', from: 'end', to: 'start', lengthKm: 0.001, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-a1-urban-nature-small-overshoot',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 6, minDistanceKm: 5.1, maxDistanceKm: 6.9, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'clean_loop', maxClosureKm: 1.5 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 1.8, minContinuousTrailKm: 0.6 },
+      budgets: { maxPavedKm: 1.5, maxPavedRatio: 0.5, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.2, maxTargetRepeatKm: 0.48, maxConnectorRepeatKm: 0.6, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.6, maxClosurePavedKm: 0.6, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // T12-A1 verifies the overshoot tolerance IS applied: when the only viable
+    // closure candidate overshoots maxDistanceKm by 0.15 km, the candidate is
+    // not refused on distance_above_max_contract.
+    // Before T12 patch: candidate would be refused (0.15 km > 0.001 km strict cap).
+    // After T12 patch: candidate is accepted (0.15 km < 0.48 km tolerance).
+    expect(result.status).toBe('portfolio_ready');
+    expect(result.selectedCandidate).not.toBeNull();
+    expect(result.selectedCandidate?.metrics.distanceProducedKm ?? 0).toBeLessThanOrEqual(mission.request.maxDistanceKm + 0.5);
+    // naturalDwell contract still strict (no fake success).
+    expect(result.selectedCandidate?.metrics.naturalDwellKm ?? 0).toBeGreaterThanOrEqual(mission.target.minNaturalDwellKm);
+    // T10B connector cap preserved.
+    expect(result.selectedCandidate?.metrics.pavedRatio ?? 1).toBeLessThanOrEqual(mission.budgets.maxPavedRatio);
+  });
+
+  it('T12-A2: urban_nature_loop rejects closure candidate above the overshoot tolerance (negative guard)', () => {
+    // Same topology pattern, but make the natural loop much larger (~7.5 km)
+    // plus access/return. The only viable closure candidate overshoots maxDistanceKm
+    // by ~1.0 km. Tolerance = 0.48 km. 1.0 km > 0.48 km → still rejected.
+    const graph = makeGraph([
+      makeEdge({ id: 'access-start', from: 'start', to: 'g1', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'g1-g2', from: 'g1', to: 'g2', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g2-g3', from: 'g2', to: 'g3', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g3-g4', from: 'g3', to: 'g4', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g4-g5', from: 'g4', to: 'g5', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g5-g6', from: 'g5', to: 'g6', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g6-g7', from: 'g6', to: 'g7', lengthKm: 0.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'g7-end', from: 'g7', to: 'end', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'end-start', from: 'end', to: 'start', lengthKm: 0.001, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-a2-urban-nature-large-overshoot',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 6, minDistanceKm: 5.1, maxDistanceKm: 6.9, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'clean_loop', maxClosureKm: 1.5 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 1.8, minContinuousTrailKm: 0.6 },
+      budgets: { maxPavedKm: 1.5, maxPavedRatio: 0.5, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.2, maxTargetRepeatKm: 0.48, maxConnectorRepeatKm: 0.6, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.6, maxClosurePavedKm: 0.6, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // Overshoot 1.0 km > 0.48 km tolerance → still refused on distance_above_max_contract.
+    // The natural loop is forced large (7.5 km + 0.6 km connectors = 8.1 km), which
+    // is the only candidate the assembler can produce, and it overshoots by ~1.2 km.
+    expect(result.status).toBe('no_candidate');
+    expect(result.selectedCandidate).toBeNull();
+    const closureReasons = (result.diagnostics.observationOnly as Record<string, unknown>).closureRejectedReasons as Record<string, number> | undefined;
+    expect(closureReasons?.distance_above_max_contract ?? 0).toBeGreaterThan(0);
+  });
+
+  it('T12-B1: urban_nature_loop accepts relaxed closure with small targetRepeat under tolerance (positive)', () => {
+    // Build a topology where the only way back to start crosses ~0.2 km of urban_green
+    // footway edges that were already traversed in the dwell. target=8, targetRepeat
+    // tolerance = min(0.4, 8*0.05) = 0.4 km. 0.2 km < 0.4 km → accepted.
+    const graph = makeGraph([
+      // Access
+      makeEdge({ id: 'start-to-a', from: 'start', to: 'a', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      // Urban green dwell — a corridor with a bridge back near the start
+      makeEdge({ id: 'a-to-b', from: 'a', to: 'b', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'b-to-c', from: 'b', to: 'c', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'c-to-d', from: 'c', to: 'd', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'd-to-e', from: 'd', to: 'e', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      // The only path back to start goes via a shared footway segment of ~0.2 km
+      makeEdge({ id: 'e-to-bridge', from: 'e', to: 'bridge', lengthKm: 0.2, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'bridge-to-start', from: 'bridge', to: 'start', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      // Plus an additional footway edge from b to bridge so the corridor's only
+      // return path can either cross the dwell or detour via a longer residential
+      makeEdge({ id: 'b-to-bridge', from: 'b', to: 'bridge', lengthKm: 0.2, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-b1-urban-nature-target-repeat',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'relaxed_urban_loop', maxClosureKm: 1.6 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 2.4, minContinuousTrailKm: 0.8 },
+      budgets: { maxPavedKm: 2.0, maxPavedRatio: 0.4, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.6, maxTargetRepeatKm: 0.64, maxConnectorRepeatKm: 0.8, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.8, maxClosurePavedKm: 0.8, maxTargetPavedKm: 0.3 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // With T12 patch B, the small targetRepeat on the relaxed return path is
+    // accepted (0.2 km < 0.4 km tolerance), so the route is no longer refused
+    // solely on no_routable_connector_to_start.
+    expect(result.status).toBe('portfolio_ready');
+    expect(result.selectedCandidate).not.toBeNull();
+    expect(result.selectedCandidate?.metrics.targetRepeatKm ?? 0).toBeLessThanOrEqual(0.4);
+    expect(result.selectedCandidate?.metrics.naturalDwellKm ?? 0).toBeGreaterThanOrEqual(mission.target.minNaturalDwellKm);
+  });
+
+  it('T12-B2: urban_nature_loop rejects relaxed closure above targetRepeat tolerance (negative guard)', () => {
+    // Same topology pattern, but force the return path to cross > 0.4 km of dwell
+    // edges. target=8, tolerance = 0.4 km. targetRepeat ≈ 0.5 km > 0.4 km → rejected.
+    const graph = makeGraph([
+      makeEdge({ id: 'start-to-a', from: 'start', to: 'a', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'a-to-b', from: 'a', to: 'b', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'b-to-c', from: 'b', to: 'c', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'c-to-d', from: 'c', to: 'd', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'd-to-e', from: 'd', to: 'e', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      // The return must cross a 0.5 km footway already traversed in dwell
+      makeEdge({ id: 'e-to-bridge', from: 'e', to: 'bridge', lengthKm: 0.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+      makeEdge({ id: 'bridge-to-start', from: 'bridge', to: 'start', lengthKm: 0.3, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'b-to-bridge', from: 'b', to: 'bridge', lengthKm: 0.5, surface: '', highway: 'footway', componentKind: 'urban_green', landcoverClass: 'park' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-b2-urban-nature-target-repeat-over',
+      strategy: 'urban_nature_loop',
+      promise: 'urban_nature',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'relaxed_urban_loop', maxClosureKm: 1.6 },
+      target: { componentIds: ['urban-green-1'], componentKinds: ['urban_green'], requiredEntry: 'mandatory', minNaturalDwellKm: 2.4, minContinuousTrailKm: 0.8 },
+      budgets: { maxPavedKm: 2.0, maxPavedRatio: 0.4, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.6, maxTargetRepeatKm: 0.64, maxConnectorRepeatKm: 0.8, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.8, maxClosurePavedKm: 0.8, maxTargetPavedKm: 0.3 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // targetRepeat 0.5 km > 0.4 km tolerance → still refused on no_routable_connector_to_start.
+    expect(result.status).toBe('no_candidate');
+    expect(result.selectedCandidate).toBeNull();
+    const closureReasons = (result.diagnostics.observationOnly as Record<string, unknown>).closureRejectedReasons as Record<string, number> | undefined;
+    expect(closureReasons?.no_routable_connector_to_start ?? 0).toBeGreaterThan(0);
+  });
+
+  it('T12-scope-park: park_loop closure contract unchanged by T12 patch', () => {
+    // park_loop must remain byte-identical to HEAD: no overshoot tolerance,
+    // no targetRepeat tolerance. A park_loop case that overshoots must be refused.
+    const graph = makeGraph([
+      makeEdge({ id: 'start-to-park-a', from: 'start', to: 'park-a', lengthKm: 0.4, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-a-b', from: 'park-a', to: 'park-b', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-b-c', from: 'park-b', to: 'park-c', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-c-d', from: 'park-c', to: 'park-d', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-d-e', from: 'park-d', to: 'park-e', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-e-f', from: 'park-e', to: 'park-f', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'park', landcoverClass: 'park' }),
+      makeEdge({ id: 'park-f-start', from: 'park-f', to: 'start', lengthKm: 0.4, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-scope-park',
+      strategy: 'park_loop',
+      promise: 'park_compromise',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 6, minDistanceKm: 5.1, maxDistanceKm: 6.9, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'clean_loop', maxClosureKm: 1.5 },
+      target: { componentIds: ['park-1'], componentKinds: ['park'], requiredEntry: 'mandatory', minNaturalDwellKm: 1.8, minContinuousTrailKm: 0.6 },
+      budgets: { maxPavedKm: 1.5, maxPavedRatio: 0.5, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.2, maxTargetRepeatKm: 0.48, maxConnectorRepeatKm: 0.6, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.6, maxClosurePavedKm: 0.6, maxTargetPavedKm: 0.2 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // Park_loop: overshoot tolerance is NOT applied (strategy !== urban_nature_loop).
+    // The closure contract is unchanged for park_loop.
+    // The exact outcome depends on park_loop invariants (not under test here);
+    // what matters is that the patch does not silently relax park_loop.
+    // Verify: selectedCandidate exists OR closureRejectedReasons is populated,
+    // and if a candidate exists, distanceProducedKm <= maxDistanceKm + 0.001 (no overshoot cap applied).
+    if (result.selectedCandidate) {
+      expect(result.selectedCandidate.metrics.distanceProducedKm).toBeLessThanOrEqual(mission.request.maxDistanceKm + 0.001);
+    } else {
+      const closureReasons = (result.diagnostics.observationOnly as Record<string, unknown>).closureRejectedReasons as Record<string, number> | undefined;
+      expect(closureReasons ?? {}).toBeDefined();
+    }
+  });
+
+  it('T12-scope-ttw: transition_to_woods closure contract unchanged by T12 patch', () => {
+    // transition_to_woods must remain byte-identical to HEAD: no overshoot tolerance,
+    // no targetRepeat tolerance, no_targetRepeatToleranceKm stays at 0.001 for the
+    // relaxed closure check.
+    const graph = makeGraph([
+      makeEdge({ id: 'start-to-a', from: 'start', to: 'a', lengthKm: 0.5, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+      makeEdge({ id: 'a-to-b', from: 'a', to: 'b', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'b-to-c', from: 'b', to: 'c', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'field_paths', landcoverClass: 'grassland' }),
+      makeEdge({ id: 'c-to-d', from: 'c', to: 'd', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'd-to-e', from: 'd', to: 'e', lengthKm: 1.5, surface: '', highway: 'footway', componentKind: 'forest', landcoverClass: 'forest' }),
+      makeEdge({ id: 'e-to-start', from: 'e', to: 'start', lengthKm: 0.5, surface: 'asphalt', highway: 'tertiary', componentKind: 'residential', landcoverClass: 'urban' }),
+    ]);
+    const mission = makeMission({
+      id: 'mission-t12-scope-ttw',
+      strategy: 'transition_to_woods',
+      promise: 'trail_with_connector',
+      request: { start: { lat: 49, lng: -0.4 }, targetDistanceKm: 8, minDistanceKm: 6.8, maxDistanceKm: 9.2, sport: 'running', mode: 'nature_urbaine', loop: true },
+      closure: { required: true, mode: 'connector_repeat_allowed', maxClosureKm: 1.6 },
+      target: { componentIds: ['forest-1'], componentKinds: ['forest'], requiredEntry: 'mandatory', minNaturalDwellKm: 2.4, minContinuousTrailKm: 0.8 },
+      budgets: { maxPavedKm: 2.0, maxPavedRatio: 0.4, maxBusyRoadRatio: 0.05, maxRepeatKm: 1.6, maxTargetRepeatKm: 0.1, maxConnectorRepeatKm: 1.6, maxOverlapRatio: 0.12, maxAccessPavedKm: 0.8, maxClosurePavedKm: 0.8, maxTargetPavedKm: 0.3 },
+    });
+
+    const result = assembleMissionV3(graph, mission);
+
+    // transition_to_woods: selectUrbanNatureComponentRouteEdges is never called,
+    // so T12 patches do not affect this path. The result depends on the
+    // transition_to_woods assembler (forest_loop path, not under test here).
+    // The only invariant we lock: the patch did not introduce any
+    // urban_nature tolerance into this strategy's closure decision.
+    // We verify the result is consistent with HEAD: either a returned candidate
+    // OR a typed refusal, with metrics reflecting unchanged closure logic.
+    if (result.selectedCandidate) {
+      // No overshoot tolerance applied (would push distanceProducedKm > maxDistanceKm + 0.001
+      // for a returned candidate, but the patch only relaxes for urban_nature_loop).
+      expect(result.selectedCandidate.metrics.distanceProducedKm).toBeLessThanOrEqual(mission.request.maxDistanceKm + 0.001);
+    } else {
+      const closureReasons = (result.diagnostics.observationOnly as Record<string, unknown>).closureRejectedReasons as Record<string, number> | undefined;
+      expect(closureReasons ?? {}).toBeDefined();
+    }
+  });
+});

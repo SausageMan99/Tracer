@@ -1,43 +1,54 @@
 {
   "version": "1.0.0",
-  "active": "T5-MAP-clean-corridor",
+  "active": "T12-PATCH-closure-contract-tolerance",
   "tickets": [
     {
-      "id": "T5-MAP-clean-corridor",
-      "title": "Map the clean corridor narrow producer",
-      "mode": "MAP",
+      "id": "T12-PATCH-closure-contract-tolerance",
+      "title": "urban_nature_loop closure contract tolerance",
+      "mode": "PATCH",
       "risk": "HUMAN_REQUIRED",
-      "patch_authorized": false,
-      "objective": "Cartographier le premier patch moteur potentiel pour la stratégie clean_corridor_walk. Identifier les fichiers à toucher, les call graphs impliqués, les invariants à préserver. Aucun patch autorisé — lecture seule stricte.",
-      "files_to_touch": [],
-      "files_forbidden": ["lib/engine-v3/**"],
-      "files_for_read_only_reference": [
-        "lib/engine-v3/assemblers/target-component-traversal.ts",
+      "patch_authorized": true,
+      "objective": "Apply two strictly-capped closure tolerances scoped ONLY to mission.strategy === 'urban_nature_loop' in selectUrbanNatureComponentRouteEdges: (a) distance overshoot ≤ min(0.5 km, targetDistanceKm × 0.08); (b) targetRepeat on relaxed closure ≤ min(0.4 km, targetDistanceKm × 0.05). Park_loop, forest_loop, transition_to_woods, edge semantics, outcome labels, export policy, and T10B road connector caps stay byte-identical. Patch is already on the working tree as uncommitted diff (formalize it via MAP→PLAN→PATCH→VERIFY per HERMES.md).",
+      "files_to_touch": [
+        "lib/engine-v3/assemblers/park-loop-assembler.ts",
+        "tests/engine-v3-synthetic-suite.test.ts",
+        ".trailforge-agent/queue.json",
+        ".trailforge-agent/reports/T12-PLAN.md"
+      ],
+      "files_forbidden": [
+        "lib/engine-v3/assemblers/edge-semantics.ts",
         "lib/engine-v3/assemblers/transition-to-woods-assembler.ts",
-        "tests/engine-v3-target-component-traversal.test.ts"
+        "lib/engine-v3/assemblers/forest-loop-assembler.ts",
+        "lib/engine-v3/outcome-decider.ts",
+        "lib/engine-v3/terrain-snapshot-builder.ts",
+        "lib/engine-v3/mission-candidate-route-adapter.ts",
+        "lib/engine-v3/benchmark-runner.ts",
+        "scripts/run-engine-v3-benchmarks.ts",
+        "lib/engine-v3/types.ts",
+        ".github/**"
       ],
       "preconditions": [
-        "Branche trailforge-v3-clean-from-04b7409 @ 0502ac1",
-        "stash@{0} intact",
-        "npm run tf:verify PASS au moment de commencer"
+        "Branch trailforge-v3-clean-from-04b7409 @ 285b3c6 (1 ahead of origin)",
+        "Dirty patch on park-loop-assembler.ts and synthetic-suite.test.ts (scope verified)",
+        "npm run typecheck PASS",
+        "npm run lint PASS",
+        "npm run test:run PASS with 6 new T12 tests (533+6=539 passed)",
+        "Fontainebleau benchmark byte-identical to baselines.json within tolerance",
+        "Tourville benchmark byte-identical to baselines.json within tolerance"
       ],
       "expected_outputs": [
-        "Call graph réel de buildTargetComponentTraversal et rankNaturalCoreCandidates",
-        "Liste des invariants à préserver (naturalDwell, trailRatio, repeatRatio, repeatBudgetExceeded)",
-        "Estimation des fichiers touchés pour un éventuel T6-PATCH (≤ 1 fichier moteur, périmètre strict)",
-        "Proposition de scoring gate isolé vs producer-only",
-        "Aucun patch, aucun commit, aucun benchmark"
+        "Atomic commit: park-loop-assembler.ts + synthetic-suite.test.ts + queue.json + reports/T12-PLAN.md",
+        "chore(agent) baseline refresh commit AFTER measured tf:verify PASS",
+        "Repo clean after T12 + baseline refresh commits",
+        "No push, no reset, no stash, no Phase 1 CI/CD, no .github/ files"
       ],
       "human_approval_required_for": [
-        "Lancement du MAP",
-        "Lecture du rapport MAP",
-        "Décision GO/NO-GO pour T6-PATCH"
+        "T12 commit message acceptance",
+        "Baseline refresh commit acceptance"
       ],
       "estimated_duration_minutes": 30,
-      "linked_it_todo": [
-        "T2-A (clean_corridor_walk strategy)",
-        "T2-B (prefers continuous natural core over isolated spur)"
-      ]
+      "linked_it_todo": [],
+      "plan_report_path": ".trailforge-agent/reports/T12-PLAN.md"
     }
   ],
   "completed": [
@@ -72,6 +83,12 @@
       "risk": "SAFE",
       "commit": "0502ac1",
       "result": "OK"
+    }
+  ],
+  "cancelled": [
+    {
+      "id": "T5-MAP-clean-corridor",
+      "reason": "Preconditions no longer hold at Phase 0 kickoff: HEAD advanced from 0502ac1 to 285b3c6 between T5 registration and T12-PATCH. T5 superseded by T12. To re-launch T5, re-register against current HEAD with refreshed preconditions."
     }
   ]
 }
