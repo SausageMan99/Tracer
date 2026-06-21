@@ -1,9 +1,9 @@
 {
   "version": "1.0.0",
-  "captured_at": "2026-06-16T23:26:00Z",
+  "captured_at": "2026-06-21T14:17:30Z",
   "branch": "trailforge-v3-clean-from-04b7409",
-  "head": "0502ac1",
-  "head_subject": "test(engine-v3): cover targetRepeatBudget shape via assembleMissionV3",
+  "head": "e6469b5",
+  "head_subject": "chore(engine-v3): urban_nature_loop closure contract tolerance (T12)",
   "expected_stash": {
     "ref": "stash@{0}",
     "message": "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z",
@@ -55,14 +55,14 @@
   },
   "tests": {
     "failed": 0,
-    "passed": 533,
+    "passed": 551,
     "todo": 6,
     "tolerance": {
       "failed_abs": 0,
       "passed_abs": 0,
       "todo_abs": 0
     },
-    "note": "Refreshed after T10B (commit 2eced49) added two new tests (`urban_nature_loop accepts capped short tertiary connector to reach an urban_green component` and `urban_nature_loop rejects long primary connector above the 0.2 km cap` — T10B capped urban nature road connector test baseline refresh). Engine behavior unchanged: 0 failed / 533 passed / 6 todo at HEAD 2eced49."
+    "note": "Refreshed after T12 (commit e6469b5) added 6 new urban_nature_loop closure contract tolerance tests (+12 T15 IGN POC tests already landed at 285b3c6). Expected drift: 533 + 12 (T15) + 6 (T12) = 551. Engine behavior unchanged on Fontainebleau + Tourville (both byte-identical to previous baselines). 0 failed / 551 passed / 6 todo at HEAD e6469b5."
   },
   "commits_since_04b7409": [
     "4b9fd21",
@@ -70,7 +70,21 @@
     "d3aba7b",
     "1f028be",
     "b087eb0",
-    "0502ac1"
+    "0502ac1",
+    "7959721",
+    "ef07d83",
+    "da5ab49",
+    "128e934",
+    "4bc41ff",
+    "de24a2a",
+    "c31684f",
+    "b3d6c5c",
+    "b2f853c",
+    "49831ab",
+    "2eced49",
+    "42090e5",
+    "285b3c6",
+    "e6469b5"
   ],
-  "local_commits_total": 6
+  "local_commits_total": 20
 }
