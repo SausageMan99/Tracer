@@ -104,10 +104,22 @@ if (branch.stdout === expectedBranch) {
 
 // Gate 3: stash@{0} intact
 console.log("\n[3/8] stash@{0} integrity");
+// CI/GitHub Actions runners are ephemeral and do not preserve local Hermes
+// stash state (the protected wip-v3-extraction-fix-7files-04b7409-... stash
+// lives on the developer's VPS, not on the runner). The local stash integrity
+// gate is a VPS-specific safety net and cannot be required in CI.
+// Detection: GitHub Actions sets GITHUB_ACTIONS=true; most CI providers also
+// set CI=true. Both must be true to skip — a single trigger is too loose.
+const isCi = process.env.GITHUB_ACTIONS === "true" && process.env.CI === "true";
 const stashList = run("git", ["stash", "list"]);
 if (stashList.code !== 0) {
   gate("stash list", false, stashList.stderr);
   recordFailure("stash list");
+} else if (isCi) {
+  // CI: skip the local stash integrity check, but do not silently swallow
+  // real `git stash list` failures (the run() error path above still fails).
+  const ciSkipReason = "skipped in CI because GitHub Actions runners do not preserve local Hermes stash state";
+  gate("stash@{0} integrity", true, `[SKIP in CI] ${ciSkipReason}`);
 } else {
   const expectedStash = "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z";
   const top = stashList.stdout.split("\n")[0] ?? "";
