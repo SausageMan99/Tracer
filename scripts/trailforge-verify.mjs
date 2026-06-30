@@ -74,6 +74,13 @@ console.log(`repo: ${repoRoot}`);
 // Gate 1: working tree state
 console.log("\n[1/8] git working tree");
 const status = run("git", ["status", "--short", "--branch"]);
+
+// CI detection is shared by gates 2 and 3 below. Declared early so both gates
+// can branch on the same condition. GitHub Actions sets GITHUB_ACTIONS=true;
+// most CI providers also set CI=true. Both must be true to skip — a single
+// trigger is too loose (false positives in dev shells with one of those env
+// vars exported by accident).
+const isCi = process.env.GITHUB_ACTIONS === "true" && process.env.CI === "true";
 if (status.code !== 0) {
   gate("git status", false, status.stderr);
   recordFailure("git status");
@@ -95,8 +102,17 @@ console.log("\n[2/8] git HEAD on expected branch");
 const head = run("git", ["rev-parse", "--short", "HEAD"]);
 const branch = run("git", ["rev-parse", "--abbrev-ref", "HEAD"]);
 const expectedBranch = "trailforge-v3-clean-from-04b7409";
+// CI/GitHub Actions PR workflows check out `refs/pull/<id>/merge` as a
+// detached HEAD, so `git rev-parse --abbrev-ref HEAD` returns "HEAD" instead
+// of the source branch name. The branch gate is a VPS-specific safety net
+// (verify the agent is working on the canonical dev branch) and cannot be
+// required in CI. Detection: same condition as the stash gate below — both
+// GITHUB_ACTIONS=true and CI=true must be set. A single trigger is too loose.
 if (branch.stdout === expectedBranch) {
   gate("branch == trailforge-v3-clean-from-04b7409", true, `HEAD=${head.stdout}`);
+} else if (isCi) {
+  const ciBranchSkipReason = "skipped in CI because GitHub Actions PR checkout uses detached HEAD merge refs";
+  gate("branch check", true, `[SKIP in CI] ${ciBranchSkipReason} — HEAD=${head.stdout} ref=${branch.stdout}`);
 } else {
   gate("branch check", false, `actual=${branch.stdout} expected=${expectedBranch}`);
   recordFailure("branch check");
@@ -104,10 +120,21 @@ if (branch.stdout === expectedBranch) {
 
 // Gate 3: stash@{0} intact
 console.log("\n[3/8] stash@{0} integrity");
+// CI/GitHub Actions runners are ephemeral and do not preserve local Hermes
+// stash state (the protected wip-v3-extraction-fix-7files-04b7409-... stash
+// lives on the developer's VPS, not on the runner). The local stash integrity
+// gate is a VPS-specific safety net and cannot be required in CI. `isCi` is
+// computed at the top of the script and shared with gate 2 (branch check)
+// for the same reason — both are local safety nets, both are invalid in CI.
 const stashList = run("git", ["stash", "list"]);
 if (stashList.code !== 0) {
   gate("stash list", false, stashList.stderr);
   recordFailure("stash list");
+} else if (isCi) {
+  // CI: skip the local stash integrity check, but do not silently swallow
+  // real `git stash list` failures (the run() error path above still fails).
+  const ciSkipReason = "skipped in CI because GitHub Actions runners do not preserve local Hermes stash state";
+  gate("stash@{0} integrity", true, `[SKIP in CI] ${ciSkipReason}`);
 } else {
   const expectedStash = "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z";
   const top = stashList.stdout.split("\n")[0] ?? "";
