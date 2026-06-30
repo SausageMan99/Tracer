@@ -118,14 +118,17 @@ if (branch.stdout === expectedBranch) {
   recordFailure("branch check");
 }
 
-// Gate 3: stash@{0} intact
-console.log("\n[3/8] stash@{0} integrity");
-// CI/GitHub Actions runners are ephemeral and do not preserve local Hermes
-// stash state (the protected wip-v3-extraction-fix-7files-04b7409-... stash
-// lives on the developer's VPS, not on the runner). The local stash integrity
-// gate is a VPS-specific safety net and cannot be required in CI. `isCi` is
-// computed at the top of the script and shared with gate 2 (branch check)
-// for the same reason — both are local safety nets, both are invalid in CI.
+// Gate 3: protected stash integrity
+// The protected wip-v3-extraction-fix-7files-04b7409-... stash must be
+// present somewhere in the local stash list. Earlier versions of this gate
+// required it to be at stash@{0}, which is fragile: any subsequent
+// `git stash push` (e.g. a routine weekly cleanup) pushes the protected stash
+// down the list and the gate fails even though the WIP is healthy and intact.
+// We now scan the full list for the protected message and report the actual
+// index where it was found. This is a VPS-specific safety net, not a CI check
+// — GitHub Actions runners do not preserve local Hermes stash state, so the
+// gate is skipped in CI via the same `isCi` condition used by gate 2.
+console.log("\n[3/8] protected stash integrity");
 const stashList = run("git", ["stash", "list"]);
 if (stashList.code !== 0) {
   gate("stash list", false, stashList.stderr);
@@ -134,15 +137,32 @@ if (stashList.code !== 0) {
   // CI: skip the local stash integrity check, but do not silently swallow
   // real `git stash list` failures (the run() error path above still fails).
   const ciSkipReason = "skipped in CI because GitHub Actions runners do not preserve local Hermes stash state";
-  gate("stash@{0} integrity", true, `[SKIP in CI] ${ciSkipReason}`);
+  gate("protected stash integrity", true, `[SKIP in CI] ${ciSkipReason}`);
 } else {
   const expectedStash = "wip-v3-extraction-fix-7files-04b7409-20260616T222406Z";
-  const top = stashList.stdout.split("\n")[0] ?? "";
-  if (top.includes(expectedStash)) {
-    gate("stash@{0} expected message", true, top);
+  const lines = stashList.stdout.split("\n").filter((l) => l.length > 0);
+  // git stash list uses the format "stash@{<n>}: <branch>: <subject>".
+  // We find the first line whose subject contains the protected message and
+  // report its real index so the user knows where the WIP actually sits.
+  let foundIndex = null;
+  for (const line of lines) {
+    if (line.includes(expectedStash)) {
+      const m = line.match(/^(stash@\{\d+\})/);
+      if (m) {
+        foundIndex = m[1];
+      }
+      break;
+    }
+  }
+  if (foundIndex !== null) {
+    gate("protected stash found", true, `protected stash found at ${foundIndex}`);
   } else {
-    gate("stash@{0} message", false, `actual="${top}" expected contains "${expectedStash}"`);
-    recordFailure("stash@{0} integrity");
+    gate(
+      "protected stash message",
+      false,
+      `protected stash message not found in stash list (expected contains "${expectedStash}")`
+    );
+    recordFailure("protected stash integrity");
   }
 }
 
