@@ -33,7 +33,14 @@ function selectAnchor(intent: RouteIntentV3): RouteAnchorV3 | null {
 }
 
 function fallbackTargets(intent: RouteIntentV3): TerrainComponentKindV3[] {
-  if (intent.strategy === 'low_trail_potential' || intent.strategy === 'simple_quiet_loop') return ['urban_green', 'river_corridor', 'park', 'scenic_paved', 'residential'];
+  if (intent.strategy === 'low_trail_potential' || intent.strategy === 'simple_quiet_loop') {
+    // field_paths is included before scenic_paved/residential so that real
+    // path-heavy terrain (e.g. dense forest grids in Fontainebleau) can
+    // still be picked as anchor when no urban_green/river_corridor/park
+    // component is present. The score formula in selectAnchor naturally
+    // ranks field_paths above residential when both exist.
+    return ['urban_green', 'river_corridor', 'park', 'field_paths', 'scenic_paved', 'residential'];
+  }
   return NATURAL_COMPONENTS;
 }
 
