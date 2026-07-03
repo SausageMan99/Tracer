@@ -16,7 +16,7 @@ export interface TraversalEdgeV3 {
 }
 
 export interface GraphAssemblyOptionsV3 {
-  mode: 'forest_loop' | 'transition_to_woods' | 'park_loop' | 'generic';
+  mode: 'forest_loop' | 'transition_to_woods' | 'park_loop' | 'low_trail_potential' | 'generic';
   requireNaturalDwell?: boolean;
   warning?: string;
 }
@@ -106,17 +106,38 @@ function walkGraph(
 }
 
 function filterCandidatesForStrategy(candidates: TraversalEdgeV3[], options: GraphAssemblyOptionsV3, enteredTarget: boolean): TraversalEdgeV3[] {
-  if (options.mode !== 'forest_loop') return candidates;
+  if (options.mode === 'forest_loop') {
+    const naturalTargets = candidates.filter((candidate) => candidate.surface === 'natural' && candidate.kind === 'forest');
+    if (naturalTargets.length > 0) return naturalTargets;
 
-  const naturalTargets = candidates.filter((candidate) => candidate.surface === 'natural' && candidate.kind === 'forest');
-  if (naturalTargets.length > 0) return naturalTargets;
+    const natural = candidates.filter((candidate) => candidate.surface === 'natural');
+    if (natural.length > 0) return natural;
 
-  const natural = candidates.filter((candidate) => candidate.surface === 'natural');
-  if (natural.length > 0) return natural;
+    if (!enteredTarget) return candidates;
+    const nonPaved = candidates.filter((candidate) => candidate.surface !== 'paved');
+    return nonPaved.length > 0 ? nonPaved : candidates;
+  }
 
-  if (!enteredTarget) return candidates;
-  const nonPaved = candidates.filter((candidate) => candidate.surface !== 'paved');
-  return nonPaved.length > 0 ? nonPaved : candidates;
+  if (options.mode === 'low_trail_potential') {
+    // Prefer path-like highways with natural or unset (mixed) surface.
+    // Path-like = path / track / footway / bridleway / pedestrian (per PATH_LIKE_HIGHWAYS).
+    // Unset is treated as probable natural because OSM rarely tags forest paths.
+    const pathLikeNaturalOrMixed = candidates.filter(
+      (candidate) =>
+        PATH_LIKE_HIGHWAYS.has(candidate.edge.highway) &&
+        (candidate.surface === 'natural' || candidate.surface === 'mixed'),
+    );
+    if (pathLikeNaturalOrMixed.length > 0) return pathLikeNaturalOrMixed;
+
+    // No natural/mixed path-like; relax to any path-like (e.g. path with paved).
+    const pathLikeAny = candidates.filter((candidate) => PATH_LIKE_HIGHWAYS.has(candidate.edge.highway));
+    if (pathLikeAny.length > 0) return pathLikeAny;
+
+    // No path-like candidate at all; return all candidates (paved etc.).
+    return candidates;
+  }
+
+  return candidates;
 }
 
 function chooseNextEdge(

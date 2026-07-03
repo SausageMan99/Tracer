@@ -1,5 +1,6 @@
 import type { EnrichedGraph } from '../types';
 import { assembleForestLoopGraphRouteV3 } from './assemblers/forest-loop-assembler';
+import { assembleLowTrailPotentialGraphRouteV3 } from './assemblers/low-trail-potential-assembler';
 import { assembleParkLoopGraphRouteV3 } from './assemblers/park-loop-assembler';
 import { assembleTransitionToWoodsGraphRouteV3 } from './assemblers/transition-to-woods-assembler';
 import { assembleGraphRouteWithStrategyV3 } from './assemblers/graph-route-assembly-core';
@@ -13,6 +14,8 @@ export function assembleGraphRouteV3(intent: RouteIntentV3, mission: CorridorMis
       return assembleTransitionToWoodsGraphRouteV3(intent, mission, graph);
     case 'park_loop':
       return assembleParkLoopGraphRouteV3(intent, mission, graph);
+    case 'low_trail_potential':
+      return assembleLowTrailPotentialGraphRouteV3(intent, mission, graph);
     default:
       return assembleGraphRouteWithStrategyV3(intent, mission, graph, { mode: 'generic' });
   }

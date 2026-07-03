@@ -2,6 +2,8 @@ import type { CorridorMissionV3, RouteAnchorV3, RouteIntentV3, TerrainComponentK
 
 const NATURAL_COMPONENTS: TerrainComponentKindV3[] = ['forest', 'field_paths', 'park', 'urban_green', 'river_corridor'];
 
+const ROUTABLE_ANCHOR_KINDS: TerrainComponentKindV3[] = ['forest', 'field_paths', 'urban_green', 'river_corridor', 'park'];
+
 export function buildCorridorMissionV3(intent: RouteIntentV3): CorridorMissionV3 {
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const anchor = selectAnchor(intent);
@@ -13,7 +15,7 @@ export function buildCorridorMissionV3(intent: RouteIntentV3): CorridorMissionV3
     engine: 'v3-clean-room',
     strategy: intent.strategy,
     targetDistanceKm,
-    targetComponents: [...intent.constraints.targetComponents],
+    targetComponents: buildMissionTargetComponents(intent, anchor),
     anchor,
     budgetPavedKm: round(targetDistanceKm * intent.constraints.maxPavedRatio),
     requestedNaturalDwellKm: round(targetDistanceKm * intent.constraints.minNaturalDwellRatio),
@@ -21,6 +23,21 @@ export function buildCorridorMissionV3(intent: RouteIntentV3): CorridorMissionV3
     returnMode: returnMode(intent),
     warnings,
   };
+}
+
+function buildMissionTargetComponents(
+  intent: RouteIntentV3,
+  anchor: RouteAnchorV3 | null,
+): TerrainComponentKindV3[] {
+  // Mission-level targetComponents: include the selected anchor kind first when
+  // it is a routable natural/urban component, so the assembler's chooseNextEdge
+  // aTarget boost can steer the walk even when the planner's constraints
+  // left targetComponents empty (e.g. low_trail_potential default branch).
+  const base = [...intent.constraints.targetComponents];
+  if (anchor && ROUTABLE_ANCHOR_KINDS.includes(anchor.kind) && !base.includes(anchor.kind)) {
+    return [anchor.kind, ...base];
+  }
+  return base;
 }
 
 function selectAnchor(intent: RouteIntentV3): RouteAnchorV3 | null {
