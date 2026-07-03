@@ -38,7 +38,7 @@ export function assembleLowTrailPotentialGraphRouteV3(
       blacklist: new Set<string>(),
       branchStack: [],
       escapesUsed: 0,
-      maxEscapes: 5,
+      maxEscapes: 20,
     },
   });
 }
