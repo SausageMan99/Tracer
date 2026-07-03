@@ -1,4 +1,5 @@
 import type { RouteEdgeV3, RouteGeometryV3, RouteMetricsV3, TerrainComponentKindV3 } from './types';
+import { computeRouteTopologyMetrics, createEmptyRouteTopologyMetrics } from './route-topology-metrics';
 
 const TRAIL_HIGHWAYS = new Set(['path', 'track', 'footway', 'bridleway', 'pedestrian', 'steps']);
 const BUSY_ROAD_HIGHWAYS = new Set(['motorway', 'trunk', 'primary', 'secondary', 'tertiary']);
@@ -60,6 +61,10 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
   }
 
   const loopClosureKm = computeLoopClosureKm(input.geometry);
+  const topology = computeRouteTopologyMetrics({
+    edges: input.edges,
+    targetDistanceKm: input.targetDistanceKm,
+  });
 
   return {
     targetDistanceKm: input.targetDistanceKm,
@@ -77,6 +82,7 @@ export function computeRouteMetricsV3(input: ComputeRouteMetricsV3Input): RouteM
     busyRoadRatio: ratio(busyRoadKm, totalKm),
     loopClosureKm,
     longestTrailSegmentKm: round(longestTrailSegmentKm),
+    topology,
   };
 }
 
@@ -97,6 +103,7 @@ export function createEmptyRouteMetricsV3(targetDistanceKm: number, geometry: Ro
     busyRoadRatio: 0,
     loopClosureKm: computeLoopClosureKm(geometry),
     longestTrailSegmentKm: 0,
+    topology: createEmptyRouteTopologyMetrics(),
   };
 }
 

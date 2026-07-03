@@ -13,6 +13,9 @@ const STRICT_OUTCOME_RULES = {
   smallParkMaxTrailDistanceKm: 8,
   minimumGraphEdges: 12,
   minimumGraphLengthKm: 3,
+  treeWalkRefuseMinRepeatedTraversalRatio: 0.45,
+  treeWalkAdjustMaxRepeatedTraversalRatio: 0.3,
+  treeWalkOutAndBackDominance: 0.4,
 } as const;
 
 export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3): RouteOutcomeV3 {
@@ -24,6 +27,15 @@ export function decideOutcomeV3(intent: RouteIntentV3, route: AssembledRouteV3):
   const hardRefusals = hardRefusalReasons(intent, route, distanceRatio);
 
   if (hardRefusals.length > 0 || severeDistanceGap) {
+    const treeWalkHardRefusal = hardRefusals.find((reason) => reason.startsWith('TREE_WALK_NOT_A_LOOP:'));
+    if (treeWalkHardRefusal) {
+      return {
+        type: 'refused',
+        reason: treeWalkHardRefusal,
+        details,
+        subCode: 'TREE_WALK_NOT_A_LOOP',
+      };
+    }
     return {
       type: 'refused',
       reason: hardRefusals[0] ?? 'assembled route does not meet minimal distance evidence',
@@ -77,6 +89,9 @@ function hardRefusalReasons(intent: RouteIntentV3, route: AssembledRouteV3, dist
     reasons.push('park route refused: a small park cannot honestly satisfy the requested trail distance');
   }
 
+  const treeWalkReason = treeWalkRefusalReason(intent, route);
+  if (treeWalkReason) reasons.push(treeWalkReason);
+
   return unique(reasons);
 }
 
@@ -114,6 +129,10 @@ function adjustmentReasons(intent: RouteIntentV3, route: AssembledRouteV3, dista
 
   if (isTrailRequest(intent) && route.metrics.longestTrailSegmentKm + 0.001 < requiredDwellKm * 0.5) {
     reasons.push('trail route lacks a meaningful continuous trail segment');
+  }
+
+  if (isMarginalTreeWalk(intent, route)) {
+    reasons.push('topology shape suggests a tree walk; route kept as adjusted to surface the compromise');
   }
 
   return unique(reasons);
@@ -157,6 +176,11 @@ function diagnostics(intent: RouteIntentV3, route: AssembledRouteV3): string[] {
   if (isSmallParkOverclaim(intent, route)) {
     details.push(`park capacity cannot support ${targetDistanceKm}km trail request without fabricating distance`);
   }
+  if (isTreeWalkTopology(intent, route)) {
+    details.push(
+      `topology repeatedTraversalRatio ${route.metrics.topology.repeatedTraversalRatio} on a loop request with no cycle in the visited subgraph (graphCyclomaticNumber=${route.metrics.topology.graphCyclomaticNumber}, cycleDistanceKm=${route.metrics.topology.cycleDistanceKm})`,
+    );
+  }
   if (details.length === 0) details.push('minor assembly compromises');
   return details;
 }
@@ -187,9 +211,57 @@ function isSmallParkOverclaim(intent: RouteIntentV3, route: AssembledRouteV3): b
   return !distanceWasReduced && parkCapacityKm < intent.constraints.targetDistanceKm;
 }
 
+function topology(route: AssembledRouteV3) {
+  return route.metrics.topology;
+}
+
+function isLoopRequest(intent: RouteIntentV3): boolean {
+  if (intent.strategy === 'unroutable') return false;
+  if (intent.request == null) return false;
+  return intent.request.loop === true;
+}
+
+function isTreeWalkShape(route: AssembledRouteV3): boolean {
+  if (!route || route.metrics.distanceProducedKm <= 0) return false;
+  const t = topology(route);
+  return t.graphCyclomaticNumber === 0 && t.cycleDistanceKm === 0;
+}
+
+function isSevereTreeWalk(route: AssembledRouteV3): boolean {
+  if (!isTreeWalkShape(route)) return false;
+  const t = topology(route);
+  if (t.repeatedTraversalRatio >= STRICT_OUTCOME_RULES.treeWalkRefuseMinRepeatedTraversalRatio) return true;
+  if (
+    t.repeatedTraversalRatio >= STRICT_OUTCOME_RULES.treeWalkAdjustMaxRepeatedTraversalRatio
+    && t.outAndBackDominance >= STRICT_OUTCOME_RULES.treeWalkOutAndBackDominance
+  ) return true;
+  return false;
+}
+
+function isMarginalTreeWalk(intent: RouteIntentV3, route: AssembledRouteV3): boolean {
+  if (!isLoopRequest(intent)) return false;
+  if (!isTreeWalkShape(route)) return false;
+  const ratio = topology(route).repeatedTraversalRatio;
+  return ratio > STRICT_OUTCOME_RULES.treeWalkAdjustMaxRepeatedTraversalRatio
+    && ratio < STRICT_OUTCOME_RULES.treeWalkRefuseMinRepeatedTraversalRatio;
+}
+
+function isTreeWalkTopology(intent: RouteIntentV3, route: AssembledRouteV3): boolean {
+  return isSevereTreeWalk(route) || isMarginalTreeWalk(intent, route);
+}
+
+function treeWalkRefusalReason(intent: RouteIntentV3, route: AssembledRouteV3): string | null {
+  if (!isLoopRequest(intent)) return null;
+  if (!isSevereTreeWalk(route)) return null;
+  const t = topology(route);
+  return `TREE_WALK_NOT_A_LOOP: visited subgraph has no cycle (graphCyclomaticNumber=${t.graphCyclomaticNumber}, cycleDistanceKm=${t.cycleDistanceKm}) and repeatedTraversalRatio=${t.repeatedTraversalRatio} (outAndBackDominance=${t.outAndBackDominance}) — terrain is not impossible, but the assembled path is a tree walk, not a loop`;
+}
+
 function cloneOutcome(outcome: RouteOutcomeV3): RouteOutcomeV3 {
   if (outcome.type === 'adjusted') return { ...outcome, compromises: [...outcome.compromises] };
-  if (outcome.type === 'refused') return { ...outcome, details: outcome.details ? [...outcome.details] : undefined };
+  if (outcome.type === 'refused') {
+    return { ...outcome, details: outcome.details ? [...outcome.details] : undefined };
+  }
   return { ...outcome };
 }
 

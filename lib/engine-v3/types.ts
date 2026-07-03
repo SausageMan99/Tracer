@@ -62,10 +62,29 @@ export interface TerrainSnapshotV3 {
   components: TerrainComponentV3[];
 }
 
+export type RouteErrorSubCodeV3 =
+  | 'TREE_WALK_NOT_A_LOOP'
+  | 'NO_ROAD_NETWORK'
+  | 'GEOCODING_FAILED'
+  | 'IMPOSSIBLE_ELEVATION'
+  | 'ROUTE_CANDIDATES_REJECTED'
+  | 'UNKNOWN';
+
 export type RouteOutcomeV3 =
   | { type: 'generated'; summary: string }
   | { type: 'adjusted'; summary: string; compromises: string[] }
-  | { type: 'refused'; reason: string; details?: string[] };
+  | { type: 'refused'; reason: string; details?: string[]; subCode?: RouteErrorSubCodeV3 };
+
+export interface RouteTopologyMetricsV3 {
+  uniqueUndirectedDistanceKm: number;
+  repeatedTraversalKm: number;
+  repeatedTraversalRatio: number;
+  graphCyclomaticNumber: number;
+  leafCount: number;
+  branchNodeCount: number;
+  cycleDistanceKm: number;
+  outAndBackDominance: number;
+}
 
 export type NormalizedRequestResultV3 =
   | { status: 'accepted'; request: NormalizedRouteRequestV3 }
@@ -138,6 +157,7 @@ export interface RouteMetricsV3 {
   busyRoadRatio: number;
   loopClosureKm: number;
   longestTrailSegmentKm: number;
+  topology: RouteTopologyMetricsV3;
 }
 
 export interface RouteEdgeV3 {

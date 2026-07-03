@@ -1,4 +1,5 @@
 import type { AssembledRouteV3, CorridorMissionV3, RouteIntentV3, RouteSegmentV3 } from './types';
+import { createEmptyRouteTopologyMetrics } from './route-topology-metrics';
 
 export function assembleRouteV3(intent: RouteIntentV3, mission: CorridorMissionV3): AssembledRouteV3 {
   if (!mission.anchor || intent.strategy === 'unroutable') return emptyRoute(intent, mission, 'no usable anchor for assembly');
@@ -124,6 +125,7 @@ function computeMetrics(intent: RouteIntentV3, segments: RouteSegmentV3[]): Asse
     busyRoadRatio: 0,
     loopClosureKm: 0,
     longestTrailSegmentKm: longestNaturalSegmentKm(segments),
+    topology: createEmptyRouteTopologyMetrics(),
   };
 }
 
@@ -181,6 +183,7 @@ function emptyRoute(intent: RouteIntentV3, mission: CorridorMissionV3, warning: 
       busyRoadRatio: 0,
       loopClosureKm: 0,
       longestTrailSegmentKm: 0,
+      topology: createEmptyRouteTopologyMetrics(),
     },
     warnings: [...mission.warnings, warning],
   };

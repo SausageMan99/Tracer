@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { decideOutcomeV3 } from '../lib/engine-v3/outcome-decider';
+import { createEmptyRouteTopologyMetrics } from '../lib/engine-v3/route-topology-metrics';
 import type { AssembledRouteV3, CorridorMissionV3, RouteIntentV3, RouteMetricsV3, RouteSegmentV3, TerrainSnapshotV3 } from '../lib/engine-v3';
 
 function snapshot(overrides: Partial<TerrainSnapshotV3> = {}): TerrainSnapshotV3 {
@@ -71,6 +72,7 @@ function route(baseIntent = intent(), metricsOverride: Partial<RouteMetricsV3> =
     busyRoadRatio: 0,
     loopClosureKm: 0.05,
     longestTrailSegmentKm: 5,
+    topology: createEmptyRouteTopologyMetrics(),
     ...metricsOverride,
   };
   const mission: CorridorMissionV3 = {
