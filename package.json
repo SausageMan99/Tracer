@@ -16,6 +16,7 @@
     "ign:poc": "node scripts/run-ign-terrain-poc.mjs",
     "release:evidence-check": "node scripts/release-evidence-check.mjs",
     "audit:osm": "node scripts/audit-osm-terrain.mjs",
+    "bench:v3:offline": "node scripts/run-engine-v3-benchmarks.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
