@@ -93,6 +93,11 @@ function walkGraph(
 ): TraversalEdgeV3[] {
   const targetDistanceKm = intent.constraints.targetDistanceKm;
   const used = new Set<string>();
+  // Visited undirected edge keys, tracked only for low_trail_potential distance
+  // completion. Key = sorted(from|to) + osmWayId (or edge.id if osmWayId missing).
+  // Used by chooseNextEdge to prefer unvisited path-like / target-component
+  // edges over already-visited local candidates.
+  const visitedUndirected = new Set<string>();
   const traversed: TraversalEdgeV3[] = [];
   let current = startNodeId;
   let distanceKm = 0;
@@ -152,7 +157,7 @@ function walkGraph(
       branchPushed = true;
     }
 
-    const next = chooseNextEdge(candidates, intent, startNodeId, distanceKm, targetDistanceKm, options, enteredTarget);
+    const next = chooseNextEdge(candidates, intent, startNodeId, distanceKm, targetDistanceKm, options, enteredTarget, visitedUndirected);
     if (branchPushed && escape) {
       const top = escape.branchStack[escape.branchStack.length - 1]!;
       if (top.nodeId === current && top.traversedLength === traversed.length && top.chosenEdgeId === '') {
@@ -165,6 +170,10 @@ function walkGraph(
     distanceKm += Math.max(0, next.edge.lengthKm);
     current = next.to;
     if (intent.constraints.targetComponents.includes(next.kind)) enteredTarget = true;
+    // Track undirected visit for low_trail_potential distance completion.
+    if (options.mode === 'low_trail_potential') {
+      visitedUndirected.add(undirectedKeyFor(next));
+    }
 
     if (current === startNodeId && distanceKm >= targetDistanceKm * 0.7) break;
     if (distanceKm >= targetDistanceKm * 1.15) break;
@@ -221,6 +230,7 @@ function chooseNextEdge(
   targetDistanceKm: number,
   options: GraphAssemblyOptionsV3,
   enteredTarget: boolean,
+  visitedUndirected: Set<string>,
 ): TraversalEdgeV3 {
   return [...candidates].sort((a, b) => {
     const aClosing = a.to === startNodeId && distanceKm + a.edge.lengthKm >= targetDistanceKm * 0.65 ? 1 : 0;
@@ -258,8 +268,43 @@ function chooseNextEdge(
     const bOvershoot = Math.max(0, distanceKm + b.edge.lengthKm - targetDistanceKm);
     if (aOvershoot !== bOvershoot) return aOvershoot - bOvershoot;
 
+    // low_trail_potential distance-completion: prefer unvisited path-like
+    // edges, prefer natural/mixed/unset surface over paved. The visitedUndirected
+    // set is only populated in low_trail_potential mode, so this branch
+    // is a no-op for other modes (the Set is empty there).
+    if (options.mode === 'low_trail_potential') {
+      const aKey = undirectedKeyFor(a);
+      const bKey = undirectedKeyFor(b);
+      const aVisited = visitedUndirected.has(aKey) ? 1 : 0;
+      const bVisited = visitedUndirected.has(bKey) ? 1 : 0;
+      if (aVisited !== bVisited) return aVisited - bVisited; // prefer unvisited (0 wins)
+
+      const aPathLike = PATH_LIKE_HIGHWAYS.has(a.edge.highway) ? 1 : 0;
+      const bPathLike = PATH_LIKE_HIGHWAYS.has(b.edge.highway) ? 1 : 0;
+      if (aPathLike !== bPathLike) return bPathLike - aPathLike; // prefer path-like
+
+      // Surface preference: unset/mixed (probable natural) > natural > paved.
+      const surfaceScore = (s: RouteSurfaceV3): number => {
+        if (s === 'mixed' || s === undefined || s === null) return 2;
+        if (s === 'natural') return 1;
+        return 0; // paved
+      };
+      const aSurf = surfaceScore(a.surface);
+      const bSurf = surfaceScore(b.surface);
+      if (aSurf !== bSurf) return bSurf - aSurf;
+    }
+
     return (b.edge.score ?? 0) - (a.edge.score ?? 0) || b.edge.lengthKm - a.edge.lengthKm;
   })[0]!;
+}
+
+// Stable undirected key for an edge: sorted from|to + osmWayId (or edge.id).
+// Used by the low_trail_potential distance-completion phase to track which
+// undirected edges have been walked.
+function undirectedKeyFor(edge: TraversalEdgeV3): string {
+  const [a, b] = [edge.from, edge.to].sort();
+  const way = edge.edge.osmWayId ?? edge.edge.id;
+  return `${a}|${b}|${way}`;
 }
 
 function hasUsefulClosingCandidate(candidates: TraversalEdgeV3[], startNodeId: string, distanceKm: number, targetDistanceKm: number): boolean {
