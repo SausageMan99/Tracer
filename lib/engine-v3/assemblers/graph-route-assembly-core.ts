@@ -19,6 +19,20 @@ export interface GraphAssemblyOptionsV3 {
   mode: 'forest_loop' | 'transition_to_woods' | 'park_loop' | 'low_trail_potential' | 'generic';
   requireNaturalDwell?: boolean;
   warning?: string;
+  lowTrailEscape?: {
+    blacklist: Set<string>;
+    branchStack: Array<{
+      nodeId: string;
+      chosenEdgeId: string;
+      traversedLength: number;
+      distanceKm: number;
+      enteredTarget: boolean;
+      usedEdgeIds: string[];
+      current: string;
+    }>;
+    escapesUsed: number;
+    maxEscapes: number;
+  };
 }
 
 export function assembleGraphRouteWithStrategyV3(
@@ -83,14 +97,69 @@ function walkGraph(
   let current = startNodeId;
   let distanceKm = 0;
   let enteredTarget = false;
+  const escape = options.lowTrailEscape;
 
   for (let step = 0; step < 256; step += 1) {
     const rawCandidates = (adjacency.get(current) ?? []).filter((candidate) => !used.has(candidate.edge.id));
     const candidates = filterCandidatesForStrategy(rawCandidates, options, enteredTarget);
-    if (candidates.length === 0) break;
+    if (candidates.length === 0) {
+      // Controlled dead-end escape: only for low_trail_potential, only on early
+      // termination (distance < 30% of target), bounded by maxEscapes. Pops the
+      // most recent branch point, blacklists the edge that led to the dead-end,
+      // and rewinds the walk state to that branch point.
+      if (
+        escape &&
+        options.mode === 'low_trail_potential' &&
+        distanceKm < targetDistanceKm * 0.3 &&
+        escape.escapesUsed < escape.maxEscapes &&
+        escape.branchStack.length > 0
+      ) {
+        const branch = escape.branchStack.pop()!;
+        escape.blacklist.add(branch.chosenEdgeId);
+        // Restore the walk to the branch point. Slice the traversed array,
+        // rebuild the used set from the snapshot (excluding the blacklisted
+        // edge which is no longer in the set), restore distanceKm / current
+        // / enteredTarget. The blacklisted edge is removed from the used set
+        // so the blacklist is the single source of truth.
+        traversed.length = branch.traversedLength;
+        distanceKm = branch.distanceKm;
+        current = branch.current;
+        enteredTarget = branch.enteredTarget;
+        used.clear();
+        for (const eid of branch.usedEdgeIds) {
+          if (eid !== branch.chosenEdgeId) used.add(eid);
+        }
+        escape.escapesUsed += 1;
+        continue;
+      }
+      break;
+    }
     if (distanceKm >= targetDistanceKm * 0.9 && !hasUsefulClosingCandidate(candidates, startNodeId, distanceKm, targetDistanceKm)) break;
 
+    // Track branch point for low_trail_potential escape: only when there was a
+    // real choice (more than one candidate after filtering).
+    let branchPushed = false;
+    if (escape && options.mode === 'low_trail_potential' && candidates.length > 1) {
+      escape.branchStack.push({
+        nodeId: current,
+        chosenEdgeId: '', // filled after chooseNextEdge
+        traversedLength: traversed.length,
+        distanceKm,
+        enteredTarget,
+        usedEdgeIds: Array.from(used),
+        current,
+      });
+      branchPushed = true;
+    }
+
     const next = chooseNextEdge(candidates, intent, startNodeId, distanceKm, targetDistanceKm, options, enteredTarget);
+    if (branchPushed && escape) {
+      const top = escape.branchStack[escape.branchStack.length - 1]!;
+      if (top.nodeId === current && top.traversedLength === traversed.length && top.chosenEdgeId === '') {
+        top.chosenEdgeId = next.edge.id;
+      }
+    }
+
     traversed.push(next);
     used.add(next.edge.id);
     distanceKm += Math.max(0, next.edge.lengthKm);
@@ -122,7 +191,11 @@ function filterCandidatesForStrategy(candidates: TraversalEdgeV3[], options: Gra
     // Prefer path-like highways with natural or unset (mixed) surface.
     // Path-like = path / track / footway / bridleway / pedestrian (per PATH_LIKE_HIGHWAYS).
     // Unset is treated as probable natural because OSM rarely tags forest paths.
-    const pathLikeNaturalOrMixed = candidates.filter(
+    // Blacklist (controlled dead-end escape) excludes edges the walk has failed on.
+    const filtered = options.lowTrailEscape
+      ? candidates.filter((candidate) => !options.lowTrailEscape!.blacklist.has(candidate.edge.id))
+      : candidates;
+    const pathLikeNaturalOrMixed = filtered.filter(
       (candidate) =>
         PATH_LIKE_HIGHWAYS.has(candidate.edge.highway) &&
         (candidate.surface === 'natural' || candidate.surface === 'mixed'),
@@ -130,11 +203,11 @@ function filterCandidatesForStrategy(candidates: TraversalEdgeV3[], options: Gra
     if (pathLikeNaturalOrMixed.length > 0) return pathLikeNaturalOrMixed;
 
     // No natural/mixed path-like; relax to any path-like (e.g. path with paved).
-    const pathLikeAny = candidates.filter((candidate) => PATH_LIKE_HIGHWAYS.has(candidate.edge.highway));
+    const pathLikeAny = filtered.filter((candidate) => PATH_LIKE_HIGHWAYS.has(candidate.edge.highway));
     if (pathLikeAny.length > 0) return pathLikeAny;
 
-    // No path-like candidate at all; return all candidates (paved etc.).
-    return candidates;
+    // No path-like candidate at all; return all candidates (paved etc.) minus blacklist.
+    return filtered;
   }
 
   return candidates;

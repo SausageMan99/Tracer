@@ -34,5 +34,11 @@ export function assembleLowTrailPotentialGraphRouteV3(
     mode: 'low_trail_potential',
     warning:
       'low_trail_potential prefers path/track/footway edges inside the selected anchor and accepts unset surface as probable natural; paved edges are a fallback only',
+    lowTrailEscape: {
+      blacklist: new Set<string>(),
+      branchStack: [],
+      escapesUsed: 0,
+      maxEscapes: 5,
+    },
   });
 }
